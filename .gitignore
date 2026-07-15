@@ -1,0 +1,109 @@
+# If you prefer the allow list template instead of the deny list, see community template:
+# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
+#
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.tmp
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# Go workspace file
+go.work
+
+# GCP
+gha-creds-*.json
+
+# Binary build with make
+/rdme
+/runme
+
+# Logs
+*.log
+
+# WebAssembly
+*.wasm
+wasm_exec.js
+**/node_modules
+
+# Dist directory
+dist/
+
+# Editor
+.idea
+
+# macOS
+.DS_Store
+
+# VSCode debugger
+__debug_bin*
+
+# Cover coverage
+cover.out
+
+# Ignore .env
+.env
+
+# Prevent git from interpreting internal/project/testdata/git-project as a submodule.
+internal/project/testdata/git-project/**/.git
+internal/project/testdata/git-project/**/.gitignore
+
+# Ignore user-specific runme.yaml files.
+experimental/runme.*.yaml
+
+api/gen/proto/es/package*.json
+
+# TODO(jlewi): Do we want to ignore this
+.npmrc
+
+# These files keep getting produced by codex running the tests
+runner/.runme-script-*
+
+# Eval job output
+.runme/evals/
+**/environment/workdir/
+
+# Legacy Harbor example job output
+.runme/harbor/
+
+# Local agent tool state
+.agents/skills/dad-jokes
+.claude/
+.openclaw/
+
+# Local build caches created during sandboxed test runs
+.cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.egg-info/
+.eggs/
+build/
+htmlcov/
+.coverage
+.coverage.*
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyre/
+.tox/
+.nox/
+.venv/
+venv/
+env/
+.uv-cache/
+uv-cache/
+.ipynb_checkpoints/
