@@ -22,11 +22,13 @@ make install/dev
 
 ## Build
 
-Build/check the package without running tests:
+Build the `owl` CLI binary:
 
 ```sh {"id":"01JZTPH8K7J7QJ4VC6Q3NYJ8BA","name":"build"}
 make build
 ```
+
+The binary is written to `./owl` by default.
 
 ## Test
 

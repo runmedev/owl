@@ -1,9 +1,17 @@
 SHELL := /bin/bash
 LOCAL := github.com/runmedev/owl
+GIT_SHA := $(shell git rev-parse HEAD)
+DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+VERSION := $(shell git describe --tags --match 'v[0-9]*' --always --dirty)
+LDFLAGS := -s -w \
+	-X 'github.com/runmedev/owl/internal/version.BuildDate=$(DATE)' \
+	-X 'github.com/runmedev/owl/internal/version.BuildVersion=$(subst v,,$(VERSION))' \
+	-X 'github.com/runmedev/owl/internal/version.Commit=$(GIT_SHA)'
 
 .PHONY: build
+build: BUILD_OUTPUT ?= owl
 build:
-	go test -run=^$$ ./...
+	CGO_ENABLED=0 go build -o $(BUILD_OUTPUT) -ldflags="$(LDFLAGS)" main.go
 
 .PHONY: test
 test:
