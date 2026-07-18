@@ -34,6 +34,7 @@ const (
 	BindingConfidenceTypeDerived = model.BindingConfidenceTypeDerived
 	BindingConfidenceOpaque      = model.BindingConfidenceOpaque
 	DiagnosticInfo               = model.DiagnosticInfo
+	DiagnosticError              = model.DiagnosticError
 	DiagnosticWarning            = model.DiagnosticWarning
 	OperationKindLoad            = model.OperationKindLoad
 	OperationKindNormalize       = model.OperationKindNormalize
@@ -45,6 +46,7 @@ const (
 	SensitivityUnknown           = model.SensitivityUnknown
 	TypeCoreHost                 = model.TypeCoreHost
 	TypeCoreOpaque               = model.TypeCoreOpaque
+	TypeCorePlain                = model.TypeCorePlain
 	TypeCorePort                 = model.TypeCorePort
 	TypeCoreSecret               = model.TypeCoreSecret
 	TypeCoreURL                  = model.TypeCoreURL
@@ -126,6 +128,7 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) EffectiveS
 		origin := source
 		explicit := false
 		preserveKey := confidence == BindingConfidenceOpaque
+		description := ""
 		if declaration, ok := declarationsByKey[key]; ok {
 			fieldRef = declaration.FieldRef
 			confidence = BindingConfidenceExplicit
@@ -133,6 +136,7 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) EffectiveS
 			origin = declaration.Source
 			explicit = true
 			preserveKey = false
+			description = declaration.Description
 		}
 		if diagnostic != nil {
 			state.Diagnostics = append(state.Diagnostics, *diagnostic)
@@ -145,7 +149,7 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) EffectiveS
 				Key:      key,
 				FieldRef: fieldRef,
 			})
-			state.Bindings = append(state.Bindings, newBinding(opID, key, fieldRef, source, origin, confidence, explicit, preserveKey, now))
+			state.Bindings = append(state.Bindings, newBinding(opID, key, fieldRef, description, source, origin, confidence, explicit, preserveKey, now))
 			seenKeys[key] = struct{}{}
 			continue
 		}
@@ -171,7 +175,7 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) EffectiveS
 			UpdatedAt:          now,
 			LastOperationID:    opID,
 		}
-		state.Bindings = append(state.Bindings, newBinding(opID, key, fieldRef, source, origin, confidence, explicit, preserveKey, now))
+		state.Bindings = append(state.Bindings, newBinding(opID, key, fieldRef, description, source, origin, confidence, explicit, preserveKey, now))
 		state.Operations = append(state.Operations, OperationMetadata{
 			ID:           opID,
 			Kind:         OperationKindLoad,
@@ -217,6 +221,7 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) EffectiveS
 			opID,
 			key,
 			fieldRef,
+			declaration.Description,
 			declaration.Source,
 			declaration.Source,
 			BindingConfidenceExplicit,
@@ -234,7 +239,7 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) EffectiveS
 		})
 		if declaration.Required {
 			state.Diagnostics = append(state.Diagnostics, Diagnostic{
-				Severity: DiagnosticWarning,
+				Severity: DiagnosticError,
 				Code:     "dotenv.unresolved-required",
 				Message:  "required declared dotenv field has no observed value",
 				Key:      key,
@@ -307,6 +312,7 @@ func newBinding(
 	opID OperationID,
 	key string,
 	fieldRef FieldRef,
+	description string,
 	source Source,
 	origin Source,
 	confidence BindingConfidence,
@@ -319,6 +325,7 @@ func newBinding(
 		FieldRef:        fieldRef,
 		ProjectionID:    ProjectionDotenv,
 		Key:             ProjectionKey(key),
+		Description:     description,
 		Source:          source,
 		Origin:          origin,
 		Confidence:      confidence,
@@ -417,7 +424,7 @@ func sensitivityForField(ref FieldRef) Sensitivity {
 	if ref.TypeID == TypeCoreSecret {
 		return SensitivitySensitive
 	}
-	if ref.TypeID == TypeCoreURL || ref.TypeID == TypeCoreHost || ref.TypeID == TypeCorePort {
+	if ref.TypeID == TypeCorePlain || ref.TypeID == TypeCoreURL || ref.TypeID == TypeCoreHost || ref.TypeID == TypeCorePort {
 		return SensitivityNonSensitive
 	}
 	if ref.TypeID == TypeCoreOpaque {

@@ -4,8 +4,6 @@ import (
 	"sort"
 
 	"github.com/stateful/godotenv"
-
-	legacy "github.com/runmedev/owl/internal/owl"
 )
 
 type DotenvAdapterOptions struct {
@@ -32,7 +30,7 @@ func AdaptDotenvFiles(envRaw, specRaw []byte, opts DotenvAdapterOptions) (Effect
 		if err != nil {
 			return EffectiveState{}, err
 		}
-		declarations = declarationsFromSpecs(legacy.ParseRawSpec(specValues, comments), specValues, opts.SpecSource)
+		declarations = declarationsFromSpecs(ParseRawSpec(specValues, comments), specValues, opts.SpecSource)
 	}
 
 	return IngestDotenv(values, DotenvIngestOptions{
@@ -44,7 +42,7 @@ func AdaptDotenvFiles(envRaw, specRaw []byte, opts DotenvAdapterOptions) (Effect
 	}), nil
 }
 
-func declarationsFromSpecs(specs legacy.Specs, descriptions map[string]string, source Source) []FieldDeclaration {
+func declarationsFromSpecs(specs Specs, descriptions map[string]string, source Source) []FieldDeclaration {
 	if source.Name == "" {
 		source = Source{Name: ".env.example", Kind: "dotenv-spec"}
 	}
@@ -67,14 +65,15 @@ func declarationsFromSpecs(specs legacy.Specs, descriptions map[string]string, s
 		}
 
 		switch spec.Name {
-		case legacy.AtomicNameSecret, legacy.AtomicNamePassword:
+		case AtomicNameSecret, AtomicNamePassword:
 			declaration.FieldRef.TypeID = TypeCoreSecret
 			declaration.Sensitivity = SensitivitySensitive
 			declaration.SemanticVisibility = SemanticVisibilityKnown
-		case legacy.AtomicNamePlain:
+		case AtomicNamePlain:
+			declaration.FieldRef.TypeID = TypeCorePlain
 			declaration.Sensitivity = SensitivityNonSensitive
 			declaration.SemanticVisibility = SemanticVisibilityKnown
-		case legacy.AtomicNameOpaque, "":
+		case AtomicNameOpaque, "":
 			declaration.Sensitivity = SensitivityUnknown
 			declaration.SemanticVisibility = SemanticVisibilityOpaque
 		default:

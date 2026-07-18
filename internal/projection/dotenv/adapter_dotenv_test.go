@@ -8,8 +8,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	legacy "github.com/runmedev/owl/internal/owl"
 )
 
 func TestAdaptDotenvFiles_CompatibleWithOldStoreForSimpleDotenv(t *testing.T) {
@@ -24,12 +22,6 @@ MIXPANEL_TOKEN="Mixpanel token" # Secret!
 DATABASE_URL="Database URL" # Opaque
 `)
 
-	oldStore, err := legacy.NewStore(legacy.WithSpecFile(".env.example", specRaw), legacy.WithEnvFile(".env", envRaw))
-	require.NoError(t, err)
-	oldValues, err := oldStore.InsecureValues()
-	require.NoError(t, err)
-	sort.Strings(oldValues)
-
 	state, err := AdaptDotenvFiles(envRaw, specRaw, DotenvAdapterOptions{
 		EnvSource:    Source{Name: ".env", Kind: "dotenv"},
 		SpecSource:   Source{Name: ".env.example", Kind: "dotenv-spec"},
@@ -40,7 +32,11 @@ DATABASE_URL="Database URL" # Opaque
 
 	rendered := RenderDotenvProjection(state, RenderPolicy{Insecure: true})
 	assert.Empty(t, rendered.Diagnostics)
-	assert.Equal(t, oldValues, renderedAssignments(rendered.Variables))
+	assert.Equal(t, []string{
+		"API_URL=https://api.example.com",
+		"DATABASE_URL=postgres://example",
+		"MIXPANEL_TOKEN=token-value",
+	}, renderedAssignments(rendered.Variables))
 
 	safe := renderedByKey(RenderDotenv(state, RenderPolicy{}))
 	assert.Equal(t, "https://api.example.com", safe["API_URL"].Value)
@@ -79,7 +75,7 @@ func renderedAssignments(rendered []RenderedVariable) []string {
 func TestDeclarationsFromSpecs_UsesStableKeys(t *testing.T) {
 	t.Parallel()
 
-	specs := legacy.ParseRawSpec(
+	specs := ParseRawSpec(
 		map[string]string{
 			"MIXPANEL_TOKEN": "Mixpanel token",
 			"API_URL":        "Public API URL",
@@ -101,7 +97,7 @@ func TestDeclarationsFromSpecs_UsesStableKeys(t *testing.T) {
 
 	assert.True(t, sort.StringsAreSorted(keys))
 	assert.Equal(t, []string{
-		"API_URL:" + string(TypeCoreOpaque),
+		"API_URL:" + string(TypeCorePlain),
 		"MIXPANEL_TOKEN:" + string(TypeCoreSecret),
 	}, keys)
 	assert.False(t, strings.Contains(strings.Join(keys, ","), "Plain"))

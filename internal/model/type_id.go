@@ -11,6 +11,7 @@ const typeIDPrefix = "https://owl.runme.dev/v1/types/"
 
 const (
 	TypeCoreOpaque TypeID = typeIDPrefix + "core/opaque"
+	TypeCorePlain  TypeID = typeIDPrefix + "core/plain"
 	TypeCoreSecret TypeID = typeIDPrefix + "core/secret"
 	TypeCoreURL    TypeID = typeIDPrefix + "core/url"
 	TypeCoreHost   TypeID = typeIDPrefix + "core/host"
@@ -21,6 +22,7 @@ const (
 
 var typeAliases = map[string]TypeID{
 	"core/opaque":    TypeCoreOpaque,
+	"core/plain":     TypeCorePlain,
 	"core/secret":    TypeCoreSecret,
 	"core/url":       TypeCoreURL,
 	"core/host":      TypeCoreHost,
@@ -30,6 +32,7 @@ var typeAliases = map[string]TypeID{
 
 var knownTypeIDs = map[TypeID]struct{}{
 	TypeCoreOpaque:    {},
+	TypeCorePlain:     {},
 	TypeCoreSecret:    {},
 	TypeCoreURL:       {},
 	TypeCoreHost:      {},
