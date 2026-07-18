@@ -137,6 +137,7 @@ type Diagnostic struct {
 type EffectiveState struct {
 	Values      map[FieldRef]Value
 	Bindings    []Binding
+	Operations  []OperationMetadata
 	Diagnostics []Diagnostic
 }
 

@@ -89,6 +89,57 @@ func TestRenderDotenv_SafeAndInsecure(t *testing.T) {
 	assert.Equal(t, "token-value", insecure["CUSTOM_SERVICE_TOKEN"].Value)
 }
 
+func TestIngestDotenv_MaterializesDeclaredMissingField(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 7, 18, 10, 0, 0, 0, time.UTC)
+	missingPassword := FieldRef{TypeID: TypeUniverseRedis, Instance: "default", Field: "password"}
+	state := IngestDotenv(map[string]string{
+		"REDIS_HOST": "localhost",
+	}, DotenvIngestOptions{
+		Source:       Source{Name: ".env", Kind: "dotenv"},
+		Clock:        func() time.Time { return now },
+		OperationIDs: NewMonotonicOperationIDGenerator("mat-op"),
+		Declarations: []FieldDeclaration{
+			{
+				FieldRef: missingPassword,
+				Key:      "REDIS_PASSWORD",
+				Required: true,
+				Source:   Source{Name: ".env.example", Kind: "dotenv-spec"},
+			},
+		},
+	})
+
+	require.Contains(t, state.Values, missingPassword)
+	assert.Equal(t, ValueStatusUnresolved, state.Values[missingPassword].Status)
+	assert.Equal(t, SensitivitySensitive, state.Values[missingPassword].Sensitivity)
+	assert.Equal(t, OperationID("mat-op-000002"), state.Values[missingPassword].LastOperationID)
+	assert.Contains(t, diagnosticCodes(state.Diagnostics), "dotenv.unresolved-required")
+	require.Len(t, state.Operations, 2)
+	assert.Equal(t, OperationKindNormalize, state.Operations[1].Kind)
+
+	rendered := RenderDotenvProjection(state, RenderPolicy{Insecure: true})
+	assert.NotContains(t, renderedByKey(rendered.Variables), "REDIS_PASSWORD")
+	assert.Contains(t, diagnosticCodes(rendered.Diagnostics), "dotenv.render-unresolved")
+}
+
+func TestIngestDotenv_CollidingProjectionKeepsFirstValue(t *testing.T) {
+	t.Parallel()
+
+	state := IngestDotenv(map[string]string{
+		"DEFAULT_REDIS_HOST": "later.local",
+		"REDIS_HOST":         "localhost",
+	}, DotenvIngestOptions{
+		Clock:        func() time.Time { return time.Date(2026, 7, 18, 10, 0, 0, 0, time.UTC) },
+		OperationIDs: NewMonotonicOperationIDGenerator("collision-op"),
+	})
+
+	defaultHost := FieldRef{TypeID: TypeUniverseRedis, Instance: "default", Field: "host"}
+	require.Contains(t, state.Values, defaultHost)
+	assert.Equal(t, "later.local", state.Values[defaultHost].Resolved)
+	assert.Contains(t, diagnosticCodes(state.Diagnostics), "dotenv.collision")
+}
+
 func TestFieldRefString(t *testing.T) {
 	t.Parallel()
 

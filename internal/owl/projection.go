@@ -55,6 +55,11 @@ type RenderedVariable struct {
 	Status ValueStatus
 }
 
+type RenderedProjection struct {
+	Variables   []RenderedVariable
+	Diagnostics []Diagnostic
+}
+
 type RenderPolicy struct {
 	Insecure bool
 }
