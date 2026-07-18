@@ -1,87 +1,89 @@
-package owl
+package registry
+
+import "github.com/runmedev/owl/internal/model"
 
 type TypeProvider interface {
-	ResolveType(TypeID) (TypeDef, bool)
-	ResolveTypeRef(string) (TypeDef, bool, error)
+	ResolveType(model.TypeID) (model.TypeDef, bool)
+	ResolveTypeRef(string) (model.TypeDef, bool, error)
 }
 
 type BuiltInRegistry struct {
-	types map[TypeID]TypeDef
+	types map[model.TypeID]model.TypeDef
 }
 
 func NewBuiltInRegistry() BuiltInRegistry {
-	types := map[TypeID]TypeDef{
-		TypeCoreOpaque: {
-			ID:          TypeCoreOpaque,
+	types := map[model.TypeID]model.TypeDef{
+		model.TypeCoreOpaque: {
+			ID:          model.TypeCoreOpaque,
 			Version:     "0.1.0",
 			Name:        "opaque",
-			Kind:        FieldKindScalar,
+			Kind:        model.FieldKindScalar,
 			Source:      "builtin-go",
 			Description: "Unknown string-carried ENV value with unknown semantics and sensitivity.",
 		},
-		TypeCoreSecret: {
-			ID:          TypeCoreSecret,
+		model.TypeCoreSecret: {
+			ID:          model.TypeCoreSecret,
 			Version:     "0.1.0",
 			Name:        "secret",
-			Kind:        FieldKindScalar,
+			Kind:        model.FieldKindScalar,
 			Source:      "builtin-go",
 			Description: "Sensitive string-carried ENV value.",
 		},
-		TypeCoreURL: {
-			ID:          TypeCoreURL,
+		model.TypeCoreURL: {
+			ID:          model.TypeCoreURL,
 			Version:     "0.1.0",
 			Name:        "url",
-			Kind:        FieldKindScalar,
+			Kind:        model.FieldKindScalar,
 			Source:      "builtin-go",
 			Description: "URL-shaped string-carried ENV value.",
 		},
-		TypeCoreHost: {
-			ID:          TypeCoreHost,
+		model.TypeCoreHost: {
+			ID:          model.TypeCoreHost,
 			Version:     "0.1.0",
 			Name:        "host",
-			Kind:        FieldKindScalar,
+			Kind:        model.FieldKindScalar,
 			Source:      "builtin-go",
 			Description: "Host-shaped string-carried ENV value.",
 		},
-		TypeCorePort: {
-			ID:          TypeCorePort,
+		model.TypeCorePort: {
+			ID:          model.TypeCorePort,
 			Version:     "0.1.0",
 			Name:        "port",
-			Kind:        FieldKindScalar,
+			Kind:        model.FieldKindScalar,
 			Source:      "builtin-go",
 			Description: "Port-shaped string-carried ENV value.",
 		},
-		TypeUniverseRedis: {
-			ID:      TypeUniverseRedis,
+		model.TypeUniverseRedis: {
+			ID:      model.TypeUniverseRedis,
 			Version: "0.1.0",
 			Name:    "redis",
-			Kind:    FieldKindObject,
+			Kind:    model.FieldKindObject,
 			Source:  "builtin-go",
-			Fields: map[string]FieldDef{
+			Fields: map[string]model.FieldDef{
 				"host": {
 					Name:                 "host",
-					TypeID:               TypeCoreHost,
+					TypeID:               model.TypeCoreHost,
 					Required:             true,
-					Sensitivity:          SensitivityNonSensitive,
-					SemanticVisibility:   SemanticVisibilityKnown,
+					Sensitivity:          model.SensitivityNonSensitive,
+					SemanticVisibility:   model.SemanticVisibilityKnown,
 					PreferredDotenvKey:   "REDIS_HOST",
 					AcceptedDotenvSuffix: []string{"HOST"},
 				},
 				"port": {
 					Name:                 "port",
-					TypeID:               TypeCorePort,
+					TypeID:               model.TypeCorePort,
 					Required:             true,
-					Sensitivity:          SensitivityNonSensitive,
-					SemanticVisibility:   SemanticVisibilityKnown,
+					Sensitivity:          model.SensitivityNonSensitive,
+					SemanticVisibility:   model.SemanticVisibilityKnown,
 					PreferredDotenvKey:   "REDIS_PORT",
 					AcceptedDotenvSuffix: []string{"PORT"},
 				},
 				"password": {
 					Name:                 "password",
-					TypeID:               TypeCoreSecret,
+					TypeID:               model.TypeCoreSecret,
 					Required:             false,
-					Sensitivity:          SensitivitySensitive,
-					SemanticVisibility:   SemanticVisibilityKnown,
+					Sensitivity:          model.SensitivitySensitive,
+					SemanticVisibility:   model.SemanticVisibilityKnown,
 					PreferredDotenvKey:   "REDIS_PASSWORD",
 					AcceptedDotenvSuffix: []string{"PASSWORD"},
 				},
@@ -91,15 +93,15 @@ func NewBuiltInRegistry() BuiltInRegistry {
 	return BuiltInRegistry{types: types}
 }
 
-func (r BuiltInRegistry) ResolveType(id TypeID) (TypeDef, bool) {
+func (r BuiltInRegistry) ResolveType(id model.TypeID) (model.TypeDef, bool) {
 	def, ok := r.types[id]
 	return def, ok
 }
 
-func (r BuiltInRegistry) ResolveTypeRef(ref string) (TypeDef, bool, error) {
-	id, err := ParseTypeID(ref)
+func (r BuiltInRegistry) ResolveTypeRef(ref string) (model.TypeDef, bool, error) {
+	id, err := model.ParseTypeID(ref)
 	if err != nil {
-		return TypeDef{}, false, err
+		return model.TypeDef{}, false, err
 	}
 	def, ok := r.ResolveType(id)
 	return def, ok, nil

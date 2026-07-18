@@ -1,9 +1,64 @@
-package owl
+package dotenv
 
 import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/runmedev/owl/internal/model"
+)
+
+type (
+	Source               = model.Source
+	Clock                = model.Clock
+	OperationIDGenerator = model.OperationIDGenerator
+	FieldRef             = model.FieldRef
+	ProjectionKey        = model.ProjectionKey
+	Sensitivity          = model.Sensitivity
+	SemanticVisibility   = model.SemanticVisibility
+	EffectiveState       = model.EffectiveState
+	BindingConfidence    = model.BindingConfidence
+	Diagnostic           = model.Diagnostic
+	Value                = model.Value
+	ValueStatus          = model.ValueStatus
+	Binding              = model.Binding
+	RenderPolicy         = model.RenderPolicy
+	RenderedVariable     = model.RenderedVariable
+	RenderedProjection   = model.RenderedProjection
+	OperationID          = model.OperationID
+	OperationMetadata    = model.OperationMetadata
+)
+
+const (
+	BindingConfidenceExplicit    = model.BindingConfidenceExplicit
+	BindingConfidenceTypeDerived = model.BindingConfidenceTypeDerived
+	BindingConfidenceOpaque      = model.BindingConfidenceOpaque
+	DiagnosticInfo               = model.DiagnosticInfo
+	DiagnosticWarning            = model.DiagnosticWarning
+	OperationKindLoad            = model.OperationKindLoad
+	OperationKindNormalize       = model.OperationKindNormalize
+	ProjectionDotenv             = model.ProjectionDotenv
+	SemanticVisibilityKnown      = model.SemanticVisibilityKnown
+	SemanticVisibilityOpaque     = model.SemanticVisibilityOpaque
+	SensitivityNonSensitive      = model.SensitivityNonSensitive
+	SensitivitySensitive         = model.SensitivitySensitive
+	SensitivityUnknown           = model.SensitivityUnknown
+	TypeCoreHost                 = model.TypeCoreHost
+	TypeCoreOpaque               = model.TypeCoreOpaque
+	TypeCorePort                 = model.TypeCorePort
+	TypeCoreSecret               = model.TypeCoreSecret
+	TypeCoreURL                  = model.TypeCoreURL
+	TypeUniverseRedis            = model.TypeUniverseRedis
+	ValueStatusHidden            = model.ValueStatusHidden
+	ValueStatusLiteral           = model.ValueStatusLiteral
+	ValueStatusMasked            = model.ValueStatusMasked
+	ValueStatusUnresolved        = model.ValueStatusUnresolved
+)
+
+var (
+	NewEffectiveState                = model.NewEffectiveState
+	NewMonotonicOperationIDGenerator = model.NewMonotonicOperationIDGenerator
+	RealClock                        = model.RealClock
 )
 
 type DotenvIngestOptions struct {
