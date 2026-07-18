@@ -1,71 +1,50 @@
 package owl
 
 import (
-	"context"
-
-	impl "github.com/runmedev/owl/internal/owl"
-)
-
-const (
-	AtomicNameOpaque   = impl.AtomicNameOpaque
-	AtomicNamePlain    = impl.AtomicNamePlain
-	AtomicNameSecret   = impl.AtomicNameSecret
-	AtomicNamePassword = impl.AtomicNamePassword
-	AtomicNameDefault  = impl.AtomicNameDefault
-
-	SpecTypeKey = impl.SpecTypeKey
-
-	ValidateErrorVarRequired      = impl.ValidateErrorVarRequired
-	ValidateErrorTagFailed        = impl.ValidateErrorTagFailed
-	ValidateErrorResolutionFailed = impl.ValidateErrorResolutionFailed
+	"github.com/runmedev/owl/internal/model"
+	"github.com/runmedev/owl/internal/store"
 )
 
 type (
-	ExecutionInfo = impl.ExecutionInfo
+	Store          = store.Store
+	StoreOption    = store.StoreOption
+	SnapshotPolicy = store.SnapshotPolicy
+	SnapshotItem   = store.SnapshotItem
+	SourcePolicy   = store.SourcePolicy
+	CheckResult    = store.CheckResult
 
-	Store       = impl.Store
-	StoreOption = impl.StoreOption
+	TypeID             = model.TypeID
+	FieldRef           = model.FieldRef
+	Source             = model.Source
+	ValueStatus        = model.ValueStatus
+	Diagnostic         = model.Diagnostic
+	DiagnosticSeverity = model.DiagnosticSeverity
+)
 
-	SetVar      = impl.SetVar
-	SetVarSpec  = impl.SetVarSpec
-	SetVarValue = impl.SetVarValue
-	SetVarError = impl.SetVarError
-	SetVarItem  = impl.SetVarItem
-	SetVarItems = impl.SetVarItems
+const (
+	TypeCoreOpaque    = model.TypeCoreOpaque
+	TypeCorePlain     = model.TypeCorePlain
+	TypeCoreSecret    = model.TypeCoreSecret
+	TypeCoreURL       = model.TypeCoreURL
+	TypeCoreHost      = model.TypeCoreHost
+	TypeCorePort      = model.TypeCorePort
+	TypeUniverseRedis = model.TypeUniverseRedis
 
-	Spec     = impl.Spec
-	Specs    = impl.Specs
-	SpecDef  = impl.SpecDef
-	SpecDefs = impl.SpecDefs
+	ValueStatusLiteral    = model.ValueStatusLiteral
+	ValueStatusUnresolved = model.ValueStatusUnresolved
+	ValueStatusMasked     = model.ValueStatusMasked
+	ValueStatusHidden     = model.ValueStatusHidden
 
-	ValidationError       = impl.ValidationError
-	ValidationErrors      = impl.ValidationErrors
-	ValidateErrorType     = impl.ValidateErrorType
-	TagFailedError        = impl.TagFailedError
-	RequiredError         = impl.RequiredError
-	ResolutionFailedError = impl.ResolutionFailedError
+	DiagnosticInfo    = model.DiagnosticInfo
+	DiagnosticWarning = model.DiagnosticWarning
+	DiagnosticError   = model.DiagnosticError
 )
 
 var (
-	NewStore          = impl.NewStore
-	WithSpecFile      = impl.WithSpecFile
-	WithEnvFile       = impl.WithEnvFile
-	WithEnvs          = impl.WithEnvs
-	WithResolutionCRD = impl.WithResolutionCRD
-	WithSpecDefsCRD   = impl.WithSpecDefsCRD
-	WithLogger        = impl.WithLogger
-
-	ParseRawSpec = impl.ParseRawSpec
-
-	NewTagFailedError        = impl.NewTagFailedError
-	NewRequiredError         = impl.NewRequiredError
-	NewResolutionFailedError = impl.NewResolutionFailedError
+	NewStore      = store.NewStore
+	WithEnvFile   = store.WithEnvFile
+	WithSpecFile  = store.WithSpecFile
+	WithEnvBytes  = store.WithEnvBytes
+	WithSpecBytes = store.WithSpecBytes
+	WithEnvs      = store.WithEnvs
 )
-
-func ContextWithExecutionInfo(ctx context.Context, info ExecutionInfo) context.Context {
-	return impl.ContextWithExecutionInfo(ctx, info)
-}
-
-func ExecutionInfoFromContext(ctx context.Context) (ExecutionInfo, bool) {
-	return impl.ExecutionInfoFromContext(ctx)
-}

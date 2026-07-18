@@ -6,12 +6,9 @@ import (
 	"io"
 	"strings"
 	"text/tabwriter"
-	"time"
 
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
-
-	"github.com/runmedev/owl/pkg/owl"
 )
 
 type StoreClient interface {
@@ -40,14 +37,14 @@ type SnapshotResult struct {
 }
 
 type SnapshotEnv struct {
-	Name          string
-	OriginalValue string
-	ResolvedValue string
-	Description   string
-	Spec          string
-	Origin        string
-	Status        string
-	UpdateTime    string
+	Name        string
+	Value       string
+	Description string
+	Type        string
+	Field       string
+	Source      string
+	Status      string
+	Diagnostics []string
 }
 
 type SourceRequest struct {
@@ -62,7 +59,8 @@ type SourceResult struct {
 type CheckRequest struct{}
 
 type CheckResult struct {
-	Message string
+	OK          bool
+	Diagnostics []string
 }
 
 func NewStoreCommand(opts StoreCommandOptions) *cobra.Command {
@@ -183,12 +181,19 @@ func newCheckCommand(opts StoreCommandOptions) *cobra.Command {
 				return err
 			}
 
-			message := result.Message
-			if message == "" {
-				message = "Success"
+			if len(result.Diagnostics) == 0 {
+				_, err = fmt.Fprintln(cmd.OutOrStdout(), "Success")
+				return err
 			}
-			_, err = fmt.Fprintln(cmd.OutOrStdout(), message)
-			return err
+			for _, diagnostic := range result.Diagnostics {
+				if _, err = fmt.Fprintln(cmd.OutOrStdout(), diagnostic); err != nil {
+					return err
+				}
+			}
+			if !result.OK {
+				return errors.New("owl store check failed")
+			}
+			return nil
 		},
 	}
 	if opts.ConfigureCheckCommand != nil {
@@ -207,59 +212,26 @@ func (opts StoreCommandOptions) client(cmd *cobra.Command) (StoreClient, error) 
 
 func renderSnapshot(w io.Writer, result *SnapshotResult, req SnapshotRequest) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(tw, "NAME\tVALUE\tDESCRIPTION\tSPEC\tSOURCE\tUPDATED"); err != nil {
+	if _, err := fmt.Fprintln(tw, "NAME\tVALUE\tTYPE\tSOURCE\tSTATUS\tDESCRIPTION"); err != nil {
 		return err
 	}
 
 	lines := req.Limit
-	specless := true
-	for i := range result.Envs {
-		backwards := result.Envs[len(result.Envs)-i-1]
-		if backwards.Spec != owl.AtomicNameOpaque {
-			specless = false
-			lines = len(result.Envs) - i
-			break
-		}
-	}
-
 	for i, env := range result.Envs {
 		if i >= lines && !req.All {
 			break
 		}
-		if !req.All && !specless && env.Spec == owl.AtomicNameOpaque {
-			break
-		}
 
-		value := env.ResolvedValue
-		switch env.Status {
-		case "UNSPECIFIED":
-			value = "[unset]"
-		case "MASKED":
-			value = "[masked]"
-		case "HIDDEN":
-			value = "[hidden]"
-			if req.Reveal {
-				value = env.OriginalValue
-			}
-		}
-
-		updated := "-"
-		if env.UpdateTime != "" {
-			if t, err := time.Parse(time.RFC3339, env.UpdateTime); err == nil {
-				updated = t.Format(time.DateTime)
-			}
-		}
-
-		strippedVal := strings.ReplaceAll(strings.ReplaceAll(value, "\n", " "), "\r", "")
+		strippedVal := strings.ReplaceAll(strings.ReplaceAll(env.Value, "\n", " "), "\r", "")
 		if _, err := fmt.Fprintf(
 			tw,
 			"%s\t%s\t%s\t%s\t%s\t%s\n",
 			env.Name,
 			strippedVal,
+			env.Type,
+			env.Source,
+			env.Status,
 			env.Description,
-			env.Spec,
-			env.Origin,
-			updated,
 		); err != nil {
 			return err
 		}
