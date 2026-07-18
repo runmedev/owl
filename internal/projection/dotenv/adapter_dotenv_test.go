@@ -1,4 +1,4 @@
-package owl
+package dotenv
 
 import (
 	"sort"
@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	legacy "github.com/runmedev/owl/internal/owl"
 )
 
 func TestAdaptDotenvFiles_CompatibleWithOldStoreForSimpleDotenv(t *testing.T) {
@@ -22,7 +24,7 @@ MIXPANEL_TOKEN="Mixpanel token" # Secret!
 DATABASE_URL="Database URL" # Opaque
 `)
 
-	oldStore, err := NewStore(WithSpecFile(".env.example", specRaw), WithEnvFile(".env", envRaw))
+	oldStore, err := legacy.NewStore(legacy.WithSpecFile(".env.example", specRaw), legacy.WithEnvFile(".env", envRaw))
 	require.NoError(t, err)
 	oldValues, err := oldStore.InsecureValues()
 	require.NoError(t, err)
@@ -77,7 +79,7 @@ func renderedAssignments(rendered []RenderedVariable) []string {
 func TestDeclarationsFromSpecs_UsesStableKeys(t *testing.T) {
 	t.Parallel()
 
-	specs := ParseRawSpec(
+	specs := legacy.ParseRawSpec(
 		map[string]string{
 			"MIXPANEL_TOKEN": "Mixpanel token",
 			"API_URL":        "Public API URL",
