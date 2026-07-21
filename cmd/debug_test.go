@@ -40,9 +40,22 @@ func TestDebugCommandIsHidden(t *testing.T) {
 				continue
 			}
 			schemaFound = true
-			assert.True(t, sub.Hidden)
+			assert.False(t, sub.Hidden)
 		}
 		assert.True(t, schemaFound)
 	}
 	assert.True(t, debugFound)
+}
+
+func TestDebugHelpShowsSubcommands(t *testing.T) {
+	t.Parallel()
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"debug", "--help"})
+
+	require.NoError(t, cmd.Execute())
+	assert.Contains(t, out.String(), "graphql-schema")
 }

@@ -22,10 +22,9 @@ func NewDebugCommand() *cobra.Command {
 
 func newDebugGraphQLSchemaCommand() *cobra.Command {
 	cmd := cobra.Command{
-		Hidden: true,
-		Use:    "graphql-schema",
-		Short:  "Prints the hidden Owl GraphQL schema",
-		Long:   "Prints the hidden Owl GraphQL schema introspection JSON.",
+		Use:   "graphql-schema",
+		Short: "Prints the hidden Owl GraphQL schema",
+		Long:  "Prints the hidden Owl GraphQL schema introspection JSON.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			schema, err := owl.GraphQLSchema()
 			if err != nil {
