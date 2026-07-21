@@ -62,7 +62,7 @@ func (c *LocalStoreClient) Source(_ context.Context, req SourceRequest) (*Source
 		return nil, err
 	}
 
-	envs, err := store.Source(owl.SourcePolicy{Insecure: req.Insecure})
+	envs, err := store.Dotenv(owl.DotenvPolicy{Insecure: req.Insecure})
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +95,7 @@ func (c *LocalStoreClient) store() (*owl.Store, error) {
 		if err != nil {
 			return nil, err
 		}
-		opts = append(opts, owl.WithSpecBytes(file, raw))
+		opts = append(opts, owl.WithEnvSpecBytes(file, raw))
 	}
 
 	envFiles, err := filesOrDefaults(c.options.EnvFiles, ".env")

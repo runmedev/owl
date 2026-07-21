@@ -27,11 +27,17 @@ type LoadInput = store.LoadInput
 
 type SnapshotPolicy = store.SnapshotPolicy
 
-type SourcePolicy = store.SourcePolicy
+type DotenvPolicy = store.DotenvPolicy
+
+type GetPolicy = store.GetPolicy
 
 type SnapshotItem = store.SnapshotItem
 
+type GetResult = store.GetResult
+
 type CheckResult = store.CheckResult
+
+type StateEnvelope = store.StateEnvelope
 
 func NewRuntime(types registry.TypeProvider) (*Runtime, error) {
 	if types == nil {
@@ -61,7 +67,7 @@ func (r *Runtime) Snapshot(ctx context.Context, input LoadInput, policy Snapshot
 	return decodeSnapshot(raw), nil
 }
 
-func (r *Runtime) Dotenv(ctx context.Context, input LoadInput, policy SourcePolicy) ([]string, error) {
+func (r *Runtime) Dotenv(ctx context.Context, input LoadInput, policy DotenvPolicy) ([]string, error) {
 	result, err := r.do(ctx, dotenvQuery, map[string]interface{}{
 		"input":    marshalInput(input),
 		"insecure": policy.Insecure,
@@ -78,6 +84,59 @@ func (r *Runtime) Dotenv(ctx context.Context, input LoadInput, policy SourcePoli
 		return nil, err
 	}
 	return envs, nil
+}
+
+func (r *Runtime) Get(ctx context.Context, input LoadInput, key string, policy GetPolicy) (GetResult, bool, error) {
+	result, err := r.do(ctx, getQuery, map[string]interface{}{
+		"input":  marshalInput(input),
+		"key":    key,
+		"reveal": policy.Reveal,
+	})
+	if err != nil {
+		return GetResult{}, false, err
+	}
+	raw, err := extractPath(result.Data, "Environment", "load", "normalize", "validate", "render", "get")
+	if err != nil {
+		return GetResult{}, false, err
+	}
+	if raw == nil {
+		return GetResult{}, false, nil
+	}
+	return decodeGet(raw), true, nil
+}
+
+func (r *Runtime) SensitiveKeys(ctx context.Context, input LoadInput) ([]string, error) {
+	result, err := r.do(ctx, sensitiveKeysQuery, map[string]interface{}{
+		"input": marshalInput(input),
+	})
+	if err != nil {
+		return nil, err
+	}
+	raw, err := extractPath(result.Data, "Environment", "load", "normalize", "validate", "render", "sensitiveKeys")
+	if err != nil {
+		return nil, err
+	}
+	return decodeStringList(raw), nil
+}
+
+func (r *Runtime) StateEnvelope(ctx context.Context, input LoadInput) (StateEnvelope, error) {
+	return r.StateEnvelopeAfter(ctx, input, store.LoadInput{}, nil)
+}
+
+func (r *Runtime) StateEnvelopeAfter(ctx context.Context, input LoadInput, patch store.LoadInput, deleted []string) (StateEnvelope, error) {
+	result, err := r.do(ctx, stateEnvelopeQuery, map[string]interface{}{
+		"input":   marshalInput(input),
+		"updates": marshalDotenvInput(patch),
+		"deleted": deleted,
+	})
+	if err != nil {
+		return StateEnvelope{}, err
+	}
+	raw, err := extractPath(result.Data, "Environment", "load", "update", "delete", "normalize", "validate", "state", "envelope")
+	if err != nil {
+		return StateEnvelope{}, err
+	}
+	return decodeEnvelope(raw)
 }
 
 func (r *Runtime) Check(ctx context.Context, input LoadInput) (CheckResult, error) {
@@ -162,9 +221,93 @@ func marshalInput(input LoadInput) map[string]interface{} {
 	if source := marshalSource(input.DotenvSource); source != nil {
 		dotenv["source"] = source
 	}
-	return map[string]interface{}{
+	result := map[string]interface{}{
 		"dotenv":    dotenv,
 		"contracts": contracts,
+	}
+	if input.Envelope != nil {
+		result["envelope"] = marshalEnvelope(*input.Envelope)
+	}
+	return result
+}
+
+func marshalDotenvInput(input LoadInput) map[string]interface{} {
+	if len(input.Dotenv) == 0 {
+		return nil
+	}
+	variables := make([]map[string]interface{}, 0, len(input.Dotenv))
+	for _, variable := range input.Dotenv {
+		variables = append(variables, map[string]interface{}{
+			"key":   variable.Key,
+			"value": variable.Value,
+		})
+	}
+	dotenv := map[string]interface{}{"variables": variables}
+	if source := marshalSource(input.DotenvSource); source != nil {
+		dotenv["source"] = source
+	}
+	return dotenv
+}
+
+func marshalEnvelope(envelope StateEnvelope) map[string]interface{} {
+	return map[string]interface{}{
+		"modelVersion": envelope.ModelVersion,
+		"state":        marshalEffectiveState(envelope.State),
+	}
+}
+
+func marshalEffectiveState(state model.EffectiveState) map[string]interface{} {
+	values := make([]map[string]interface{}, 0, len(state.Values))
+	for ref, value := range state.Values {
+		value.FieldRef = ref
+		values = append(values, map[string]interface{}{
+			"field":              marshalFieldRef(value.FieldRef),
+			"original":           value.Original,
+			"resolved":           value.Resolved,
+			"status":             string(value.Status),
+			"sensitivity":        string(value.Sensitivity),
+			"semanticVisibility": string(value.SemanticVisibility),
+			"origin":             marshalSource(value.Origin),
+			"source":             marshalSource(value.Source),
+		})
+	}
+	bindings := make([]map[string]interface{}, 0, len(state.Bindings))
+	for _, binding := range state.Bindings {
+		bindings = append(bindings, map[string]interface{}{
+			"id":          binding.ID,
+			"field":       marshalFieldRef(binding.FieldRef),
+			"projection":  string(binding.ProjectionID),
+			"key":         string(binding.Key),
+			"description": binding.Description,
+			"source":      marshalSource(binding.Source),
+			"origin":      marshalSource(binding.Origin),
+			"confidence":  string(binding.Confidence),
+			"explicit":    binding.Explicit,
+			"preserveKey": binding.PreserveKey,
+		})
+	}
+	diagnostics := make([]map[string]interface{}, 0, len(state.Diagnostics))
+	for _, diagnostic := range state.Diagnostics {
+		diagnostics = append(diagnostics, map[string]interface{}{
+			"severity": string(diagnostic.Severity),
+			"code":     diagnostic.Code,
+			"message":  diagnostic.Message,
+			"key":      diagnostic.Key,
+			"field":    marshalFieldRef(diagnostic.FieldRef),
+		})
+	}
+	return map[string]interface{}{
+		"values":      values,
+		"bindings":    bindings,
+		"diagnostics": diagnostics,
+	}
+}
+
+func marshalFieldRef(ref model.FieldRef) map[string]interface{} {
+	return map[string]interface{}{
+		"typeID":   string(ref.TypeID),
+		"instance": ref.Instance,
+		"field":    ref.Field,
 	}
 }
 
@@ -286,6 +429,77 @@ func decodeCheck(raw interface{}) CheckResult {
 	}
 }
 
+func decodeGet(raw interface{}) GetResult {
+	row, ok := raw.(map[string]interface{})
+	if !ok {
+		return GetResult{}
+	}
+	return GetResult{
+		Key:         stringValue(row["key"]),
+		Field:       decodeFieldRef(row["field"]),
+		Value:       stringValue(row["value"]),
+		Status:      model.ValueStatus(stringValue(row["status"])),
+		Source:      decodeSource(row["source"]),
+		Diagnostics: decodeDiagnostics(row["diagnostics"]),
+	}
+}
+
+func decodeEnvelope(raw interface{}) (StateEnvelope, error) {
+	row, ok := raw.(map[string]interface{})
+	if !ok {
+		return StateEnvelope{}, nil
+	}
+	return StateEnvelope{
+		ModelVersion: stringValue(row["modelVersion"]),
+		State:        decodeEffectiveState(row["state"]),
+	}, nil
+}
+
+func decodeEffectiveState(raw interface{}) model.EffectiveState {
+	state := model.NewEffectiveState()
+	row, ok := raw.(map[string]interface{})
+	if !ok {
+		return state
+	}
+	for _, item := range decodeList(row["values"]) {
+		valueRaw, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		value := model.Value{
+			FieldRef:           decodeFieldRef(valueRaw["field"]),
+			Original:           stringValue(valueRaw["original"]),
+			Resolved:           stringValue(valueRaw["resolved"]),
+			Status:             model.ValueStatus(stringValue(valueRaw["status"])),
+			Sensitivity:        model.Sensitivity(stringValue(valueRaw["sensitivity"])),
+			SemanticVisibility: model.SemanticVisibility(stringValue(valueRaw["semanticVisibility"])),
+			Origin:             decodeSource(valueRaw["origin"]),
+			Source:             decodeSource(valueRaw["source"]),
+		}
+		state.Values[value.FieldRef] = value
+	}
+	for _, item := range decodeList(row["bindings"]) {
+		bindingRaw, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		state.Bindings = append(state.Bindings, model.Binding{
+			ID:           stringValue(bindingRaw["id"]),
+			FieldRef:     decodeFieldRef(bindingRaw["field"]),
+			ProjectionID: model.ProjectionID(stringValue(bindingRaw["projection"])),
+			Key:          model.ProjectionKey(stringValue(bindingRaw["key"])),
+			Description:  stringValue(bindingRaw["description"]),
+			Source:       decodeSource(bindingRaw["source"]),
+			Origin:       decodeSource(bindingRaw["origin"]),
+			Confidence:   model.BindingConfidence(stringValue(bindingRaw["confidence"])),
+			Explicit:     boolValue(bindingRaw["explicit"]),
+			PreserveKey:  boolValue(bindingRaw["preserveKey"]),
+		})
+	}
+	state.Diagnostics = decodeDiagnostics(row["diagnostics"])
+	return state
+}
+
 func decodeDiagnostics(raw interface{}) []model.Diagnostic {
 	rows, ok := raw.([]interface{})
 	if !ok {
@@ -302,6 +516,7 @@ func decodeDiagnostics(raw interface{}) []model.Diagnostic {
 			Code:     stringValue(item["code"]),
 			Message:  stringValue(item["message"]),
 			Key:      stringValue(item["key"]),
+			FieldRef: decodeFieldRef(item["field"]),
 		})
 	}
 	return diagnostics
@@ -315,6 +530,90 @@ query OwlDotenv($input: LoadInput!, $insecure: Boolean = false) {
         validate {
           render {
             dotenv(insecure: $insecure)
+          }
+        }
+      }
+    }
+  }
+}`
+
+const getQuery = `
+query OwlGet($input: LoadInput!, $key: String!, $reveal: Boolean = false) {
+  Environment {
+    load(input: $input) {
+      normalize {
+        validate {
+          render {
+            get(key: $key, reveal: $reveal) {
+              key
+              field { typeID instance field }
+              value
+              status
+              source { name kind }
+              diagnostics { severity code message key field }
+            }
+          }
+        }
+      }
+    }
+  }
+}`
+
+const sensitiveKeysQuery = `
+query OwlSensitiveKeys($input: LoadInput!) {
+  Environment {
+    load(input: $input) {
+      normalize {
+        validate {
+          render {
+            sensitiveKeys
+          }
+        }
+      }
+    }
+  }
+}`
+
+const stateEnvelopeQuery = `
+query OwlStateEnvelope($input: LoadInput!, $updates: DotenvInput, $deleted: [String!]) {
+  Environment {
+    load(input: $input) {
+      update(dotenv: $updates) {
+        delete(keys: $deleted) {
+          normalize {
+            validate {
+              state {
+                envelope {
+                  modelVersion
+                  state {
+                    values {
+                      field { typeID instance field }
+                      original
+                      resolved
+                      status
+                      sensitivity
+                      semanticVisibility
+                      origin { name kind }
+                      source { name kind }
+                    }
+                    bindings {
+                      id
+                      field { typeID instance field }
+                      projection
+                      key
+                      description
+                      source { name kind }
+                      origin { name kind }
+                      confidence
+                      explicit
+                      preserveKey
+                    }
+                    diagnostics { severity code message key field }
+                  }
+                  provenance { sources { name kind } }
+                }
+              }
+            }
           }
         }
       }

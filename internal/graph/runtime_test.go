@@ -88,7 +88,7 @@ func TestRuntimeRendersDotenvThroughGraphQL(t *testing.T) {
 				},
 			},
 		},
-	}, SourcePolicy{Insecure: true})
+	}, DotenvPolicy{Insecure: true})
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{
