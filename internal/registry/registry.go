@@ -21,6 +21,14 @@ func NewBuiltInRegistry() BuiltInRegistry {
 			Source:      "builtin-go",
 			Description: "Unknown string-carried ENV value with unknown semantics and sensitivity.",
 		},
+		model.TypeCorePlain: {
+			ID:          model.TypeCorePlain,
+			Version:     "0.1.0",
+			Name:        "plain",
+			Kind:        model.FieldKindScalar,
+			Source:      "builtin-go",
+			Description: "Known non-sensitive string-carried ENV value with no narrower semantic contract.",
+		},
 		model.TypeCoreSecret: {
 			ID:          model.TypeCoreSecret,
 			Version:     "0.1.0",

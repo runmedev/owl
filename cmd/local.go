@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -43,13 +42,13 @@ func NewLocalStoreClient(options LocalStoreOptions) *LocalStoreClient {
 	return &LocalStoreClient{options: options}
 }
 
-func (c *LocalStoreClient) Snapshot(context.Context, SnapshotRequest) (*SnapshotResult, error) {
+func (c *LocalStoreClient) Snapshot(_ context.Context, req SnapshotRequest) (*SnapshotResult, error) {
 	store, err := c.store()
 	if err != nil {
 		return nil, err
 	}
 
-	items, err := store.Snapshot()
+	items, err := store.Snapshot(owl.SnapshotPolicy{Reveal: req.Reveal})
 	if err != nil {
 		return nil, err
 	}
@@ -57,13 +56,13 @@ func (c *LocalStoreClient) Snapshot(context.Context, SnapshotRequest) (*Snapshot
 	return &SnapshotResult{Envs: snapshotEnvsFromItems(items)}, nil
 }
 
-func (c *LocalStoreClient) Source(context.Context, SourceRequest) (*SourceResult, error) {
+func (c *LocalStoreClient) Source(_ context.Context, req SourceRequest) (*SourceResult, error) {
 	store, err := c.store()
 	if err != nil {
 		return nil, err
 	}
 
-	envs, err := store.InsecureValues()
+	envs, err := store.Source(owl.SourcePolicy{Insecure: req.Insecure})
 	if err != nil {
 		return nil, err
 	}
@@ -77,11 +76,11 @@ func (c *LocalStoreClient) Check(context.Context, CheckRequest) (*CheckResult, e
 		return nil, err
 	}
 
-	if _, err := store.Snapshot(); err != nil {
-		return nil, err
-	}
-
-	return &CheckResult{Message: "Success"}, nil
+	check := store.Check()
+	return &CheckResult{
+		OK:          check.OK,
+		Diagnostics: diagnosticStrings(check.Diagnostics),
+	}, nil
 }
 
 func (c *LocalStoreClient) store() (*owl.Store, error) {
@@ -96,7 +95,7 @@ func (c *LocalStoreClient) store() (*owl.Store, error) {
 		if err != nil {
 			return nil, err
 		}
-		opts = append(opts, owl.WithSpecFile(file, raw))
+		opts = append(opts, owl.WithSpecBytes(file, raw))
 	}
 
 	envFiles, err := filesOrDefaults(c.options.EnvFiles, ".env")
@@ -108,7 +107,7 @@ func (c *LocalStoreClient) store() (*owl.Store, error) {
 		if err != nil {
 			return nil, err
 		}
-		opts = append(opts, owl.WithEnvFile(file, raw))
+		opts = append(opts, owl.WithEnvBytes(file, raw))
 	}
 
 	return owl.NewStore(opts...)
@@ -132,30 +131,41 @@ func filesOrDefaults(files []string, defaults ...string) ([]string, error) {
 	return existing, nil
 }
 
-func snapshotEnvsFromItems(items owl.SetVarItems) []SnapshotEnv {
+func snapshotEnvsFromItems(items []owl.SnapshotItem) []SnapshotEnv {
 	envs := make([]SnapshotEnv, 0, len(items))
 	for _, item := range items {
-		env := SnapshotEnv{}
-		if item.Var != nil {
-			env.Name = item.Var.Key
-			env.Origin = item.Var.Origin
-			if item.Var.Updated != nil {
-				env.UpdateTime = item.Var.Updated.Format(time.RFC3339)
-			}
+		status := string(item.Status)
+		if status == "" {
+			status = "UNSPECIFIED"
 		}
-		if item.Value != nil {
-			env.OriginalValue = item.Value.Original
-			env.ResolvedValue = item.Value.Resolved
-			env.Status = item.Value.Status
-			if env.Status == "" {
-				env.Status = "UNSPECIFIED"
-			}
-		}
-		if item.Spec != nil {
-			env.Description = item.Spec.Description
-			env.Spec = item.Spec.Name
-		}
-		envs = append(envs, env)
+		envs = append(envs, SnapshotEnv{
+			Name:        item.Name,
+			Value:       item.Value,
+			Description: item.Description,
+			Type:        item.Type.Alias(),
+			Field:       item.Field.String(),
+			Source:      item.Source.Name,
+			Status:      status,
+			Diagnostics: diagnosticStrings(item.Diagnostics),
+		})
 	}
 	return envs
+}
+
+func diagnosticStrings(diagnostics []owl.Diagnostic) []string {
+	result := make([]string, 0, len(diagnostics))
+	for _, diagnostic := range diagnostics {
+		result = append(result, diagnosticString(diagnostic))
+	}
+	return result
+}
+
+func diagnosticString(diagnostic owl.Diagnostic) string {
+	if diagnostic.Key != "" {
+		return string(diagnostic.Severity) + " " + diagnostic.Code + " " + diagnostic.Key + ": " + diagnostic.Message
+	}
+	if diagnostic.FieldRef.TypeID != "" {
+		return string(diagnostic.Severity) + " " + diagnostic.Code + " " + diagnostic.FieldRef.String() + ": " + diagnostic.Message
+	}
+	return string(diagnostic.Severity) + " " + diagnostic.Code + ": " + diagnostic.Message
 }

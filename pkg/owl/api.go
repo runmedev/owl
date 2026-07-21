@@ -1,71 +1,157 @@
 package owl
 
 import (
+	"bytes"
 	"context"
+	"io"
+	"strings"
 
-	impl "github.com/runmedev/owl/internal/owl"
-)
-
-const (
-	AtomicNameOpaque   = impl.AtomicNameOpaque
-	AtomicNamePlain    = impl.AtomicNamePlain
-	AtomicNameSecret   = impl.AtomicNameSecret
-	AtomicNamePassword = impl.AtomicNamePassword
-	AtomicNameDefault  = impl.AtomicNameDefault
-
-	SpecTypeKey = impl.SpecTypeKey
-
-	ValidateErrorVarRequired      = impl.ValidateErrorVarRequired
-	ValidateErrorTagFailed        = impl.ValidateErrorTagFailed
-	ValidateErrorResolutionFailed = impl.ValidateErrorResolutionFailed
+	"github.com/runmedev/owl/internal/graph"
+	"github.com/runmedev/owl/internal/model"
+	"github.com/runmedev/owl/internal/registry"
+	"github.com/runmedev/owl/internal/store"
 )
 
 type (
-	ExecutionInfo = impl.ExecutionInfo
+	SnapshotPolicy = store.SnapshotPolicy
+	SnapshotItem   = store.SnapshotItem
+	SourcePolicy   = store.SourcePolicy
+	CheckResult    = store.CheckResult
 
-	Store       = impl.Store
-	StoreOption = impl.StoreOption
-
-	SetVar      = impl.SetVar
-	SetVarSpec  = impl.SetVarSpec
-	SetVarValue = impl.SetVarValue
-	SetVarError = impl.SetVarError
-	SetVarItem  = impl.SetVarItem
-	SetVarItems = impl.SetVarItems
-
-	Spec     = impl.Spec
-	Specs    = impl.Specs
-	SpecDef  = impl.SpecDef
-	SpecDefs = impl.SpecDefs
-
-	ValidationError       = impl.ValidationError
-	ValidationErrors      = impl.ValidationErrors
-	ValidateErrorType     = impl.ValidateErrorType
-	TagFailedError        = impl.TagFailedError
-	RequiredError         = impl.RequiredError
-	ResolutionFailedError = impl.ResolutionFailedError
+	TypeID             = model.TypeID
+	FieldRef           = model.FieldRef
+	Source             = model.Source
+	ValueStatus        = model.ValueStatus
+	Diagnostic         = model.Diagnostic
+	DiagnosticSeverity = model.DiagnosticSeverity
 )
 
-var (
-	NewStore          = impl.NewStore
-	WithSpecFile      = impl.WithSpecFile
-	WithEnvFile       = impl.WithEnvFile
-	WithEnvs          = impl.WithEnvs
-	WithResolutionCRD = impl.WithResolutionCRD
-	WithSpecDefsCRD   = impl.WithSpecDefsCRD
-	WithLogger        = impl.WithLogger
+const (
+	TypeCoreOpaque    = model.TypeCoreOpaque
+	TypeCorePlain     = model.TypeCorePlain
+	TypeCoreSecret    = model.TypeCoreSecret
+	TypeCoreURL       = model.TypeCoreURL
+	TypeCoreHost      = model.TypeCoreHost
+	TypeCorePort      = model.TypeCorePort
+	TypeUniverseRedis = model.TypeUniverseRedis
 
-	ParseRawSpec = impl.ParseRawSpec
+	ValueStatusLiteral    = model.ValueStatusLiteral
+	ValueStatusUnresolved = model.ValueStatusUnresolved
+	ValueStatusMasked     = model.ValueStatusMasked
+	ValueStatusHidden     = model.ValueStatusHidden
 
-	NewTagFailedError        = impl.NewTagFailedError
-	NewRequiredError         = impl.NewRequiredError
-	NewResolutionFailedError = impl.NewResolutionFailedError
+	DiagnosticInfo    = model.DiagnosticInfo
+	DiagnosticWarning = model.DiagnosticWarning
+	DiagnosticError   = model.DiagnosticError
 )
 
-func ContextWithExecutionInfo(ctx context.Context, info ExecutionInfo) context.Context {
-	return impl.ContextWithExecutionInfo(ctx, info)
+type Store struct {
+	runtime *graph.Runtime
+	load    store.LoadInput
 }
 
-func ExecutionInfoFromContext(ctx context.Context) (ExecutionInfo, bool) {
-	return impl.ExecutionInfoFromContext(ctx)
+type StoreOption func(*config) error
+
+type config struct {
+	envs  []store.SourceBytes
+	specs []store.SourceBytes
+	types registry.TypeProvider
+}
+
+func NewStore(opts ...StoreOption) (*Store, error) {
+	cfg := config{types: registry.NewBuiltInRegistry()}
+	for _, opt := range opts {
+		if err := opt(&cfg); err != nil {
+			return nil, err
+		}
+	}
+	load, err := store.LoadInputFromSourceBytes(cfg.envs, cfg.specs)
+	if err != nil {
+		return nil, err
+	}
+	runtime, err := graph.NewRuntime(cfg.types)
+	if err != nil {
+		return nil, err
+	}
+	return &Store{runtime: runtime, load: load}, nil
+}
+
+func WithEnvFile(name string, r io.Reader) StoreOption {
+	return func(cfg *config) error {
+		raw, err := io.ReadAll(r)
+		if err != nil {
+			return err
+		}
+		cfg.envs = append(cfg.envs, store.SourceBytes{Name: name, Raw: raw})
+		return nil
+	}
+}
+
+func WithSpecFile(name string, r io.Reader) StoreOption {
+	return func(cfg *config) error {
+		raw, err := io.ReadAll(r)
+		if err != nil {
+			return err
+		}
+		cfg.specs = append(cfg.specs, store.SourceBytes{Name: name, Raw: raw})
+		return nil
+	}
+}
+
+func WithEnvBytes(name string, raw []byte) StoreOption {
+	return WithEnvFile(name, bytes.NewReader(raw))
+}
+
+func WithSpecBytes(name string, raw []byte) StoreOption {
+	return WithSpecFile(name, bytes.NewReader(raw))
+}
+
+func WithEnvs(source string, envs ...string) StoreOption {
+	raw := strings.Join(envs, "\n")
+	if raw != "" {
+		raw += "\n"
+	}
+	return WithEnvFile(source, strings.NewReader(raw))
+}
+
+func WithTypeProvider(types registry.TypeProvider) StoreOption {
+	return func(cfg *config) error {
+		cfg.types = types
+		return nil
+	}
+}
+
+func (s *Store) Snapshot(policy SnapshotPolicy) ([]SnapshotItem, error) {
+	return s.runtime.Snapshot(context.Background(), s.load, policy)
+}
+
+func (s *Store) Source(policy SourcePolicy) ([]string, error) {
+	return s.runtime.Dotenv(context.Background(), s.load, policy)
+}
+
+func (s *Store) Check() CheckResult {
+	check, err := s.runtime.Check(context.Background(), s.load)
+	if err != nil {
+		return CheckResult{
+			OK: false,
+			Diagnostics: []model.Diagnostic{{
+				Severity: model.DiagnosticError,
+				Code:     "graphql.check-failed",
+				Message:  err.Error(),
+			}},
+		}
+	}
+	return check
+}
+
+func (s *Store) GraphQLSchema() (string, error) {
+	return s.runtime.SchemaJSON(context.Background())
+}
+
+func GraphQLSchema() (string, error) {
+	runtime, err := graph.NewRuntime(registry.NewBuiltInRegistry())
+	if err != nil {
+		return "", err
+	}
+	return runtime.SchemaJSON(context.Background())
 }

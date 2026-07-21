@@ -38,6 +38,11 @@ func TestBuiltInRegistry_ResolveTypeRef(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, model.TypeCoreOpaque, def.ID)
 
+	def, ok, err = provider.ResolveTypeRef("core/plain")
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, model.TypeCorePlain, def.ID)
+
 	_, _, err = provider.ResolveTypeRef("universe/Redis")
 	require.Error(t, err)
 

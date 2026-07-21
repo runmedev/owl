@@ -39,6 +39,7 @@ type Binding struct {
 	FieldRef        FieldRef
 	ProjectionID    ProjectionID
 	Key             ProjectionKey
+	Description     string
 	Source          Source
 	Origin          Source
 	Confidence      BindingConfidence

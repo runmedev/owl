@@ -4,8 +4,6 @@ import (
 	"sort"
 
 	"github.com/stateful/godotenv"
-
-	legacy "github.com/runmedev/owl/internal/owl"
 )
 
 type DotenvAdapterOptions struct {
@@ -17,22 +15,14 @@ type DotenvAdapterOptions struct {
 }
 
 func AdaptDotenvFiles(envRaw, specRaw []byte, opts DotenvAdapterOptions) (EffectiveState, error) {
-	values := map[string]string{}
-	if len(envRaw) > 0 {
-		parsed, _, err := godotenv.UnmarshalBytesWithComments(envRaw)
-		if err != nil {
-			return EffectiveState{}, err
-		}
-		values = parsed
+	values, err := ParseDotenvValues(envRaw)
+	if err != nil {
+		return EffectiveState{}, err
 	}
 
-	var declarations []FieldDeclaration
-	if len(specRaw) > 0 {
-		specValues, comments, err := godotenv.UnmarshalBytesWithComments(specRaw)
-		if err != nil {
-			return EffectiveState{}, err
-		}
-		declarations = declarationsFromSpecs(legacy.ParseRawSpec(specValues, comments), specValues, opts.SpecSource)
+	declarations, err := ParseDotenvSpecDeclarations(specRaw, opts.SpecSource)
+	if err != nil {
+		return EffectiveState{}, err
 	}
 
 	return IngestDotenv(values, DotenvIngestOptions{
@@ -44,7 +34,29 @@ func AdaptDotenvFiles(envRaw, specRaw []byte, opts DotenvAdapterOptions) (Effect
 	}), nil
 }
 
-func declarationsFromSpecs(specs legacy.Specs, descriptions map[string]string, source Source) []FieldDeclaration {
+func ParseDotenvValues(raw []byte) (map[string]string, error) {
+	if len(raw) == 0 {
+		return map[string]string{}, nil
+	}
+	parsed, _, err := godotenv.UnmarshalBytesWithComments(raw)
+	if err != nil {
+		return nil, err
+	}
+	return parsed, nil
+}
+
+func ParseDotenvSpecDeclarations(raw []byte, source Source) ([]FieldDeclaration, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	specValues, comments, err := godotenv.UnmarshalBytesWithComments(raw)
+	if err != nil {
+		return nil, err
+	}
+	return declarationsFromSpecs(ParseRawSpec(specValues, comments), specValues, source), nil
+}
+
+func declarationsFromSpecs(specs Specs, descriptions map[string]string, source Source) []FieldDeclaration {
 	if source.Name == "" {
 		source = Source{Name: ".env.example", Kind: "dotenv-spec"}
 	}
@@ -67,14 +79,15 @@ func declarationsFromSpecs(specs legacy.Specs, descriptions map[string]string, s
 		}
 
 		switch spec.Name {
-		case legacy.AtomicNameSecret, legacy.AtomicNamePassword:
+		case AtomicNameSecret, AtomicNamePassword:
 			declaration.FieldRef.TypeID = TypeCoreSecret
 			declaration.Sensitivity = SensitivitySensitive
 			declaration.SemanticVisibility = SemanticVisibilityKnown
-		case legacy.AtomicNamePlain:
+		case AtomicNamePlain:
+			declaration.FieldRef.TypeID = TypeCorePlain
 			declaration.Sensitivity = SensitivityNonSensitive
 			declaration.SemanticVisibility = SemanticVisibilityKnown
-		case legacy.AtomicNameOpaque, "":
+		case AtomicNameOpaque, "":
 			declaration.Sensitivity = SensitivityUnknown
 			declaration.SemanticVisibility = SemanticVisibilityOpaque
 		default:

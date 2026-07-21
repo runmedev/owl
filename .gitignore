@@ -25,6 +25,7 @@ go.work
 gha-creds-*.json
 
 # Binary build with make
+/owl
 /rdme
 /runme
 
