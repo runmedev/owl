@@ -91,6 +91,7 @@ func declarationsFromSpecs(specs Specs, descriptions map[string]string, source S
 			declaration.Sensitivity = SensitivityUnknown
 			declaration.SemanticVisibility = SemanticVisibilityOpaque
 		default:
+			declaration.UnknownType = spec.Name
 			declaration.Sensitivity = SensitivityUnknown
 			declaration.SemanticVisibility = SemanticVisibilityKnown
 		}

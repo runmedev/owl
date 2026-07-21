@@ -79,6 +79,7 @@ type FieldDeclaration struct {
 	Source             Source
 	Sensitivity        Sensitivity
 	SemanticVisibility SemanticVisibility
+	UnknownType        string
 }
 
 func IngestDotenv(values map[string]string, opts DotenvIngestOptions) EffectiveState {
