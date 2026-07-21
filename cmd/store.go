@@ -15,6 +15,7 @@ type StoreClient interface {
 	Snapshot(context.Context, SnapshotRequest) (*SnapshotResult, error)
 	Source(context.Context, SourceRequest) (*SourceResult, error)
 	Check(context.Context, CheckRequest) (*CheckResult, error)
+	GraphQLSchema(context.Context, GraphQLSchemaRequest) (*GraphQLSchemaResult, error)
 }
 
 type StoreCommandOptions struct {
@@ -63,6 +64,12 @@ type CheckResult struct {
 	Diagnostics []string
 }
 
+type GraphQLSchemaRequest struct{}
+
+type GraphQLSchemaResult struct {
+	Schema string
+}
+
 func NewStoreCommand(opts StoreCommandOptions) *cobra.Command {
 	if opts.InsecureAllowed == nil {
 		opts.InsecureAllowed = func() bool { return false }
@@ -89,6 +96,7 @@ func NewStoreCommands(opts StoreCommandOptions) []*cobra.Command {
 		newSnapshotCommand(opts),
 		newSourceCommand(opts),
 		newCheckCommand(opts),
+		newGraphQLSchemaCommand(opts),
 	}
 }
 
@@ -198,6 +206,31 @@ func newCheckCommand(opts StoreCommandOptions) *cobra.Command {
 	}
 	if opts.ConfigureCheckCommand != nil {
 		opts.ConfigureCheckCommand(&cmd)
+	}
+
+	return &cmd
+}
+
+func newGraphQLSchemaCommand(opts StoreCommandOptions) *cobra.Command {
+	cmd := cobra.Command{
+		Hidden: true,
+		Use:    "graphql-schema",
+		Short:  "Prints the hidden Owl GraphQL schema",
+		Long:   "Prints the hidden Owl GraphQL schema introspection JSON.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := opts.client(cmd)
+			if err != nil {
+				return err
+			}
+
+			result, err := client.GraphQLSchema(cmd.Context(), GraphQLSchemaRequest{})
+			if err != nil {
+				return err
+			}
+
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), result.Schema)
+			return err
+		},
 	}
 
 	return &cmd

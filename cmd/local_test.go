@@ -51,6 +51,32 @@ func TestLocalStoreClientUsesV2StoreSemantics(t *testing.T) {
 	assert.Contains(t, check.Diagnostics[len(check.Diagnostics)-1], "error dotenv.unresolved-required MISSING_TOKEN")
 }
 
+func TestLocalStoreClientGraphQLSchema(t *testing.T) {
+	t.Parallel()
+
+	client := NewLocalStoreClient(LocalStoreOptions{})
+	result, err := client.GraphQLSchema(context.Background(), GraphQLSchemaRequest{})
+	require.NoError(t, err)
+
+	assert.Contains(t, result.Schema, `"__schema"`)
+	assert.Contains(t, result.Schema, `"LoadInput"`)
+	assert.Contains(t, result.Schema, `"EnvContractInput"`)
+}
+
+func TestStoreGraphQLSchemaCommandIsHidden(t *testing.T) {
+	t.Parallel()
+
+	var found bool
+	for _, cmd := range NewLocalCommands() {
+		if cmd.Name() != "graphql-schema" {
+			continue
+		}
+		found = true
+		assert.True(t, cmd.Hidden)
+	}
+	assert.True(t, found)
+}
+
 func snapshotByName(envs []SnapshotEnv) map[string]SnapshotEnv {
 	result := make(map[string]SnapshotEnv, len(envs))
 	for _, env := range envs {

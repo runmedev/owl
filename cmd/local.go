@@ -83,6 +83,14 @@ func (c *LocalStoreClient) Check(context.Context, CheckRequest) (*CheckResult, e
 	}, nil
 }
 
+func (c *LocalStoreClient) GraphQLSchema(context.Context, GraphQLSchemaRequest) (*GraphQLSchemaResult, error) {
+	schema, err := owl.GraphQLSchema()
+	if err != nil {
+		return nil, err
+	}
+	return &GraphQLSchemaResult{Schema: schema}, nil
+}
+
 func (c *LocalStoreClient) store() (*owl.Store, error) {
 	var opts []owl.StoreOption
 

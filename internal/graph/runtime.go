@@ -94,6 +94,18 @@ func (r *Runtime) Check(ctx context.Context, input LoadInput) (CheckResult, erro
 	return decodeCheck(raw), nil
 }
 
+func (r *Runtime) SchemaJSON(ctx context.Context) (string, error) {
+	result, err := r.do(ctx, introspectionQuery, nil)
+	if err != nil {
+		return "", err
+	}
+	raw, err := json.MarshalIndent(result.Data, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
+}
+
 func (r *Runtime) do(ctx context.Context, query string, vars map[string]interface{}) (*graphql.Result, error) {
 	result := graphql.Do(graphql.Params{
 		Schema:         r.schema,
@@ -320,6 +332,38 @@ query OwlCheck($input: LoadInput!) {
             check { ok diagnostics { severity code message key field } }
           }
         }
+      }
+    }
+  }
+}`
+
+const introspectionQuery = `
+query OwlSchema {
+  __schema {
+    queryType { name }
+    types {
+      kind
+      name
+      fields(includeDeprecated: true) {
+        name
+        args {
+          name
+          type { kind name ofType { kind name ofType { kind name } } }
+          defaultValue
+        }
+        type { kind name ofType { kind name ofType { kind name } } }
+        isDeprecated
+        deprecationReason
+      }
+      inputFields {
+        name
+        type { kind name ofType { kind name ofType { kind name } } }
+        defaultValue
+      }
+      enumValues(includeDeprecated: true) {
+        name
+        isDeprecated
+        deprecationReason
       }
     }
   }

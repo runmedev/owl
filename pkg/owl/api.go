@@ -143,3 +143,15 @@ func (s *Store) Check() CheckResult {
 	}
 	return check
 }
+
+func (s *Store) GraphQLSchema() (string, error) {
+	return s.runtime.SchemaJSON(context.Background())
+}
+
+func GraphQLSchema() (string, error) {
+	runtime, err := graph.NewRuntime(registry.NewBuiltInRegistry())
+	if err != nil {
+		return "", err
+	}
+	return runtime.SchemaJSON(context.Background())
+}
