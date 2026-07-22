@@ -125,6 +125,34 @@ func TestRuntimeCheckReportsRequiredDiagnostics(t *testing.T) {
 	assert.Contains(t, diagnosticCodes(check.Diagnostics), "dotenv.unresolved-required")
 }
 
+func TestRuntimeSchemaUsesVisibilityAndExposureNames(t *testing.T) {
+	t.Parallel()
+
+	runtime, err := NewRuntime(nil)
+	require.NoError(t, err)
+
+	schemaJSON, err := runtime.SchemaJSON(context.Background())
+	require.NoError(t, err)
+
+	for _, name := range []string{
+		`"name": "StateValue"`,
+		`"name": "StateValueInput"`,
+		`"name": "SnapshotItem"`,
+		`"name": "GetResult"`,
+		`"name": "visibility"`,
+		`"name": "exposure"`,
+	} {
+		assert.Contains(t, schemaJSON, name)
+	}
+	for _, oldName := range []string{
+		`"name": "status"`,
+		`"name": "semanticVisibility"`,
+		`"name": "effectiveVisibility"`,
+	} {
+		assert.NotContains(t, schemaJSON, oldName)
+	}
+}
+
 func snapshotByName(items []SnapshotItem) map[string]SnapshotItem {
 	result := make(map[string]SnapshotItem, len(items))
 	for _, item := range items {
