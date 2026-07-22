@@ -39,7 +39,7 @@ const (
 	OperationKindLoad            = model.OperationKindLoad
 	OperationKindNormalize       = model.OperationKindNormalize
 	ProjectionDotenv             = model.ProjectionDotenv
-	ExposureKnown                = model.ExposureKnown
+	ExposureClear                = model.ExposureClear
 	ExposureOpaque               = model.ExposureOpaque
 	SensitivityNonSensitive      = model.SensitivityNonSensitive
 	SensitivitySensitive         = model.SensitivitySensitive
@@ -448,7 +448,7 @@ func exposureForField(ref FieldRef) Exposure {
 	if ref.TypeID == TypeCoreOpaque {
 		return ExposureOpaque
 	}
-	return ExposureKnown
+	return ExposureClear
 }
 
 func declarationSensitivity(declaration FieldDeclaration) Sensitivity {

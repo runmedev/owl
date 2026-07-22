@@ -700,7 +700,7 @@ func inferExposureForField(ref model.FieldRef) model.Exposure {
 	if ref.TypeID == model.TypeCoreOpaque {
 		return model.ExposureOpaque
 	}
-	return model.ExposureKnown
+	return model.ExposureClear
 }
 
 type renderedSnapshotValue struct {

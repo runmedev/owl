@@ -76,11 +76,11 @@ func TestPublicAPIVisibilityAndExposure(t *testing.T) {
 
 	assert.Equal(t, "https://api.example.com", byName["API_URL"].Value)
 	assert.Equal(t, owl.VisibilityLiteral, byName["API_URL"].Visibility)
-	assert.Equal(t, owl.ExposureKnown, byName["API_URL"].Exposure)
+	assert.Equal(t, owl.ExposureClear, byName["API_URL"].Exposure)
 
 	assert.Equal(t, "[masked]", byName["API_KEY"].Value)
 	assert.Equal(t, owl.VisibilityMasked, byName["API_KEY"].Visibility)
-	assert.Equal(t, owl.ExposureKnown, byName["API_KEY"].Exposure)
+	assert.Equal(t, owl.ExposureClear, byName["API_KEY"].Exposure)
 
 	assert.Equal(t, "[hidden]", byName["DATABASE_URL"].Value)
 	assert.Equal(t, owl.VisibilityHidden, byName["DATABASE_URL"].Visibility)
@@ -88,7 +88,7 @@ func TestPublicAPIVisibilityAndExposure(t *testing.T) {
 
 	assert.Equal(t, "[unset]", byName["MISSING_TOKEN"].Value)
 	assert.Equal(t, owl.VisibilityUnresolved, byName["MISSING_TOKEN"].Visibility)
-	assert.Equal(t, owl.ExposureKnown, byName["MISSING_TOKEN"].Exposure)
+	assert.Equal(t, owl.ExposureClear, byName["MISSING_TOKEN"].Exposure)
 
 	revealed, err := store.Snapshot(owl.SnapshotPolicy{Reveal: true})
 	require.NoError(t, err)
@@ -114,7 +114,7 @@ func TestPublicAPIGetRevealPolicy(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "[masked]", got.Value)
 	assert.Equal(t, owl.VisibilityMasked, got.Visibility)
-	assert.Equal(t, owl.ExposureKnown, got.Exposure)
+	assert.Equal(t, owl.ExposureClear, got.Exposure)
 
 	got, ok, err = store.Get("API_KEY", owl.GetPolicy{Reveal: true})
 	require.NoError(t, err)
@@ -229,7 +229,7 @@ func TestPublicAPIWithEnvContractMapsBindings(t *testing.T) {
 	assert.Equal(t, owl.TypeCoreURL, item.Type)
 	assert.Equal(t, `core/url("primary").database.url`, item.Field.String())
 	assert.Equal(t, owl.VisibilityLiteral, item.Visibility)
-	assert.Equal(t, owl.ExposureKnown, item.Exposure)
+	assert.Equal(t, owl.ExposureClear, item.Exposure)
 	assert.Equal(t, "Database URL", item.Description)
 	assert.Equal(t, "package.json", item.Origin.Name)
 }
@@ -257,7 +257,7 @@ func TestV2PublicAPICompileSurface(t *testing.T) {
 	var _ owl.StoreOption = owl.WithEnvContracts(owl.EnvContract{})
 	var _ owl.StoreOption = owl.WithStateEnvelope(owl.StateEnvelope{})
 	var _ owl.Visibility = owl.VisibilityLiteral
-	var _ owl.Exposure = owl.ExposureKnown
+	var _ owl.Exposure = owl.ExposureClear
 
 	diagnostics := owl.Diagnostics(errors.New("boom"))
 	require.Len(t, diagnostics, 1)

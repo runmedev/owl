@@ -24,7 +24,7 @@ type Exposure string
 
 const (
 	ExposureOpaque Exposure = "opaque"
-	ExposureKnown  Exposure = "known"
+	ExposureClear  Exposure = "clear"
 )
 
 type TypeDef struct {

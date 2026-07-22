@@ -35,7 +35,7 @@ func TestIngestDotenv_RedisAndOpaque(t *testing.T) {
 	require.Contains(t, state.Values, defaultHost)
 	assert.Equal(t, "localhost", state.Values[defaultHost].Resolved)
 	assert.Equal(t, SensitivityNonSensitive, state.Values[defaultHost].Sensitivity)
-	assert.Equal(t, ExposureKnown, state.Values[defaultHost].Exposure)
+	assert.Equal(t, ExposureClear, state.Values[defaultHost].Exposure)
 	assert.Equal(t, OperationID("test-op-000006"), state.Values[defaultHost].LastOperationID)
 
 	queuesPort := FieldRef{TypeID: TypeUniverseRedis, Instance: "queues", Field: "port"}

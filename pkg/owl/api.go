@@ -48,7 +48,7 @@ const (
 	VisibilityHidden     = model.VisibilityHidden
 
 	ExposureOpaque = model.ExposureOpaque
-	ExposureKnown  = model.ExposureKnown
+	ExposureClear  = model.ExposureClear
 
 	DiagnosticInfo    = model.DiagnosticInfo
 	DiagnosticWarning = model.DiagnosticWarning
