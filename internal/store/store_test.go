@@ -14,8 +14,8 @@ func TestStoreSnapshotSourceAndCheck(t *testing.T) {
 	t.Parallel()
 
 	s, err := NewStore(
-		WithEnvFile(".env", strings.NewReader("API_URL=https://api.example.com\nAPI_KEY=secret\nDATABASE_URL=postgres://example\n")),
-		WithSpecFile(".env.example", strings.NewReader("API_URL=\"API URL\" # Plain\nAPI_KEY=\"API key\" # Secret!\nDATABASE_URL=\"Database URL\" # Opaque\nMISSING_TOKEN=\"Missing token\" # Secret!\n")),
+		WithDotenv(".env", strings.NewReader("API_URL=https://api.example.com\nAPI_KEY=secret\nDATABASE_URL=postgres://example\n")),
+		WithEnvSpec(".env.example", strings.NewReader("API_URL=\"API URL\" # Plain\nAPI_KEY=\"API key\" # Secret!\nDATABASE_URL=\"Database URL\" # Opaque\nMISSING_TOKEN=\"Missing token\" # Secret!\n")),
 	)
 	require.NoError(t, err)
 
@@ -30,7 +30,7 @@ func TestStoreSnapshotSourceAndCheck(t *testing.T) {
 	assert.Equal(t, "[hidden]", byName["DATABASE_URL"].Value)
 	assert.Equal(t, model.TypeCoreOpaque, byName["DATABASE_URL"].Type)
 	assert.Equal(t, "[unset]", byName["MISSING_TOKEN"].Value)
-	assert.Equal(t, model.ValueStatusUnresolved, byName["MISSING_TOKEN"].Status)
+	assert.Equal(t, model.VisibilityUnresolved, byName["MISSING_TOKEN"].Visibility)
 
 	source, err := s.Source(SourcePolicy{Insecure: true})
 	require.NoError(t, err)
@@ -46,10 +46,10 @@ func TestStoreSnapshotSourceAndCheck(t *testing.T) {
 	assert.Equal(t, model.DiagnosticError, check.Diagnostics[len(check.Diagnostics)-1].Severity)
 }
 
-func TestStoreWithEnvs(t *testing.T) {
+func TestStoreWithDotenv(t *testing.T) {
 	t.Parallel()
 
-	s, err := NewStore(WithEnvs("[system]", "REDIS_HOST=localhost", "REDIS_PORT=6379"))
+	s, err := NewStore(WithDotenv("[system]", strings.NewReader("REDIS_HOST=localhost\nREDIS_PORT=6379\n")))
 	require.NoError(t, err)
 
 	snapshot, err := s.Snapshot(SnapshotPolicy{Reveal: true})

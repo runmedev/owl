@@ -43,7 +43,7 @@ type SnapshotEnv struct {
 	Type        string
 	Field       string
 	Source      string
-	Status      string
+	Visibility  string
 	Diagnostics []string
 }
 
@@ -212,7 +212,7 @@ func (opts StoreCommandOptions) client(cmd *cobra.Command) (StoreClient, error) 
 
 func renderSnapshot(w io.Writer, result *SnapshotResult, req SnapshotRequest) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(tw, "NAME\tVALUE\tTYPE\tSOURCE\tSTATUS\tDESCRIPTION"); err != nil {
+	if _, err := fmt.Fprintln(tw, "NAME\tVALUE\tTYPE\tSOURCE\tVISIBILITY\tDESCRIPTION"); err != nil {
 		return err
 	}
 
@@ -230,7 +230,7 @@ func renderSnapshot(w io.Writer, result *SnapshotResult, req SnapshotRequest) er
 			strippedVal,
 			env.Type,
 			env.Source,
-			env.Status,
+			env.Visibility,
 			env.Description,
 		); err != nil {
 			return err

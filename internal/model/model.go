@@ -20,11 +20,11 @@ const (
 	SensitivitySensitive    Sensitivity = "sensitive"
 )
 
-type SemanticVisibility string
+type Exposure string
 
 const (
-	SemanticVisibilityOpaque SemanticVisibility = "opaque"
-	SemanticVisibilityKnown  SemanticVisibility = "known"
+	ExposureOpaque Exposure = "opaque"
+	ExposureClear  Exposure = "clear"
 )
 
 type TypeDef struct {
@@ -42,7 +42,7 @@ type FieldDef struct {
 	TypeID               TypeID
 	Required             bool
 	Sensitivity          Sensitivity
-	SemanticVisibility   SemanticVisibility
+	Exposure             Exposure
 	PreferredDotenvKey   string
 	AcceptedDotenvSuffix []string
 	Description          string
@@ -67,13 +67,13 @@ func (r FieldRef) String() string {
 	return fmt.Sprintf("%s(%q).%s", alias, r.Instance, r.Field)
 }
 
-type ValueStatus string
+type Visibility string
 
 const (
-	ValueStatusLiteral    ValueStatus = "literal"
-	ValueStatusUnresolved ValueStatus = "unresolved"
-	ValueStatusMasked     ValueStatus = "masked"
-	ValueStatusHidden     ValueStatus = "hidden"
+	VisibilityLiteral    Visibility = "literal"
+	VisibilityUnresolved Visibility = "unresolved"
+	VisibilityMasked     Visibility = "masked"
+	VisibilityHidden     Visibility = "hidden"
 )
 
 type Source struct {
@@ -105,17 +105,17 @@ type OperationMetadata struct {
 }
 
 type Value struct {
-	FieldRef           FieldRef
-	Original           string
-	Resolved           string
-	Status             ValueStatus
-	Sensitivity        Sensitivity
-	SemanticVisibility SemanticVisibility
-	Origin             Source
-	Source             Source
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
-	LastOperationID    OperationID
+	FieldRef        FieldRef
+	Original        string
+	Resolved        string
+	Visibility      Visibility
+	Sensitivity     Sensitivity
+	Exposure        Exposure
+	Origin          Source
+	Source          Source
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	LastOperationID OperationID
 }
 
 type DiagnosticSeverity string

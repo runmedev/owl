@@ -70,7 +70,7 @@ func ValidateState(state model.EffectiveState, types registry.TypeProvider) []mo
 		if _, ok := types.ResolveType(binding.FieldRef.TypeID); !ok {
 			diagnostics = append(diagnostics, model.Diagnostic{
 				Severity: model.DiagnosticError,
-				Code:     "state.binding-unknown-type",
+				Code:     "contract.unknown-type",
 				Message:  fmt.Sprintf("binding references unknown type %q", binding.FieldRef.TypeID),
 				Key:      string(binding.Key),
 				FieldRef: binding.FieldRef,
@@ -78,8 +78,8 @@ func ValidateState(state model.EffectiveState, types registry.TypeProvider) []mo
 		}
 		if existing, ok := seenBindings[string(binding.Key)]; ok && existing != binding.FieldRef {
 			diagnostics = append(diagnostics, model.Diagnostic{
-				Severity: model.DiagnosticWarning,
-				Code:     "state.binding-conflict",
+				Severity: model.DiagnosticError,
+				Code:     "contract.binding-conflict",
 				Message:  "projection key is bound to multiple fields",
 				Key:      string(binding.Key),
 				FieldRef: binding.FieldRef,

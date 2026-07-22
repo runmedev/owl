@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -62,7 +63,7 @@ func (c *LocalStoreClient) Source(_ context.Context, req SourceRequest) (*Source
 		return nil, err
 	}
 
-	envs, err := store.Source(owl.SourcePolicy{Insecure: req.Insecure})
+	envs, err := store.Dotenv(owl.DotenvPolicy{Insecure: req.Insecure})
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +96,7 @@ func (c *LocalStoreClient) store() (*owl.Store, error) {
 		if err != nil {
 			return nil, err
 		}
-		opts = append(opts, owl.WithSpecBytes(file, raw))
+		opts = append(opts, owl.WithEnvSpec(file, bytes.NewReader(raw)))
 	}
 
 	envFiles, err := filesOrDefaults(c.options.EnvFiles, ".env")
@@ -107,7 +108,7 @@ func (c *LocalStoreClient) store() (*owl.Store, error) {
 		if err != nil {
 			return nil, err
 		}
-		opts = append(opts, owl.WithEnvBytes(file, raw))
+		opts = append(opts, owl.WithDotenv(file, bytes.NewReader(raw)))
 	}
 
 	return owl.NewStore(opts...)
@@ -134,9 +135,9 @@ func filesOrDefaults(files []string, defaults ...string) ([]string, error) {
 func snapshotEnvsFromItems(items []owl.SnapshotItem) []SnapshotEnv {
 	envs := make([]SnapshotEnv, 0, len(items))
 	for _, item := range items {
-		status := string(item.Status)
-		if status == "" {
-			status = "UNSPECIFIED"
+		visibility := string(item.Visibility)
+		if visibility == "" {
+			visibility = "UNSPECIFIED"
 		}
 		envs = append(envs, SnapshotEnv{
 			Name:        item.Name,
@@ -145,7 +146,7 @@ func snapshotEnvsFromItems(items []owl.SnapshotItem) []SnapshotEnv {
 			Type:        item.Type.Alias(),
 			Field:       item.Field.String(),
 			Source:      item.Source.Name,
-			Status:      status,
+			Visibility:  visibility,
 			Diagnostics: diagnosticStrings(item.Diagnostics),
 		})
 	}

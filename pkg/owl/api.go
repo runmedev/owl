@@ -1,7 +1,6 @@
 package owl
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"strings"
@@ -14,14 +13,22 @@ import (
 
 type (
 	SnapshotPolicy = store.SnapshotPolicy
+	DotenvPolicy   = store.DotenvPolicy
+	GetPolicy      = store.GetPolicy
 	SnapshotItem   = store.SnapshotItem
-	SourcePolicy   = store.SourcePolicy
+	GetResult      = store.GetResult
 	CheckResult    = store.CheckResult
 
 	TypeID             = model.TypeID
 	FieldRef           = model.FieldRef
 	Source             = model.Source
-	ValueStatus        = model.ValueStatus
+	DotenvVariable     = store.DotenvVariable
+	EnvContract        = store.EnvContract
+	EnvBinding         = store.EnvBinding
+	StateEnvelope      = store.StateEnvelope
+	StateProvenance    = store.StateProvenance
+	Visibility         = model.Visibility
+	Exposure           = model.Exposure
 	Diagnostic         = model.Diagnostic
 	DiagnosticSeverity = model.DiagnosticSeverity
 )
@@ -35,10 +42,13 @@ const (
 	TypeCorePort      = model.TypeCorePort
 	TypeUniverseRedis = model.TypeUniverseRedis
 
-	ValueStatusLiteral    = model.ValueStatusLiteral
-	ValueStatusUnresolved = model.ValueStatusUnresolved
-	ValueStatusMasked     = model.ValueStatusMasked
-	ValueStatusHidden     = model.ValueStatusHidden
+	VisibilityLiteral    = model.VisibilityLiteral
+	VisibilityUnresolved = model.VisibilityUnresolved
+	VisibilityMasked     = model.VisibilityMasked
+	VisibilityHidden     = model.VisibilityHidden
+
+	ExposureOpaque = model.ExposureOpaque
+	ExposureClear  = model.ExposureClear
 
 	DiagnosticInfo    = model.DiagnosticInfo
 	DiagnosticWarning = model.DiagnosticWarning
@@ -53,9 +63,11 @@ type Store struct {
 type StoreOption func(*config) error
 
 type config struct {
-	envs  []store.SourceBytes
-	specs []store.SourceBytes
-	types registry.TypeProvider
+	envs      []store.SourceBytes
+	specs     []store.SourceBytes
+	contracts []store.EnvContract
+	envelope  *store.StateEnvelope
+	types     registry.TypeProvider
 }
 
 func NewStore(opts ...StoreOption) (*Store, error) {
@@ -69,6 +81,8 @@ func NewStore(opts ...StoreOption) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	load.Contracts = append(load.Contracts, cfg.contracts...)
+	load.Envelope = cfg.envelope
 	runtime, err := graph.NewRuntime(cfg.types)
 	if err != nil {
 		return nil, err
@@ -76,42 +90,47 @@ func NewStore(opts ...StoreOption) (*Store, error) {
 	return &Store{runtime: runtime, load: load}, nil
 }
 
-func WithEnvFile(name string, r io.Reader) StoreOption {
+func WithDotenv(source string, r io.Reader) StoreOption {
 	return func(cfg *config) error {
 		raw, err := io.ReadAll(r)
 		if err != nil {
 			return err
 		}
-		cfg.envs = append(cfg.envs, store.SourceBytes{Name: name, Raw: raw})
+		cfg.envs = append(cfg.envs, store.SourceBytes{Name: source, Raw: raw})
 		return nil
 	}
 }
 
-func WithSpecFile(name string, r io.Reader) StoreOption {
+func WithEnvSpec(source string, r io.Reader) StoreOption {
 	return func(cfg *config) error {
 		raw, err := io.ReadAll(r)
 		if err != nil {
 			return err
 		}
-		cfg.specs = append(cfg.specs, store.SourceBytes{Name: name, Raw: raw})
+		cfg.specs = append(cfg.specs, store.SourceBytes{Name: source, Raw: raw})
 		return nil
 	}
 }
 
-func WithEnvBytes(name string, raw []byte) StoreOption {
-	return WithEnvFile(name, bytes.NewReader(raw))
-}
-
-func WithSpecBytes(name string, raw []byte) StoreOption {
-	return WithSpecFile(name, bytes.NewReader(raw))
-}
-
-func WithEnvs(source string, envs ...string) StoreOption {
-	raw := strings.Join(envs, "\n")
-	if raw != "" {
-		raw += "\n"
+func WithEnvContract(contract EnvContract) StoreOption {
+	return func(cfg *config) error {
+		cfg.contracts = append(cfg.contracts, contract)
+		return nil
 	}
-	return WithEnvFile(source, strings.NewReader(raw))
+}
+
+func WithEnvContracts(contracts ...EnvContract) StoreOption {
+	return func(cfg *config) error {
+		cfg.contracts = append(cfg.contracts, contracts...)
+		return nil
+	}
+}
+
+func WithStateEnvelope(envelope StateEnvelope) StoreOption {
+	return func(cfg *config) error {
+		cfg.envelope = &envelope
+		return nil
+	}
 }
 
 func WithTypeProvider(types registry.TypeProvider) StoreOption {
@@ -125,8 +144,16 @@ func (s *Store) Snapshot(policy SnapshotPolicy) ([]SnapshotItem, error) {
 	return s.runtime.Snapshot(context.Background(), s.load, policy)
 }
 
-func (s *Store) Source(policy SourcePolicy) ([]string, error) {
+func (s *Store) Dotenv(policy DotenvPolicy) ([]string, error) {
 	return s.runtime.Dotenv(context.Background(), s.load, policy)
+}
+
+func (s *Store) Get(key string, policy GetPolicy) (GetResult, bool, error) {
+	return s.runtime.Get(context.Background(), s.load, key, policy)
+}
+
+func (s *Store) SensitiveKeys() ([]string, error) {
+	return s.runtime.SensitiveKeys(context.Background(), s.load)
 }
 
 func (s *Store) Check() CheckResult {
@@ -144,6 +171,51 @@ func (s *Store) Check() CheckResult {
 	return check
 }
 
+func (s *Store) LoadDotenv(source Source, vars []DotenvVariable) error {
+	return s.applyDotenv(source, vars, nil)
+}
+
+func (s *Store) LoadDotenvLines(source string, envs ...string) error {
+	raw := strings.Join(envs, "\n")
+	if raw != "" {
+		raw += "\n"
+	}
+	input, err := store.LoadInputFromSourceBytes([]store.SourceBytes{{Name: source, Raw: []byte(raw)}}, nil)
+	if err != nil {
+		return err
+	}
+	return s.LoadDotenv(input.DotenvSource, input.Dotenv)
+}
+
+func (s *Store) Update(ctx context.Context, newOrUpdated, deleted []string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	raw := strings.Join(newOrUpdated, "\n")
+	if raw != "" {
+		raw += "\n"
+	}
+	input, err := store.LoadInputFromSourceBytes([]store.SourceBytes{{Name: "[update]", Raw: []byte(raw)}}, nil)
+	if err != nil {
+		return err
+	}
+	return s.applyDotenvWithContext(ctx, input.DotenvSource, input.Dotenv, deleted)
+}
+
+func (s *Store) Delete(ctx context.Context, keys ...string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return s.applyDotenvWithContext(ctx, Source{}, nil, keys)
+}
+
+func (s *Store) StateEnvelope(ctx context.Context) (StateEnvelope, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return s.runtime.StateEnvelope(ctx, s.load)
+}
+
 func (s *Store) GraphQLSchema() (string, error) {
 	return s.runtime.SchemaJSON(context.Background())
 }
@@ -154,4 +226,24 @@ func GraphQLSchema() (string, error) {
 		return "", err
 	}
 	return runtime.SchemaJSON(context.Background())
+}
+
+func Diagnostics(err error) []Diagnostic {
+	return store.Diagnostics(err)
+}
+
+func (s *Store) applyDotenv(source Source, vars []DotenvVariable, deleted []string) error {
+	return s.applyDotenvWithContext(context.Background(), source, vars, deleted)
+}
+
+func (s *Store) applyDotenvWithContext(ctx context.Context, source Source, vars []DotenvVariable, deleted []string) error {
+	envelope, err := s.runtime.StateEnvelopeAfter(ctx, s.load, store.LoadInput{
+		DotenvSource: source,
+		Dotenv:       vars,
+	}, deleted)
+	if err != nil {
+		return err
+	}
+	s.load = store.LoadInput{Envelope: &envelope}
+	return nil
 }

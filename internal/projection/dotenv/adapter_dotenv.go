@@ -4,25 +4,27 @@ import (
 	"sort"
 
 	"github.com/stateful/godotenv"
+
+	"github.com/runmedev/owl/internal/model"
 )
 
 type DotenvAdapterOptions struct {
-	EnvSource    Source
-	SpecSource   Source
+	EnvSource    model.Source
+	SpecSource   model.Source
 	Actor        string
-	Clock        Clock
-	OperationIDs OperationIDGenerator
+	Clock        model.Clock
+	OperationIDs model.OperationIDGenerator
 }
 
-func AdaptDotenvFiles(envRaw, specRaw []byte, opts DotenvAdapterOptions) (EffectiveState, error) {
+func AdaptDotenvFiles(envRaw, specRaw []byte, opts DotenvAdapterOptions) (model.EffectiveState, error) {
 	values, err := ParseDotenvValues(envRaw)
 	if err != nil {
-		return EffectiveState{}, err
+		return model.EffectiveState{}, err
 	}
 
 	declarations, err := ParseDotenvSpecDeclarations(specRaw, opts.SpecSource)
 	if err != nil {
-		return EffectiveState{}, err
+		return model.EffectiveState{}, err
 	}
 
 	return IngestDotenv(values, DotenvIngestOptions{
@@ -45,7 +47,7 @@ func ParseDotenvValues(raw []byte) (map[string]string, error) {
 	return parsed, nil
 }
 
-func ParseDotenvSpecDeclarations(raw []byte, source Source) ([]FieldDeclaration, error) {
+func ParseDotenvSpecDeclarations(raw []byte, source model.Source) ([]FieldDeclaration, error) {
 	if len(raw) == 0 {
 		return nil, nil
 	}
@@ -56,9 +58,9 @@ func ParseDotenvSpecDeclarations(raw []byte, source Source) ([]FieldDeclaration,
 	return declarationsFromSpecs(ParseRawSpec(specValues, comments), specValues, source), nil
 }
 
-func declarationsFromSpecs(specs Specs, descriptions map[string]string, source Source) []FieldDeclaration {
+func declarationsFromSpecs(specs Specs, descriptions map[string]string, source model.Source) []FieldDeclaration {
 	if source.Name == "" {
-		source = Source{Name: ".env.example", Kind: "dotenv-spec"}
+		source = model.Source{Name: ".env.example", Kind: "dotenv-spec"}
 	}
 
 	keys := make([]string, 0, len(specs))
@@ -71,8 +73,8 @@ func declarationsFromSpecs(specs Specs, descriptions map[string]string, source S
 	for _, key := range keys {
 		spec := specs[key]
 		declaration := FieldDeclaration{
-			FieldRef:    FieldRef{TypeID: TypeCoreOpaque, Instance: "default", Field: opaqueFieldName(key)},
-			Key:         ProjectionKey(key),
+			FieldRef:    model.FieldRef{TypeID: model.TypeCoreOpaque, Instance: "default", Field: opaqueFieldName(key)},
+			Key:         model.ProjectionKey(key),
 			Required:    spec.Required,
 			Description: descriptions[key],
 			Source:      source,
@@ -80,19 +82,20 @@ func declarationsFromSpecs(specs Specs, descriptions map[string]string, source S
 
 		switch spec.Name {
 		case AtomicNameSecret, AtomicNamePassword:
-			declaration.FieldRef.TypeID = TypeCoreSecret
-			declaration.Sensitivity = SensitivitySensitive
-			declaration.SemanticVisibility = SemanticVisibilityKnown
+			declaration.FieldRef.TypeID = model.TypeCoreSecret
+			declaration.Sensitivity = model.SensitivitySensitive
+			declaration.Exposure = model.ExposureClear
 		case AtomicNamePlain:
-			declaration.FieldRef.TypeID = TypeCorePlain
-			declaration.Sensitivity = SensitivityNonSensitive
-			declaration.SemanticVisibility = SemanticVisibilityKnown
+			declaration.FieldRef.TypeID = model.TypeCorePlain
+			declaration.Sensitivity = model.SensitivityNonSensitive
+			declaration.Exposure = model.ExposureClear
 		case AtomicNameOpaque, "":
-			declaration.Sensitivity = SensitivityUnknown
-			declaration.SemanticVisibility = SemanticVisibilityOpaque
+			declaration.Sensitivity = model.SensitivityUnknown
+			declaration.Exposure = model.ExposureOpaque
 		default:
-			declaration.Sensitivity = SensitivityUnknown
-			declaration.SemanticVisibility = SemanticVisibilityKnown
+			declaration.UnknownType = spec.Name
+			declaration.Sensitivity = model.SensitivityUnknown
+			declaration.Exposure = model.ExposureClear
 		}
 
 		declarations = append(declarations, declaration)
