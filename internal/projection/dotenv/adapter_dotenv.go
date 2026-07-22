@@ -82,18 +82,18 @@ func declarationsFromSpecs(specs Specs, descriptions map[string]string, source S
 		case AtomicNameSecret, AtomicNamePassword:
 			declaration.FieldRef.TypeID = TypeCoreSecret
 			declaration.Sensitivity = SensitivitySensitive
-			declaration.EffectiveVisibility = EffectiveVisibilityKnown
+			declaration.Exposure = ExposureKnown
 		case AtomicNamePlain:
 			declaration.FieldRef.TypeID = TypeCorePlain
 			declaration.Sensitivity = SensitivityNonSensitive
-			declaration.EffectiveVisibility = EffectiveVisibilityKnown
+			declaration.Exposure = ExposureKnown
 		case AtomicNameOpaque, "":
 			declaration.Sensitivity = SensitivityUnknown
-			declaration.EffectiveVisibility = EffectiveVisibilityOpaque
+			declaration.Exposure = ExposureOpaque
 		default:
 			declaration.UnknownType = spec.Name
 			declaration.Sensitivity = SensitivityUnknown
-			declaration.EffectiveVisibility = EffectiveVisibilityKnown
+			declaration.Exposure = ExposureKnown
 		}
 
 		declarations = append(declarations, declaration)

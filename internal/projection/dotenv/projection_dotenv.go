@@ -15,7 +15,7 @@ type (
 	FieldRef             = model.FieldRef
 	ProjectionKey        = model.ProjectionKey
 	Sensitivity          = model.Sensitivity
-	EffectiveVisibility  = model.EffectiveVisibility
+	Exposure             = model.Exposure
 	EffectiveState       = model.EffectiveState
 	BindingConfidence    = model.BindingConfidence
 	Diagnostic           = model.Diagnostic
@@ -39,8 +39,8 @@ const (
 	OperationKindLoad            = model.OperationKindLoad
 	OperationKindNormalize       = model.OperationKindNormalize
 	ProjectionDotenv             = model.ProjectionDotenv
-	EffectiveVisibilityKnown     = model.EffectiveVisibilityKnown
-	EffectiveVisibilityOpaque    = model.EffectiveVisibilityOpaque
+	ExposureKnown                = model.ExposureKnown
+	ExposureOpaque               = model.ExposureOpaque
 	SensitivityNonSensitive      = model.SensitivityNonSensitive
 	SensitivitySensitive         = model.SensitivitySensitive
 	SensitivityUnknown           = model.SensitivityUnknown
@@ -72,14 +72,14 @@ type DotenvIngestOptions struct {
 }
 
 type FieldDeclaration struct {
-	FieldRef            FieldRef
-	Key                 ProjectionKey
-	Required            bool
-	Description         string
-	Source              Source
-	Sensitivity         Sensitivity
-	EffectiveVisibility EffectiveVisibility
-	UnknownType         string
+	FieldRef    FieldRef
+	Key         ProjectionKey
+	Required    bool
+	Description string
+	Source      Source
+	Sensitivity Sensitivity
+	Exposure    Exposure
+	UnknownType string
 }
 
 func IngestDotenv(values map[string]string, opts DotenvIngestOptions) EffectiveState {
@@ -158,23 +158,23 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) EffectiveS
 		seenKeys[key] = struct{}{}
 
 		sensitivity := sensitivityForField(fieldRef)
-		visibility := effectiveVisibilityForField(fieldRef)
+		exposure := exposureForField(fieldRef)
 		if declaration, ok := declarationsByKey[key]; ok {
 			sensitivity = declarationSensitivity(declaration)
-			visibility = declarationEffectiveVisibility(declaration)
+			exposure = declarationExposure(declaration)
 		}
 		state.Values[fieldRef] = Value{
-			FieldRef:            fieldRef,
-			Original:            value,
-			Resolved:            value,
-			Status:              ValueStatusLiteral,
-			Sensitivity:         sensitivity,
-			EffectiveVisibility: visibility,
-			Origin:              origin,
-			Source:              source,
-			CreatedAt:           now,
-			UpdatedAt:           now,
-			LastOperationID:     opID,
+			FieldRef:        fieldRef,
+			Original:        value,
+			Resolved:        value,
+			Status:          ValueStatusLiteral,
+			Sensitivity:     sensitivity,
+			Exposure:        exposure,
+			Origin:          origin,
+			Source:          source,
+			CreatedAt:       now,
+			UpdatedAt:       now,
+			LastOperationID: opID,
 		}
 		state.Bindings = append(state.Bindings, newBinding(opID, key, fieldRef, description, source, origin, confidence, explicit, preserveKey, now))
 		state.Operations = append(state.Operations, OperationMetadata{
@@ -208,15 +208,15 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) EffectiveS
 		seenFields[fieldRef] = key
 
 		state.Values[fieldRef] = Value{
-			FieldRef:            fieldRef,
-			Status:              ValueStatusUnresolved,
-			Sensitivity:         declarationSensitivity(declaration),
-			EffectiveVisibility: declarationEffectiveVisibility(declaration),
-			Origin:              declaration.Source,
-			Source:              declaration.Source,
-			CreatedAt:           now,
-			UpdatedAt:           now,
-			LastOperationID:     opID,
+			FieldRef:        fieldRef,
+			Status:          ValueStatusUnresolved,
+			Sensitivity:     declarationSensitivity(declaration),
+			Exposure:        declarationExposure(declaration),
+			Origin:          declaration.Source,
+			Source:          declaration.Source,
+			CreatedAt:       now,
+			UpdatedAt:       now,
+			LastOperationID: opID,
 		}
 		state.Bindings = append(state.Bindings, newBinding(
 			opID,
@@ -444,11 +444,11 @@ func sensitivityForField(ref FieldRef) Sensitivity {
 	return SensitivityNonSensitive
 }
 
-func effectiveVisibilityForField(ref FieldRef) EffectiveVisibility {
+func exposureForField(ref FieldRef) Exposure {
 	if ref.TypeID == TypeCoreOpaque {
-		return EffectiveVisibilityOpaque
+		return ExposureOpaque
 	}
-	return EffectiveVisibilityKnown
+	return ExposureKnown
 }
 
 func declarationSensitivity(declaration FieldDeclaration) Sensitivity {
@@ -458,9 +458,9 @@ func declarationSensitivity(declaration FieldDeclaration) Sensitivity {
 	return sensitivityForField(declaration.FieldRef)
 }
 
-func declarationEffectiveVisibility(declaration FieldDeclaration) EffectiveVisibility {
-	if declaration.EffectiveVisibility != "" {
-		return declaration.EffectiveVisibility
+func declarationExposure(declaration FieldDeclaration) Exposure {
+	if declaration.Exposure != "" {
+		return declaration.Exposure
 	}
-	return effectiveVisibilityForField(declaration.FieldRef)
+	return exposureForField(declaration.FieldRef)
 }

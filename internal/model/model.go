@@ -20,11 +20,11 @@ const (
 	SensitivitySensitive    Sensitivity = "sensitive"
 )
 
-type EffectiveVisibility string
+type Exposure string
 
 const (
-	EffectiveVisibilityOpaque EffectiveVisibility = "opaque"
-	EffectiveVisibilityKnown  EffectiveVisibility = "known"
+	ExposureOpaque Exposure = "opaque"
+	ExposureKnown  Exposure = "known"
 )
 
 type TypeDef struct {
@@ -42,7 +42,7 @@ type FieldDef struct {
 	TypeID               TypeID
 	Required             bool
 	Sensitivity          Sensitivity
-	EffectiveVisibility  EffectiveVisibility
+	Exposure             Exposure
 	PreferredDotenvKey   string
 	AcceptedDotenvSuffix []string
 	Description          string
@@ -105,17 +105,17 @@ type OperationMetadata struct {
 }
 
 type Value struct {
-	FieldRef            FieldRef
-	Original            string
-	Resolved            string
-	Status              ValueStatus
-	Sensitivity         Sensitivity
-	EffectiveVisibility EffectiveVisibility
-	Origin              Source
-	Source              Source
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
-	LastOperationID     OperationID
+	FieldRef        FieldRef
+	Original        string
+	Resolved        string
+	Status          ValueStatus
+	Sensitivity     Sensitivity
+	Exposure        Exposure
+	Origin          Source
+	Source          Source
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	LastOperationID OperationID
 }
 
 type DiagnosticSeverity string

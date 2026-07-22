@@ -72,14 +72,14 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 	stateValueInput := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "StateValueInput",
 		Fields: graphql.InputObjectConfigFieldMap{
-			"field":               &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(fieldRefInput)},
-			"original":            &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"resolved":            &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"status":              &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"sensitivity":         &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"effectiveVisibility": &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"origin":              &graphql.InputObjectFieldConfig{Type: sourceInput},
-			"source":              &graphql.InputObjectFieldConfig{Type: sourceInput},
+			"field":       &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(fieldRefInput)},
+			"original":    &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"resolved":    &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"status":      &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"sensitivity": &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"exposure":    &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"origin":      &graphql.InputObjectFieldConfig{Type: sourceInput},
+			"source":      &graphql.InputObjectFieldConfig{Type: sourceInput},
 		},
 	})
 	stateBindingInput := graphql.NewInputObject(graphql.InputObjectConfig{
@@ -177,14 +177,14 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 	stateValueType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "StateValue",
 		Fields: graphql.Fields{
-			"field":               &graphql.Field{Type: fieldRefType},
-			"original":            &graphql.Field{Type: graphql.String},
-			"resolved":            &graphql.Field{Type: graphql.String},
-			"status":              &graphql.Field{Type: graphql.String},
-			"sensitivity":         &graphql.Field{Type: graphql.String},
-			"effectiveVisibility": &graphql.Field{Type: graphql.String},
-			"origin":              &graphql.Field{Type: sourceType},
-			"source":              &graphql.Field{Type: sourceType},
+			"field":       &graphql.Field{Type: fieldRefType},
+			"original":    &graphql.Field{Type: graphql.String},
+			"resolved":    &graphql.Field{Type: graphql.String},
+			"status":      &graphql.Field{Type: graphql.String},
+			"sensitivity": &graphql.Field{Type: graphql.String},
+			"exposure":    &graphql.Field{Type: graphql.String},
+			"origin":      &graphql.Field{Type: sourceType},
+			"source":      &graphql.Field{Type: sourceType},
 		},
 	})
 	stateBindingType := graphql.NewObject(graphql.ObjectConfig{
@@ -574,14 +574,14 @@ func decodeEffectiveStateInput(raw interface{}) model.EffectiveState {
 			continue
 		}
 		value := model.Value{
-			FieldRef:            decodeFieldRef(valueRaw["field"]),
-			Original:            stringValue(valueRaw["original"]),
-			Resolved:            stringValue(valueRaw["resolved"]),
-			Status:              model.ValueStatus(stringValue(valueRaw["status"])),
-			Sensitivity:         model.Sensitivity(stringValue(valueRaw["sensitivity"])),
-			EffectiveVisibility: model.EffectiveVisibility(stringValue(valueRaw["effectiveVisibility"])),
-			Origin:              decodeSource(valueRaw["origin"]),
-			Source:              decodeSource(valueRaw["source"]),
+			FieldRef:    decodeFieldRef(valueRaw["field"]),
+			Original:    stringValue(valueRaw["original"]),
+			Resolved:    stringValue(valueRaw["resolved"]),
+			Status:      model.ValueStatus(stringValue(valueRaw["status"])),
+			Sensitivity: model.Sensitivity(stringValue(valueRaw["sensitivity"])),
+			Exposure:    model.Exposure(stringValue(valueRaw["exposure"])),
+			Origin:      decodeSource(valueRaw["origin"]),
+			Source:      decodeSource(valueRaw["source"]),
 		}
 		state.Values[value.FieldRef] = value
 	}
@@ -683,14 +683,14 @@ func effectiveStateView(state model.EffectiveState) map[string]interface{} {
 	for ref, value := range state.Values {
 		value.FieldRef = ref
 		values = append(values, map[string]interface{}{
-			"field":               fieldRefView(value.FieldRef),
-			"original":            value.Original,
-			"resolved":            value.Resolved,
-			"status":              string(value.Status),
-			"sensitivity":         string(value.Sensitivity),
-			"effectiveVisibility": string(value.EffectiveVisibility),
-			"origin":              sourceView(value.Origin),
-			"source":              sourceView(value.Source),
+			"field":       fieldRefView(value.FieldRef),
+			"original":    value.Original,
+			"resolved":    value.Resolved,
+			"status":      string(value.Status),
+			"sensitivity": string(value.Sensitivity),
+			"exposure":    string(value.Exposure),
+			"origin":      sourceView(value.Origin),
+			"source":      sourceView(value.Source),
 		})
 	}
 	sort.SliceStable(values, func(i, j int) bool {

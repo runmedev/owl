@@ -261,14 +261,14 @@ func marshalEffectiveState(state model.EffectiveState) map[string]interface{} {
 	for ref, value := range state.Values {
 		value.FieldRef = ref
 		values = append(values, map[string]interface{}{
-			"field":               marshalFieldRef(value.FieldRef),
-			"original":            value.Original,
-			"resolved":            value.Resolved,
-			"status":              string(value.Status),
-			"sensitivity":         string(value.Sensitivity),
-			"effectiveVisibility": string(value.EffectiveVisibility),
-			"origin":              marshalSource(value.Origin),
-			"source":              marshalSource(value.Source),
+			"field":       marshalFieldRef(value.FieldRef),
+			"original":    value.Original,
+			"resolved":    value.Resolved,
+			"status":      string(value.Status),
+			"sensitivity": string(value.Sensitivity),
+			"exposure":    string(value.Exposure),
+			"origin":      marshalSource(value.Origin),
+			"source":      marshalSource(value.Source),
 		})
 	}
 	bindings := make([]map[string]interface{}, 0, len(state.Bindings))
@@ -467,14 +467,14 @@ func decodeEffectiveState(raw interface{}) model.EffectiveState {
 			continue
 		}
 		value := model.Value{
-			FieldRef:            decodeFieldRef(valueRaw["field"]),
-			Original:            stringValue(valueRaw["original"]),
-			Resolved:            stringValue(valueRaw["resolved"]),
-			Status:              model.ValueStatus(stringValue(valueRaw["status"])),
-			Sensitivity:         model.Sensitivity(stringValue(valueRaw["sensitivity"])),
-			EffectiveVisibility: model.EffectiveVisibility(stringValue(valueRaw["effectiveVisibility"])),
-			Origin:              decodeSource(valueRaw["origin"]),
-			Source:              decodeSource(valueRaw["source"]),
+			FieldRef:    decodeFieldRef(valueRaw["field"]),
+			Original:    stringValue(valueRaw["original"]),
+			Resolved:    stringValue(valueRaw["resolved"]),
+			Status:      model.ValueStatus(stringValue(valueRaw["status"])),
+			Sensitivity: model.Sensitivity(stringValue(valueRaw["sensitivity"])),
+			Exposure:    model.Exposure(stringValue(valueRaw["exposure"])),
+			Origin:      decodeSource(valueRaw["origin"]),
+			Source:      decodeSource(valueRaw["source"]),
 		}
 		state.Values[value.FieldRef] = value
 	}
@@ -592,7 +592,7 @@ query OwlStateEnvelope($input: LoadInput!, $updates: DotenvInput, $deleted: [Str
                       resolved
                       status
                       sensitivity
-                      effectiveVisibility
+                      exposure
                       origin { name kind }
                       source { name kind }
                     }
