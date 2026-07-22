@@ -311,8 +311,8 @@ func (op UpdateOperation) Apply(_ context.Context, state model.EffectiveState) (
 		if value.Sensitivity == "" {
 			value.Sensitivity = inferSensitivityForField(ref)
 		}
-		if value.SemanticVisibility == "" {
-			value.SemanticVisibility = inferVisibilityForField(ref)
+		if value.EffectiveVisibility == "" {
+			value.EffectiveVisibility = inferVisibilityForField(ref)
 		}
 		if value.Origin.Name == "" {
 			value.Origin = binding.Origin
@@ -709,11 +709,11 @@ func inferSensitivityForField(ref model.FieldRef) model.Sensitivity {
 	return model.SensitivityNonSensitive
 }
 
-func inferVisibilityForField(ref model.FieldRef) model.SemanticVisibility {
+func inferVisibilityForField(ref model.FieldRef) model.EffectiveVisibility {
 	if ref.TypeID == model.TypeCoreOpaque {
-		return model.SemanticVisibilityOpaque
+		return model.EffectiveVisibilityOpaque
 	}
-	return model.SemanticVisibilityKnown
+	return model.EffectiveVisibilityKnown
 }
 
 type renderedSnapshotValue struct {

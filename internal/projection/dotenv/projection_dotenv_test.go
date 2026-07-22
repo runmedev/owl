@@ -35,7 +35,7 @@ func TestIngestDotenv_RedisAndOpaque(t *testing.T) {
 	require.Contains(t, state.Values, defaultHost)
 	assert.Equal(t, "localhost", state.Values[defaultHost].Resolved)
 	assert.Equal(t, SensitivityNonSensitive, state.Values[defaultHost].Sensitivity)
-	assert.Equal(t, SemanticVisibilityKnown, state.Values[defaultHost].SemanticVisibility)
+	assert.Equal(t, EffectiveVisibilityKnown, state.Values[defaultHost].EffectiveVisibility)
 	assert.Equal(t, OperationID("test-op-000006"), state.Values[defaultHost].LastOperationID)
 
 	queuesPort := FieldRef{TypeID: TypeUniverseRedis, Instance: "queues", Field: "port"}
@@ -50,7 +50,7 @@ func TestIngestDotenv_RedisAndOpaque(t *testing.T) {
 	require.Contains(t, state.Values, databaseURL)
 	assert.Equal(t, TypeCoreOpaque, state.Values[databaseURL].FieldRef.TypeID)
 	assert.Equal(t, SensitivityUnknown, state.Values[databaseURL].Sensitivity)
-	assert.Equal(t, SemanticVisibilityOpaque, state.Values[databaseURL].SemanticVisibility)
+	assert.Equal(t, EffectiveVisibilityOpaque, state.Values[databaseURL].EffectiveVisibility)
 
 	token := FieldRef{TypeID: TypeCoreOpaque, Instance: "default", Field: "custom.service.token"}
 	require.Contains(t, state.Values, token)
