@@ -59,7 +59,7 @@ func TestAdaptDotenvFiles_MaterializesMissingSpecAsUnresolved(t *testing.T) {
 
 	ref := FieldRef{TypeID: TypeCoreSecret, Instance: "default", Field: "mixpanel.token"}
 	require.Contains(t, state.Values, ref)
-	assert.Equal(t, ValueStatusUnresolved, state.Values[ref].Status)
+	assert.Equal(t, VisibilityUnresolved, state.Values[ref].Visibility)
 	assert.Contains(t, diagnosticCodes(RenderDotenvProjection(state, RenderPolicy{Insecure: true}).Diagnostics), "dotenv.render-unresolved")
 }
 

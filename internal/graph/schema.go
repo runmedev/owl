@@ -75,7 +75,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"field":       &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(fieldRefInput)},
 			"original":    &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"resolved":    &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"status":      &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"visibility":  &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"sensitivity": &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"exposure":    &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"origin":      &graphql.InputObjectFieldConfig{Type: sourceInput},
@@ -180,7 +180,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"field":       &graphql.Field{Type: fieldRefType},
 			"original":    &graphql.Field{Type: graphql.String},
 			"resolved":    &graphql.Field{Type: graphql.String},
-			"status":      &graphql.Field{Type: graphql.String},
+			"visibility":  &graphql.Field{Type: graphql.String},
 			"sensitivity": &graphql.Field{Type: graphql.String},
 			"exposure":    &graphql.Field{Type: graphql.String},
 			"origin":      &graphql.Field{Type: sourceType},
@@ -242,7 +242,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"key":         &graphql.Field{Type: graphql.String},
 			"field":       &graphql.Field{Type: fieldRefType},
 			"value":       &graphql.Field{Type: graphql.String},
-			"status":      &graphql.Field{Type: graphql.String},
+			"visibility":  &graphql.Field{Type: graphql.String},
 			"source":      &graphql.Field{Type: sourceType},
 			"diagnostics": &graphql.Field{Type: graphql.NewList(diagnosticType)},
 		},
@@ -309,11 +309,11 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 					return item.Origin.Name, nil
 				},
 			},
-			"status": &graphql.Field{
+			"visibility": &graphql.Field{
 				Type: graphql.String,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					item := p.Source.(store.SnapshotItem)
-					return string(item.Status), nil
+					return string(item.Visibility), nil
 				},
 			},
 			"description": &graphql.Field{Type: graphql.String},
@@ -577,7 +577,7 @@ func decodeEffectiveStateInput(raw interface{}) model.EffectiveState {
 			FieldRef:    decodeFieldRef(valueRaw["field"]),
 			Original:    stringValue(valueRaw["original"]),
 			Resolved:    stringValue(valueRaw["resolved"]),
-			Status:      model.ValueStatus(stringValue(valueRaw["status"])),
+			Visibility:  model.Visibility(stringValue(valueRaw["visibility"])),
 			Sensitivity: model.Sensitivity(stringValue(valueRaw["sensitivity"])),
 			Exposure:    model.Exposure(stringValue(valueRaw["exposure"])),
 			Origin:      decodeSource(valueRaw["origin"]),
@@ -686,7 +686,7 @@ func effectiveStateView(state model.EffectiveState) map[string]interface{} {
 			"field":       fieldRefView(value.FieldRef),
 			"original":    value.Original,
 			"resolved":    value.Resolved,
-			"status":      string(value.Status),
+			"visibility":  string(value.Visibility),
 			"sensitivity": string(value.Sensitivity),
 			"exposure":    string(value.Exposure),
 			"origin":      sourceView(value.Origin),
@@ -723,7 +723,7 @@ func getResultView(result store.GetResult) map[string]interface{} {
 		"key":         result.Key,
 		"field":       fieldRefView(result.Field),
 		"value":       result.Value,
-		"status":      string(result.Status),
+		"visibility":  string(result.Visibility),
 		"source":      sourceView(result.Source),
 		"diagnostics": result.Diagnostics,
 	}

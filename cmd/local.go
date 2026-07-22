@@ -134,9 +134,9 @@ func filesOrDefaults(files []string, defaults ...string) ([]string, error) {
 func snapshotEnvsFromItems(items []owl.SnapshotItem) []SnapshotEnv {
 	envs := make([]SnapshotEnv, 0, len(items))
 	for _, item := range items {
-		status := string(item.Status)
-		if status == "" {
-			status = "UNSPECIFIED"
+		visibility := string(item.Visibility)
+		if visibility == "" {
+			visibility = "UNSPECIFIED"
 		}
 		envs = append(envs, SnapshotEnv{
 			Name:        item.Name,
@@ -145,7 +145,7 @@ func snapshotEnvsFromItems(items []owl.SnapshotItem) []SnapshotEnv {
 			Type:        item.Type.Alias(),
 			Field:       item.Field.String(),
 			Source:      item.Source.Name,
-			Status:      status,
+			Visibility:  visibility,
 			Diagnostics: diagnosticStrings(item.Diagnostics),
 		})
 	}

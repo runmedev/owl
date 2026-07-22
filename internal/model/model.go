@@ -67,13 +67,13 @@ func (r FieldRef) String() string {
 	return fmt.Sprintf("%s(%q).%s", alias, r.Instance, r.Field)
 }
 
-type ValueStatus string
+type Visibility string
 
 const (
-	ValueStatusLiteral    ValueStatus = "literal"
-	ValueStatusUnresolved ValueStatus = "unresolved"
-	ValueStatusMasked     ValueStatus = "masked"
-	ValueStatusHidden     ValueStatus = "hidden"
+	VisibilityLiteral    Visibility = "literal"
+	VisibilityUnresolved Visibility = "unresolved"
+	VisibilityMasked     Visibility = "masked"
+	VisibilityHidden     Visibility = "hidden"
 )
 
 type Source struct {
@@ -108,7 +108,7 @@ type Value struct {
 	FieldRef        FieldRef
 	Original        string
 	Resolved        string
-	Status          ValueStatus
+	Visibility      Visibility
 	Sensitivity     Sensitivity
 	Exposure        Exposure
 	Origin          Source

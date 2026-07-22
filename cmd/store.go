@@ -43,7 +43,7 @@ type SnapshotEnv struct {
 	Type        string
 	Field       string
 	Source      string
-	Status      string
+	Visibility  string
 	Diagnostics []string
 }
 
@@ -230,7 +230,7 @@ func renderSnapshot(w io.Writer, result *SnapshotResult, req SnapshotRequest) er
 			strippedVal,
 			env.Type,
 			env.Source,
-			env.Status,
+			env.Visibility,
 			env.Description,
 		); err != nil {
 			return err

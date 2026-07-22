@@ -28,7 +28,7 @@ type (
 	EnvBinding         = store.EnvBinding
 	StateEnvelope      = store.StateEnvelope
 	StateProvenance    = store.StateProvenance
-	ValueStatus        = model.ValueStatus
+	Visibility         = model.Visibility
 	Diagnostic         = model.Diagnostic
 	DiagnosticSeverity = model.DiagnosticSeverity
 )
@@ -42,10 +42,10 @@ const (
 	TypeCorePort      = model.TypeCorePort
 	TypeUniverseRedis = model.TypeUniverseRedis
 
-	ValueStatusLiteral    = model.ValueStatusLiteral
-	ValueStatusUnresolved = model.ValueStatusUnresolved
-	ValueStatusMasked     = model.ValueStatusMasked
-	ValueStatusHidden     = model.ValueStatusHidden
+	VisibilityLiteral    = model.VisibilityLiteral
+	VisibilityUnresolved = model.VisibilityUnresolved
+	VisibilityMasked     = model.VisibilityMasked
+	VisibilityHidden     = model.VisibilityHidden
 
 	DiagnosticInfo    = model.DiagnosticInfo
 	DiagnosticWarning = model.DiagnosticWarning

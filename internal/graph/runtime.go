@@ -264,7 +264,7 @@ func marshalEffectiveState(state model.EffectiveState) map[string]interface{} {
 			"field":       marshalFieldRef(value.FieldRef),
 			"original":    value.Original,
 			"resolved":    value.Resolved,
-			"status":      string(value.Status),
+			"visibility":  string(value.Visibility),
 			"sensitivity": string(value.Sensitivity),
 			"exposure":    string(value.Exposure),
 			"origin":      marshalSource(value.Origin),
@@ -376,7 +376,7 @@ query OwlSnapshot($input: LoadInput!, $reveal: Boolean = false) {
               fieldName
               source
               origin
-              status
+              visibility
               description
               diagnostics { severity code message key field }
             }
@@ -410,7 +410,7 @@ func decodeSnapshot(raw interface{}) []SnapshotItem {
 			},
 			Source:      model.Source{Name: stringValue(item["source"])},
 			Origin:      model.Source{Name: stringValue(item["origin"])},
-			Status:      model.ValueStatus(stringValue(item["status"])),
+			Visibility:  model.Visibility(stringValue(item["visibility"])),
 			Description: stringValue(item["description"]),
 			Diagnostics: decodeDiagnostics(item["diagnostics"]),
 		})
@@ -438,7 +438,7 @@ func decodeGet(raw interface{}) GetResult {
 		Key:         stringValue(row["key"]),
 		Field:       decodeFieldRef(row["field"]),
 		Value:       stringValue(row["value"]),
-		Status:      model.ValueStatus(stringValue(row["status"])),
+		Visibility:  model.Visibility(stringValue(row["visibility"])),
 		Source:      decodeSource(row["source"]),
 		Diagnostics: decodeDiagnostics(row["diagnostics"]),
 	}
@@ -470,7 +470,7 @@ func decodeEffectiveState(raw interface{}) model.EffectiveState {
 			FieldRef:    decodeFieldRef(valueRaw["field"]),
 			Original:    stringValue(valueRaw["original"]),
 			Resolved:    stringValue(valueRaw["resolved"]),
-			Status:      model.ValueStatus(stringValue(valueRaw["status"])),
+			Visibility:  model.Visibility(stringValue(valueRaw["visibility"])),
 			Sensitivity: model.Sensitivity(stringValue(valueRaw["sensitivity"])),
 			Exposure:    model.Exposure(stringValue(valueRaw["exposure"])),
 			Origin:      decodeSource(valueRaw["origin"]),
@@ -548,7 +548,7 @@ query OwlGet($input: LoadInput!, $key: String!, $reveal: Boolean = false) {
               key
               field { typeID instance field }
               value
-              status
+              visibility
               source { name kind }
               diagnostics { severity code message key field }
             }
@@ -590,7 +590,7 @@ query OwlStateEnvelope($input: LoadInput!, $updates: DotenvInput, $deleted: [Str
                       field { typeID instance field }
                       original
                       resolved
-                      status
+                      visibility
                       sensitivity
                       exposure
                       origin { name kind }

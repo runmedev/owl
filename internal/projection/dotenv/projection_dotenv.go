@@ -20,7 +20,7 @@ type (
 	BindingConfidence    = model.BindingConfidence
 	Diagnostic           = model.Diagnostic
 	Value                = model.Value
-	ValueStatus          = model.ValueStatus
+	Visibility           = model.Visibility
 	Binding              = model.Binding
 	RenderPolicy         = model.RenderPolicy
 	RenderedVariable     = model.RenderedVariable
@@ -51,10 +51,10 @@ const (
 	TypeCoreSecret               = model.TypeCoreSecret
 	TypeCoreURL                  = model.TypeCoreURL
 	TypeUniverseRedis            = model.TypeUniverseRedis
-	ValueStatusHidden            = model.ValueStatusHidden
-	ValueStatusLiteral           = model.ValueStatusLiteral
-	ValueStatusMasked            = model.ValueStatusMasked
-	ValueStatusUnresolved        = model.ValueStatusUnresolved
+	VisibilityHidden             = model.VisibilityHidden
+	VisibilityLiteral            = model.VisibilityLiteral
+	VisibilityMasked             = model.VisibilityMasked
+	VisibilityUnresolved         = model.VisibilityUnresolved
 )
 
 var (
@@ -167,7 +167,7 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) EffectiveS
 			FieldRef:        fieldRef,
 			Original:        value,
 			Resolved:        value,
-			Status:          ValueStatusLiteral,
+			Visibility:      VisibilityLiteral,
 			Sensitivity:     sensitivity,
 			Exposure:        exposure,
 			Origin:          origin,
@@ -209,7 +209,7 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) EffectiveS
 
 		state.Values[fieldRef] = Value{
 			FieldRef:        fieldRef,
-			Status:          ValueStatusUnresolved,
+			Visibility:      VisibilityUnresolved,
 			Sensitivity:     declarationSensitivity(declaration),
 			Exposure:        declarationExposure(declaration),
 			Origin:          declaration.Source,
@@ -263,7 +263,7 @@ func RenderDotenvProjection(state EffectiveState, policy RenderPolicy) RenderedP
 	for _, binding := range state.Bindings {
 		value := state.Values[binding.FieldRef]
 		key := renderKey(binding, value)
-		if value.Status == ValueStatusUnresolved {
+		if value.Visibility == VisibilityUnresolved {
 			diagnostics = append(diagnostics, Diagnostic{
 				Severity: DiagnosticInfo,
 				Code:     "dotenv.render-unresolved",
@@ -286,21 +286,21 @@ func RenderDotenvProjection(state EffectiveState, policy RenderPolicy) RenderedP
 		keys[key] = binding.FieldRef
 
 		renderValue := value.Resolved
-		status := value.Status
+		visibility := value.Visibility
 		if !policy.Insecure {
 			switch value.Sensitivity {
 			case SensitivitySensitive:
 				renderValue = "[masked]"
-				status = ValueStatusMasked
+				visibility = VisibilityMasked
 			case SensitivityUnknown:
 				renderValue = "[hidden]"
-				status = ValueStatusHidden
+				visibility = VisibilityHidden
 			}
 		}
 		rendered = append(rendered, RenderedVariable{
-			Key:    key,
-			Value:  renderValue,
-			Status: status,
+			Key:        key,
+			Value:      renderValue,
+			Visibility: visibility,
 		})
 	}
 	sort.SliceStable(rendered, func(i, j int) bool {

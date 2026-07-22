@@ -51,9 +51,9 @@ type Binding struct {
 }
 
 type RenderedVariable struct {
-	Key    string
-	Value  string
-	Status ValueStatus
+	Key        string
+	Value      string
+	Visibility Visibility
 }
 
 type RenderedProjection struct {

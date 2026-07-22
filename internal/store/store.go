@@ -62,7 +62,7 @@ type SnapshotItem struct {
 	Field         model.FieldRef
 	Source        model.Source
 	Origin        model.Source
-	Status        model.ValueStatus
+	Visibility    model.Visibility
 	Description   string
 	UpdatedAt     time.Time
 	Diagnostics   []model.Diagnostic
@@ -81,7 +81,7 @@ type GetResult struct {
 	Key         string
 	Field       model.FieldRef
 	Value       string
-	Status      model.ValueStatus
+	Visibility  model.Visibility
 	Source      model.Source
 	Diagnostics []model.Diagnostic
 }
@@ -307,7 +307,7 @@ func (op UpdateOperation) Apply(_ context.Context, state model.EffectiveState) (
 		value.FieldRef = ref
 		value.Original = variable.Value
 		value.Resolved = variable.Value
-		value.Status = model.ValueStatusLiteral
+		value.Visibility = model.VisibilityLiteral
 		if value.Sensitivity == "" {
 			value.Sensitivity = inferSensitivityForField(ref)
 		}
@@ -380,7 +380,7 @@ func (s *Store) Snapshot(policy SnapshotPolicy) ([]SnapshotItem, error) {
 			Field:         value.FieldRef,
 			Source:        value.Source,
 			Origin:        value.Origin,
-			Status:        rendered.status,
+			Visibility:    rendered.visibility,
 			Description:   binding.Description,
 			UpdatedAt:     value.UpdatedAt,
 			Diagnostics:   diagnosticsFor(s.state.Diagnostics, binding),
@@ -417,7 +417,7 @@ func (s *Store) Get(key string, policy GetPolicy) (GetResult, bool, error) {
 		Key:         key,
 		Field:       ref,
 		Value:       rendered.value,
-		Status:      rendered.status,
+		Visibility:  rendered.visibility,
 		Source:      value.Source,
 		Diagnostics: diagnosticsFor(s.state.Diagnostics, binding),
 	}, true, nil
@@ -717,28 +717,28 @@ func inferExposureForField(ref model.FieldRef) model.Exposure {
 }
 
 type renderedSnapshotValue struct {
-	value  string
-	status model.ValueStatus
+	value      string
+	visibility model.Visibility
 }
 
 func renderSnapshotValue(value model.Value, policy SnapshotPolicy) renderedSnapshotValue {
-	rendered := renderedSnapshotValue{value: value.Resolved, status: value.Status}
-	switch value.Status {
-	case model.ValueStatusUnresolved:
+	rendered := renderedSnapshotValue{value: value.Resolved, visibility: value.Visibility}
+	switch value.Visibility {
+	case model.VisibilityUnresolved:
 		rendered.value = "[unset]"
-	case model.ValueStatusMasked:
+	case model.VisibilityMasked:
 		rendered.value = "[masked]"
-	case model.ValueStatusHidden:
+	case model.VisibilityHidden:
 		rendered.value = "[hidden]"
 	}
-	if value.Status == model.ValueStatusLiteral && !policy.Reveal {
+	if value.Visibility == model.VisibilityLiteral && !policy.Reveal {
 		switch value.Sensitivity {
 		case model.SensitivitySensitive:
 			rendered.value = "[masked]"
-			rendered.status = model.ValueStatusMasked
+			rendered.visibility = model.VisibilityMasked
 		case model.SensitivityUnknown:
 			rendered.value = "[hidden]"
-			rendered.status = model.ValueStatusHidden
+			rendered.visibility = model.VisibilityHidden
 		}
 	}
 	return rendered

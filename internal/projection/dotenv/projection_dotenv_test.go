@@ -78,9 +78,9 @@ func TestRenderDotenv_SafeAndInsecure(t *testing.T) {
 	safe := renderedByKey(RenderDotenv(state, RenderPolicy{}))
 	assert.Equal(t, "localhost", safe["REDIS_HOST"].Value)
 	assert.Equal(t, "[masked]", safe["REDIS_PASSWORD"].Value)
-	assert.Equal(t, ValueStatusMasked, safe["REDIS_PASSWORD"].Status)
+	assert.Equal(t, VisibilityMasked, safe["REDIS_PASSWORD"].Visibility)
 	assert.Equal(t, "[hidden]", safe["DATABASE_URL"].Value)
-	assert.Equal(t, ValueStatusHidden, safe["DATABASE_URL"].Status)
+	assert.Equal(t, VisibilityHidden, safe["DATABASE_URL"].Visibility)
 	assert.Equal(t, "[masked]", safe["CUSTOM_SERVICE_TOKEN"].Value)
 
 	insecure := renderedByKey(RenderDotenv(state, RenderPolicy{Insecure: true}))
@@ -111,7 +111,7 @@ func TestIngestDotenv_MaterializesDeclaredMissingField(t *testing.T) {
 	})
 
 	require.Contains(t, state.Values, missingPassword)
-	assert.Equal(t, ValueStatusUnresolved, state.Values[missingPassword].Status)
+	assert.Equal(t, VisibilityUnresolved, state.Values[missingPassword].Visibility)
 	assert.Equal(t, SensitivitySensitive, state.Values[missingPassword].Sensitivity)
 	assert.Equal(t, OperationID("mat-op-000002"), state.Values[missingPassword].LastOperationID)
 	assert.Contains(t, diagnosticCodes(state.Diagnostics), "dotenv.unresolved-required")

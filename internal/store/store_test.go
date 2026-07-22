@@ -30,7 +30,7 @@ func TestStoreSnapshotSourceAndCheck(t *testing.T) {
 	assert.Equal(t, "[hidden]", byName["DATABASE_URL"].Value)
 	assert.Equal(t, model.TypeCoreOpaque, byName["DATABASE_URL"].Type)
 	assert.Equal(t, "[unset]", byName["MISSING_TOKEN"].Value)
-	assert.Equal(t, model.ValueStatusUnresolved, byName["MISSING_TOKEN"].Status)
+	assert.Equal(t, model.VisibilityUnresolved, byName["MISSING_TOKEN"].Visibility)
 
 	source, err := s.Source(SourcePolicy{Insecure: true})
 	require.NoError(t, err)
