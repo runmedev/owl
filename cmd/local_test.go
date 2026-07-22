@@ -32,9 +32,12 @@ func TestLocalStoreClientUsesV2StoreSemantics(t *testing.T) {
 	assert.Equal(t, "core/plain", byName["API_URL"].Type)
 	assert.Equal(t, "[masked]", byName["API_KEY"].Value)
 	assert.Equal(t, "core/secret", byName["API_KEY"].Type)
+	assert.Equal(t, "masked", byName["API_KEY"].Visibility)
 	assert.Equal(t, "[hidden]", byName["DATABASE_URL"].Value)
 	assert.Equal(t, "core/opaque", byName["DATABASE_URL"].Type)
+	assert.Equal(t, "hidden", byName["DATABASE_URL"].Visibility)
 	assert.Equal(t, "[unset]", byName["MISSING_TOKEN"].Value)
+	assert.Equal(t, "unresolved", byName["MISSING_TOKEN"].Visibility)
 
 	source, err := client.Source(context.Background(), SourceRequest{Insecure: true})
 	require.NoError(t, err)
