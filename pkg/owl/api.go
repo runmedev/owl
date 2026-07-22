@@ -29,6 +29,7 @@ type (
 	StateEnvelope      = store.StateEnvelope
 	StateProvenance    = store.StateProvenance
 	Visibility         = model.Visibility
+	Exposure           = model.Exposure
 	Diagnostic         = model.Diagnostic
 	DiagnosticSeverity = model.DiagnosticSeverity
 )
@@ -46,6 +47,9 @@ const (
 	VisibilityUnresolved = model.VisibilityUnresolved
 	VisibilityMasked     = model.VisibilityMasked
 	VisibilityHidden     = model.VisibilityHidden
+
+	ExposureOpaque = model.ExposureOpaque
+	ExposureKnown  = model.ExposureKnown
 
 	DiagnosticInfo    = model.DiagnosticInfo
 	DiagnosticWarning = model.DiagnosticWarning

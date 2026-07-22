@@ -63,6 +63,7 @@ type SnapshotItem struct {
 	Source        model.Source
 	Origin        model.Source
 	Visibility    model.Visibility
+	Exposure      model.Exposure
 	Description   string
 	UpdatedAt     time.Time
 	Diagnostics   []model.Diagnostic
@@ -82,6 +83,7 @@ type GetResult struct {
 	Field       model.FieldRef
 	Value       string
 	Visibility  model.Visibility
+	Exposure    model.Exposure
 	Source      model.Source
 	Diagnostics []model.Diagnostic
 }
@@ -381,6 +383,7 @@ func (s *Store) Snapshot(policy SnapshotPolicy) ([]SnapshotItem, error) {
 			Source:        value.Source,
 			Origin:        value.Origin,
 			Visibility:    rendered.visibility,
+			Exposure:      value.Exposure,
 			Description:   binding.Description,
 			UpdatedAt:     value.UpdatedAt,
 			Diagnostics:   diagnosticsFor(s.state.Diagnostics, binding),
@@ -418,6 +421,7 @@ func (s *Store) Get(key string, policy GetPolicy) (GetResult, bool, error) {
 		Field:       ref,
 		Value:       rendered.value,
 		Visibility:  rendered.visibility,
+		Exposure:    value.Exposure,
 		Source:      value.Source,
 		Diagnostics: diagnosticsFor(s.state.Diagnostics, binding),
 	}, true, nil

@@ -243,6 +243,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"field":       &graphql.Field{Type: fieldRefType},
 			"value":       &graphql.Field{Type: graphql.String},
 			"visibility":  &graphql.Field{Type: graphql.String},
+			"exposure":    &graphql.Field{Type: graphql.String},
 			"source":      &graphql.Field{Type: sourceType},
 			"diagnostics": &graphql.Field{Type: graphql.NewList(diagnosticType)},
 		},
@@ -314,6 +315,13 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					item := p.Source.(store.SnapshotItem)
 					return string(item.Visibility), nil
+				},
+			},
+			"exposure": &graphql.Field{
+				Type: graphql.String,
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					item := p.Source.(store.SnapshotItem)
+					return string(item.Exposure), nil
 				},
 			},
 			"description": &graphql.Field{Type: graphql.String},
@@ -724,6 +732,7 @@ func getResultView(result store.GetResult) map[string]interface{} {
 		"field":       fieldRefView(result.Field),
 		"value":       result.Value,
 		"visibility":  string(result.Visibility),
+		"exposure":    string(result.Exposure),
 		"source":      sourceView(result.Source),
 		"diagnostics": result.Diagnostics,
 	}

@@ -377,6 +377,7 @@ query OwlSnapshot($input: LoadInput!, $reveal: Boolean = false) {
               source
               origin
               visibility
+              exposure
               description
               diagnostics { severity code message key field }
             }
@@ -411,6 +412,7 @@ func decodeSnapshot(raw interface{}) []SnapshotItem {
 			Source:      model.Source{Name: stringValue(item["source"])},
 			Origin:      model.Source{Name: stringValue(item["origin"])},
 			Visibility:  model.Visibility(stringValue(item["visibility"])),
+			Exposure:    model.Exposure(stringValue(item["exposure"])),
 			Description: stringValue(item["description"]),
 			Diagnostics: decodeDiagnostics(item["diagnostics"]),
 		})
@@ -439,6 +441,7 @@ func decodeGet(raw interface{}) GetResult {
 		Field:       decodeFieldRef(row["field"]),
 		Value:       stringValue(row["value"]),
 		Visibility:  model.Visibility(stringValue(row["visibility"])),
+		Exposure:    model.Exposure(stringValue(row["exposure"])),
 		Source:      decodeSource(row["source"]),
 		Diagnostics: decodeDiagnostics(row["diagnostics"]),
 	}
@@ -549,6 +552,7 @@ query OwlGet($input: LoadInput!, $key: String!, $reveal: Boolean = false) {
               field { typeID instance field }
               value
               visibility
+              exposure
               source { name kind }
               diagnostics { severity code message key field }
             }
