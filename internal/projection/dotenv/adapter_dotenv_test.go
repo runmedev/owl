@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/runmedev/owl/internal/model"
 )
 
 func TestAdaptDotenvFiles_CompatibleWithOldStoreForSimpleDotenv(t *testing.T) {
@@ -23,14 +25,14 @@ DATABASE_URL="Database URL" # Opaque
 `)
 
 	state, err := AdaptDotenvFiles(envRaw, specRaw, DotenvAdapterOptions{
-		EnvSource:    Source{Name: ".env", Kind: "dotenv"},
-		SpecSource:   Source{Name: ".env.example", Kind: "dotenv-spec"},
+		EnvSource:    model.Source{Name: ".env", Kind: "dotenv"},
+		SpecSource:   model.Source{Name: ".env.example", Kind: "dotenv-spec"},
 		Clock:        func() time.Time { return time.Date(2026, 7, 18, 10, 0, 0, 0, time.UTC) },
-		OperationIDs: NewMonotonicOperationIDGenerator("adapter-op"),
+		OperationIDs: model.NewMonotonicOperationIDGenerator("adapter-op"),
 	})
 	require.NoError(t, err)
 
-	rendered := RenderDotenvProjection(state, RenderPolicy{Insecure: true})
+	rendered := RenderDotenvProjection(state, model.RenderPolicy{Insecure: true})
 	assert.Empty(t, rendered.Diagnostics)
 	assert.Equal(t, []string{
 		"API_URL=https://api.example.com",
@@ -38,7 +40,7 @@ DATABASE_URL="Database URL" # Opaque
 		"MIXPANEL_TOKEN=token-value",
 	}, renderedAssignments(rendered.Variables))
 
-	safe := renderedByKey(RenderDotenv(state, RenderPolicy{}))
+	safe := renderedByKey(RenderDotenv(state, model.RenderPolicy{}))
 	assert.Equal(t, "https://api.example.com", safe["API_URL"].Value)
 	assert.Equal(t, "[masked]", safe["MIXPANEL_TOKEN"].Value)
 	assert.Equal(t, "[hidden]", safe["DATABASE_URL"].Value)
@@ -52,18 +54,18 @@ func TestAdaptDotenvFiles_MaterializesMissingSpecAsUnresolved(t *testing.T) {
 		[]byte("MIXPANEL_TOKEN=\"Mixpanel token\" # Secret!\n"),
 		DotenvAdapterOptions{
 			Clock:        func() time.Time { return time.Date(2026, 7, 18, 10, 0, 0, 0, time.UTC) },
-			OperationIDs: NewMonotonicOperationIDGenerator("adapter-op"),
+			OperationIDs: model.NewMonotonicOperationIDGenerator("adapter-op"),
 		},
 	)
 	require.NoError(t, err)
 
-	ref := FieldRef{TypeID: TypeCoreSecret, Instance: "default", Field: "mixpanel.token"}
+	ref := model.FieldRef{TypeID: model.TypeCoreSecret, Instance: "default", Field: "mixpanel.token"}
 	require.Contains(t, state.Values, ref)
-	assert.Equal(t, VisibilityUnresolved, state.Values[ref].Visibility)
-	assert.Contains(t, diagnosticCodes(RenderDotenvProjection(state, RenderPolicy{Insecure: true}).Diagnostics), "dotenv.render-unresolved")
+	assert.Equal(t, model.VisibilityUnresolved, state.Values[ref].Visibility)
+	assert.Contains(t, diagnosticCodes(RenderDotenvProjection(state, model.RenderPolicy{Insecure: true}).Diagnostics), "dotenv.render-unresolved")
 }
 
-func renderedAssignments(rendered []RenderedVariable) []string {
+func renderedAssignments(rendered []model.RenderedVariable) []string {
 	result := make([]string, 0, len(rendered))
 	for _, item := range rendered {
 		result = append(result, item.Key+"="+item.Value)
@@ -89,7 +91,7 @@ func TestDeclarationsFromSpecs_UsesStableKeys(t *testing.T) {
 	declarations := declarationsFromSpecs(specs, map[string]string{
 		"MIXPANEL_TOKEN": "Mixpanel token",
 		"API_URL":        "Public API URL",
-	}, Source{Name: ".env.example", Kind: "dotenv-spec"})
+	}, model.Source{Name: ".env.example", Kind: "dotenv-spec"})
 	keys := make([]string, 0, len(declarations))
 	for _, declaration := range declarations {
 		keys = append(keys, string(declaration.Key)+":"+string(declaration.FieldRef.TypeID))
@@ -97,8 +99,8 @@ func TestDeclarationsFromSpecs_UsesStableKeys(t *testing.T) {
 
 	assert.True(t, sort.StringsAreSorted(keys))
 	assert.Equal(t, []string{
-		"API_URL:" + string(TypeCorePlain),
-		"MIXPANEL_TOKEN:" + string(TypeCoreSecret),
+		"API_URL:" + string(model.TypeCorePlain),
+		"MIXPANEL_TOKEN:" + string(model.TypeCoreSecret),
 	}, keys)
 	assert.False(t, strings.Contains(strings.Join(keys, ","), "Plain"))
 }

@@ -8,105 +8,50 @@ import (
 	"github.com/runmedev/owl/internal/model"
 )
 
-type (
-	Source               = model.Source
-	Clock                = model.Clock
-	OperationIDGenerator = model.OperationIDGenerator
-	FieldRef             = model.FieldRef
-	ProjectionKey        = model.ProjectionKey
-	Sensitivity          = model.Sensitivity
-	Exposure             = model.Exposure
-	EffectiveState       = model.EffectiveState
-	BindingConfidence    = model.BindingConfidence
-	Diagnostic           = model.Diagnostic
-	Value                = model.Value
-	Visibility           = model.Visibility
-	Binding              = model.Binding
-	RenderPolicy         = model.RenderPolicy
-	RenderedVariable     = model.RenderedVariable
-	RenderedProjection   = model.RenderedProjection
-	OperationID          = model.OperationID
-	OperationMetadata    = model.OperationMetadata
-)
-
-const (
-	BindingConfidenceExplicit    = model.BindingConfidenceExplicit
-	BindingConfidenceTypeDerived = model.BindingConfidenceTypeDerived
-	BindingConfidenceOpaque      = model.BindingConfidenceOpaque
-	DiagnosticInfo               = model.DiagnosticInfo
-	DiagnosticError              = model.DiagnosticError
-	DiagnosticWarning            = model.DiagnosticWarning
-	OperationKindLoad            = model.OperationKindLoad
-	OperationKindNormalize       = model.OperationKindNormalize
-	ProjectionDotenv             = model.ProjectionDotenv
-	ExposureClear                = model.ExposureClear
-	ExposureOpaque               = model.ExposureOpaque
-	SensitivityNonSensitive      = model.SensitivityNonSensitive
-	SensitivitySensitive         = model.SensitivitySensitive
-	SensitivityUnknown           = model.SensitivityUnknown
-	TypeCoreHost                 = model.TypeCoreHost
-	TypeCoreOpaque               = model.TypeCoreOpaque
-	TypeCorePlain                = model.TypeCorePlain
-	TypeCorePort                 = model.TypeCorePort
-	TypeCoreSecret               = model.TypeCoreSecret
-	TypeCoreURL                  = model.TypeCoreURL
-	TypeUniverseRedis            = model.TypeUniverseRedis
-	VisibilityHidden             = model.VisibilityHidden
-	VisibilityLiteral            = model.VisibilityLiteral
-	VisibilityMasked             = model.VisibilityMasked
-	VisibilityUnresolved         = model.VisibilityUnresolved
-)
-
-var (
-	NewEffectiveState                = model.NewEffectiveState
-	NewMonotonicOperationIDGenerator = model.NewMonotonicOperationIDGenerator
-	RealClock                        = model.RealClock
-)
-
 type DotenvIngestOptions struct {
-	Source       Source
+	Source       model.Source
 	Actor        string
-	Clock        Clock
-	OperationIDs OperationIDGenerator
+	Clock        model.Clock
+	OperationIDs model.OperationIDGenerator
 	Declarations []FieldDeclaration
 }
 
 type FieldDeclaration struct {
-	FieldRef    FieldRef
-	Key         ProjectionKey
+	FieldRef    model.FieldRef
+	Key         model.ProjectionKey
 	Required    bool
 	Description string
-	Source      Source
-	Sensitivity Sensitivity
-	Exposure    Exposure
+	Source      model.Source
+	Sensitivity model.Sensitivity
+	Exposure    model.Exposure
 	UnknownType string
 }
 
-func IngestDotenv(values map[string]string, opts DotenvIngestOptions) EffectiveState {
+func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.EffectiveState {
 	clock := opts.Clock
 	if clock == nil {
-		clock = RealClock
+		clock = model.RealClock
 	}
 	opIDs := opts.OperationIDs
 	if opIDs == nil {
-		opIDs = NewMonotonicOperationIDGenerator("op")
+		opIDs = model.NewMonotonicOperationIDGenerator("op")
 	}
 	source := opts.Source
 	if source.Name == "" {
-		source = Source{Name: ".env", Kind: "dotenv"}
+		source = model.Source{Name: ".env", Kind: "dotenv"}
 	}
 
-	state := NewEffectiveState()
+	state := model.NewEffectiveState()
 	declarationsByKey := make(map[string]FieldDeclaration, len(opts.Declarations))
 	declarationKeys := make([]string, 0, len(opts.Declarations))
 	for _, declaration := range opts.Declarations {
 		key := string(declaration.Key)
 		if key == "" {
 			key = preferredDotenvKey(declaration.FieldRef)
-			declaration.Key = ProjectionKey(key)
+			declaration.Key = model.ProjectionKey(key)
 		}
 		if declaration.Source.Name == "" {
-			declaration.Source = Source{Name: ".env.example", Kind: "dotenv-spec"}
+			declaration.Source = model.Source{Name: ".env.example", Kind: "dotenv-spec"}
 		}
 		declarationsByKey[key] = declaration
 		declarationKeys = append(declarationKeys, key)
@@ -114,7 +59,7 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) EffectiveS
 	sort.Strings(declarationKeys)
 
 	seenKeys := make(map[string]struct{}, len(values))
-	seenFields := make(map[FieldRef]string, len(values)+len(opts.Declarations))
+	seenFields := make(map[model.FieldRef]string, len(values)+len(opts.Declarations))
 	keys := make([]string, 0, len(values))
 	for key := range values {
 		keys = append(keys, key)
@@ -128,11 +73,11 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) EffectiveS
 		fieldRef, confidence, diagnostic := dotenvFieldRef(key)
 		origin := source
 		explicit := false
-		preserveKey := confidence == BindingConfidenceOpaque
+		preserveKey := confidence == model.BindingConfidenceOpaque
 		description := ""
 		if declaration, ok := declarationsByKey[key]; ok {
 			fieldRef = declaration.FieldRef
-			confidence = BindingConfidenceExplicit
+			confidence = model.BindingConfidenceExplicit
 			diagnostic = nil
 			origin = declaration.Source
 			explicit = true
@@ -143,8 +88,8 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) EffectiveS
 			state.Diagnostics = append(state.Diagnostics, *diagnostic)
 		}
 		if _, ok := seenFields[fieldRef]; ok {
-			state.Diagnostics = append(state.Diagnostics, Diagnostic{
-				Severity: DiagnosticWarning,
+			state.Diagnostics = append(state.Diagnostics, model.Diagnostic{
+				Severity: model.DiagnosticWarning,
 				Code:     "dotenv.collision",
 				Message:  "dotenv keys project to the same semantic field; keeping the first value",
 				Key:      key,
@@ -163,11 +108,11 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) EffectiveS
 			sensitivity = declarationSensitivity(declaration)
 			exposure = declarationExposure(declaration)
 		}
-		state.Values[fieldRef] = Value{
+		state.Values[fieldRef] = model.Value{
 			FieldRef:        fieldRef,
 			Original:        value,
 			Resolved:        value,
-			Visibility:      VisibilityLiteral,
+			Visibility:      model.VisibilityLiteral,
 			Sensitivity:     sensitivity,
 			Exposure:        exposure,
 			Origin:          origin,
@@ -177,13 +122,13 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) EffectiveS
 			LastOperationID: opID,
 		}
 		state.Bindings = append(state.Bindings, newBinding(opID, key, fieldRef, description, source, origin, confidence, explicit, preserveKey, now))
-		state.Operations = append(state.Operations, OperationMetadata{
+		state.Operations = append(state.Operations, model.OperationMetadata{
 			ID:           opID,
-			Kind:         OperationKindLoad,
+			Kind:         model.OperationKindLoad,
 			Timestamp:    now,
 			Actor:        opts.Actor,
 			Source:       source,
-			ProjectionID: ProjectionDotenv,
+			ProjectionID: model.ProjectionDotenv,
 		})
 	}
 
@@ -196,8 +141,8 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) EffectiveS
 		opID := opIDs()
 		fieldRef := declaration.FieldRef
 		if _, ok := seenFields[fieldRef]; ok {
-			state.Diagnostics = append(state.Diagnostics, Diagnostic{
-				Severity: DiagnosticWarning,
+			state.Diagnostics = append(state.Diagnostics, model.Diagnostic{
+				Severity: model.DiagnosticWarning,
 				Code:     "dotenv.declaration-collision",
 				Message:  "dotenv declarations project to the same semantic field; keeping the first field value",
 				Key:      key,
@@ -207,9 +152,9 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) EffectiveS
 		}
 		seenFields[fieldRef] = key
 
-		state.Values[fieldRef] = Value{
+		state.Values[fieldRef] = model.Value{
 			FieldRef:        fieldRef,
-			Visibility:      VisibilityUnresolved,
+			Visibility:      model.VisibilityUnresolved,
 			Sensitivity:     declarationSensitivity(declaration),
 			Exposure:        declarationExposure(declaration),
 			Origin:          declaration.Source,
@@ -225,22 +170,22 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) EffectiveS
 			declaration.Description,
 			declaration.Source,
 			declaration.Source,
-			BindingConfidenceExplicit,
+			model.BindingConfidenceExplicit,
 			true,
 			false,
 			now,
 		))
-		state.Operations = append(state.Operations, OperationMetadata{
+		state.Operations = append(state.Operations, model.OperationMetadata{
 			ID:           opID,
-			Kind:         OperationKindNormalize,
+			Kind:         model.OperationKindNormalize,
 			Timestamp:    now,
 			Actor:        opts.Actor,
 			Source:       declaration.Source,
-			ProjectionID: ProjectionDotenv,
+			ProjectionID: model.ProjectionDotenv,
 		})
 		if declaration.Required {
-			state.Diagnostics = append(state.Diagnostics, Diagnostic{
-				Severity: DiagnosticError,
+			state.Diagnostics = append(state.Diagnostics, model.Diagnostic{
+				Severity: model.DiagnosticError,
 				Code:     "dotenv.unresolved-required",
 				Message:  "required declared dotenv field has no observed value",
 				Key:      key,
@@ -252,20 +197,20 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) EffectiveS
 	return state
 }
 
-func RenderDotenv(state EffectiveState, policy RenderPolicy) []RenderedVariable {
+func RenderDotenv(state model.EffectiveState, policy model.RenderPolicy) []model.RenderedVariable {
 	return RenderDotenvProjection(state, policy).Variables
 }
 
-func RenderDotenvProjection(state EffectiveState, policy RenderPolicy) RenderedProjection {
-	rendered := make([]RenderedVariable, 0, len(state.Bindings))
-	diagnostics := make([]Diagnostic, 0)
-	keys := make(map[string]FieldRef, len(state.Bindings))
+func RenderDotenvProjection(state model.EffectiveState, policy model.RenderPolicy) model.RenderedProjection {
+	rendered := make([]model.RenderedVariable, 0, len(state.Bindings))
+	diagnostics := make([]model.Diagnostic, 0)
+	keys := make(map[string]model.FieldRef, len(state.Bindings))
 	for _, binding := range state.Bindings {
 		value := state.Values[binding.FieldRef]
 		key := renderKey(binding, value)
-		if value.Visibility == VisibilityUnresolved {
-			diagnostics = append(diagnostics, Diagnostic{
-				Severity: DiagnosticInfo,
+		if value.Visibility == model.VisibilityUnresolved {
+			diagnostics = append(diagnostics, model.Diagnostic{
+				Severity: model.DiagnosticInfo,
 				Code:     "dotenv.render-unresolved",
 				Message:  "unresolved semantic field has no dotenv value to render",
 				Key:      key,
@@ -274,8 +219,8 @@ func RenderDotenvProjection(state EffectiveState, policy RenderPolicy) RenderedP
 			continue
 		}
 		if existingRef, ok := keys[key]; ok && existingRef != binding.FieldRef {
-			diagnostics = append(diagnostics, Diagnostic{
-				Severity: DiagnosticWarning,
+			diagnostics = append(diagnostics, model.Diagnostic{
+				Severity: model.DiagnosticWarning,
 				Code:     "dotenv.render-collision",
 				Message:  "multiple semantic fields render to the same dotenv key; skipping later value",
 				Key:      key,
@@ -289,15 +234,15 @@ func RenderDotenvProjection(state EffectiveState, policy RenderPolicy) RenderedP
 		visibility := value.Visibility
 		if !policy.Insecure {
 			switch value.Sensitivity {
-			case SensitivitySensitive:
+			case model.SensitivitySensitive:
 				renderValue = "[masked]"
-				visibility = VisibilityMasked
-			case SensitivityUnknown:
+				visibility = model.VisibilityMasked
+			case model.SensitivityUnknown:
 				renderValue = "[hidden]"
-				visibility = VisibilityHidden
+				visibility = model.VisibilityHidden
 			}
 		}
-		rendered = append(rendered, RenderedVariable{
+		rendered = append(rendered, model.RenderedVariable{
 			Key:        key,
 			Value:      renderValue,
 			Visibility: visibility,
@@ -306,26 +251,26 @@ func RenderDotenvProjection(state EffectiveState, policy RenderPolicy) RenderedP
 	sort.SliceStable(rendered, func(i, j int) bool {
 		return rendered[i].Key < rendered[j].Key
 	})
-	return RenderedProjection{Variables: rendered, Diagnostics: diagnostics}
+	return model.RenderedProjection{Variables: rendered, Diagnostics: diagnostics}
 }
 
 func newBinding(
-	opID OperationID,
+	opID model.OperationID,
 	key string,
-	fieldRef FieldRef,
+	fieldRef model.FieldRef,
 	description string,
-	source Source,
-	origin Source,
-	confidence BindingConfidence,
+	source model.Source,
+	origin model.Source,
+	confidence model.BindingConfidence,
 	explicit bool,
 	preserveKey bool,
 	now time.Time,
-) Binding {
-	return Binding{
+) model.Binding {
+	return model.Binding{
 		ID:              string(opID) + ":" + key,
 		FieldRef:        fieldRef,
-		ProjectionID:    ProjectionDotenv,
-		Key:             ProjectionKey(key),
+		ProjectionID:    model.ProjectionDotenv,
+		Key:             model.ProjectionKey(key),
 		Description:     description,
 		Source:          source,
 		Origin:          origin,
@@ -338,15 +283,15 @@ func newBinding(
 	}
 }
 
-func renderKey(binding Binding, value Value) string {
+func renderKey(binding model.Binding, value model.Value) string {
 	if binding.PreserveKey || binding.Key != "" {
 		return string(binding.Key)
 	}
 	return preferredDotenvKey(value.FieldRef)
 }
 
-func preferredDotenvKey(ref FieldRef) string {
-	if ref.TypeID == TypeUniverseRedis {
+func preferredDotenvKey(ref model.FieldRef) string {
+	if ref.TypeID == model.TypeUniverseRedis {
 		field, ok := redisPreferredSuffix(ref.Field)
 		if ok {
 			if ref.Instance == "" || ref.Instance == "default" {
@@ -358,7 +303,7 @@ func preferredDotenvKey(ref FieldRef) string {
 	return strings.ToUpper(strings.ReplaceAll(ref.Field, ".", "_"))
 }
 
-func dotenvFieldRef(key string) (FieldRef, BindingConfidence, *Diagnostic) {
+func dotenvFieldRef(key string) (model.FieldRef, model.BindingConfidence, *model.Diagnostic) {
 	parts := strings.Split(key, "_")
 	if len(parts) >= 2 && parts[len(parts)-2] == "REDIS" {
 		field, ok := redisField(parts[len(parts)-1])
@@ -367,25 +312,25 @@ func dotenvFieldRef(key string) (FieldRef, BindingConfidence, *Diagnostic) {
 			if len(parts) > 2 {
 				instance = strings.ToLower(strings.Join(parts[:len(parts)-2], "_"))
 			}
-			return FieldRef{TypeID: TypeUniverseRedis, Instance: instance, Field: field}, BindingConfidenceTypeDerived, nil
+			return model.FieldRef{TypeID: model.TypeUniverseRedis, Instance: instance, Field: field}, model.BindingConfidenceTypeDerived, nil
 		}
 	}
 	if strings.HasPrefix(key, "REDIS_") {
 		field, ok := redisField(strings.TrimPrefix(key, "REDIS_"))
 		if ok {
-			return FieldRef{TypeID: TypeUniverseRedis, Instance: "default", Field: field}, BindingConfidenceTypeDerived, nil
+			return model.FieldRef{TypeID: model.TypeUniverseRedis, Instance: "default", Field: field}, model.BindingConfidenceTypeDerived, nil
 		}
 	}
 
-	ref := FieldRef{TypeID: TypeCoreOpaque, Instance: "default", Field: opaqueFieldName(key)}
-	diagnostic := &Diagnostic{
-		Severity: DiagnosticInfo,
+	ref := model.FieldRef{TypeID: model.TypeCoreOpaque, Instance: "default", Field: opaqueFieldName(key)}
+	diagnostic := &model.Diagnostic{
+		Severity: model.DiagnosticInfo,
 		Code:     "dotenv.opaque",
 		Message:  "dotenv key has no explicit type declaration and remains core/opaque",
 		Key:      key,
 		FieldRef: ref,
 	}
-	return ref, BindingConfidenceOpaque, diagnostic
+	return ref, model.BindingConfidenceOpaque, diagnostic
 }
 
 func redisField(suffix string) (string, bool) {
@@ -418,17 +363,17 @@ func opaqueFieldName(key string) string {
 	return strings.ToLower(strings.ReplaceAll(key, "_", "."))
 }
 
-func sensitivityForField(ref FieldRef) Sensitivity {
-	if ref.TypeID == TypeUniverseRedis && ref.Field == "password" {
-		return SensitivitySensitive
+func sensitivityForField(ref model.FieldRef) model.Sensitivity {
+	if ref.TypeID == model.TypeUniverseRedis && ref.Field == "password" {
+		return model.SensitivitySensitive
 	}
-	if ref.TypeID == TypeCoreSecret {
-		return SensitivitySensitive
+	if ref.TypeID == model.TypeCoreSecret {
+		return model.SensitivitySensitive
 	}
-	if ref.TypeID == TypeCorePlain || ref.TypeID == TypeCoreURL || ref.TypeID == TypeCoreHost || ref.TypeID == TypeCorePort {
-		return SensitivityNonSensitive
+	if ref.TypeID == model.TypeCorePlain || ref.TypeID == model.TypeCoreURL || ref.TypeID == model.TypeCoreHost || ref.TypeID == model.TypeCorePort {
+		return model.SensitivityNonSensitive
 	}
-	if ref.TypeID == TypeCoreOpaque {
+	if ref.TypeID == model.TypeCoreOpaque {
 		key := strings.ToUpper(ref.Field)
 		switch {
 		case strings.Contains(key, "PASSWORD"),
@@ -436,29 +381,29 @@ func sensitivityForField(ref FieldRef) Sensitivity {
 			strings.Contains(key, "TOKEN"),
 			strings.Contains(key, "API.KEY"),
 			strings.Contains(key, "PRIVATE.KEY"):
-			return SensitivitySensitive
+			return model.SensitivitySensitive
 		default:
-			return SensitivityUnknown
+			return model.SensitivityUnknown
 		}
 	}
-	return SensitivityNonSensitive
+	return model.SensitivityNonSensitive
 }
 
-func exposureForField(ref FieldRef) Exposure {
-	if ref.TypeID == TypeCoreOpaque {
-		return ExposureOpaque
+func exposureForField(ref model.FieldRef) model.Exposure {
+	if ref.TypeID == model.TypeCoreOpaque {
+		return model.ExposureOpaque
 	}
-	return ExposureClear
+	return model.ExposureClear
 }
 
-func declarationSensitivity(declaration FieldDeclaration) Sensitivity {
+func declarationSensitivity(declaration FieldDeclaration) model.Sensitivity {
 	if declaration.Sensitivity != "" {
 		return declaration.Sensitivity
 	}
 	return sensitivityForField(declaration.FieldRef)
 }
 
-func declarationExposure(declaration FieldDeclaration) Exposure {
+func declarationExposure(declaration FieldDeclaration) model.Exposure {
 	if declaration.Exposure != "" {
 		return declaration.Exposure
 	}
