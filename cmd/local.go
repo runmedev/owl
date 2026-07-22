@@ -85,32 +85,51 @@ func (c *LocalStoreClient) Check(context.Context, CheckRequest) (*CheckResult, e
 
 func (c *LocalStoreClient) store() (*owl.Store, error) {
 	var opts []owl.StoreOption
+	var opened []*os.File
+	closeOpened := func() error {
+		var closeErr error
+		for _, f := range opened {
+			if err := f.Close(); err != nil && closeErr == nil {
+				closeErr = err
+			}
+		}
+		return closeErr
+	}
 
 	specFiles, err := filesOrDefaults(c.options.SpecFiles, ".env.example")
 	if err != nil {
 		return nil, err
 	}
 	for _, file := range specFiles {
-		raw, err := os.ReadFile(file)
+		f, err := os.Open(file)
 		if err != nil {
+			_ = closeOpened()
 			return nil, err
 		}
-		opts = append(opts, owl.WithEnvSpecBytes(file, raw))
+		opened = append(opened, f)
+		opts = append(opts, owl.WithEnvSpec(file, f))
 	}
 
 	envFiles, err := filesOrDefaults(c.options.EnvFiles, ".env")
 	if err != nil {
+		_ = closeOpened()
 		return nil, err
 	}
 	for _, file := range envFiles {
-		raw, err := os.ReadFile(file)
+		f, err := os.Open(file)
 		if err != nil {
+			_ = closeOpened()
 			return nil, err
 		}
-		opts = append(opts, owl.WithEnvBytes(file, raw))
+		opened = append(opened, f)
+		opts = append(opts, owl.WithDotenv(file, f))
 	}
 
-	return owl.NewStore(opts...)
+	store, err := owl.NewStore(opts...)
+	if closeErr := closeOpened(); err == nil && closeErr != nil {
+		return nil, closeErr
+	}
+	return store, err
 }
 
 func filesOrDefaults(files []string, defaults ...string) ([]string, error) {

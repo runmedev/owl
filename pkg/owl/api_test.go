@@ -3,6 +3,7 @@ package owl_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,8 +16,8 @@ func TestV2PublicAPI(t *testing.T) {
 	t.Parallel()
 
 	store, err := owl.NewStore(
-		owl.WithEnvBytes(".env", []byte("API_URL=https://api.example.com\nAPI_KEY=secret\nREDIS_PASSWORD=hunter2\n")),
-		owl.WithEnvSpecBytes(".env.spec", []byte("API_URL=\"API URL\" # Plain!\nAPI_KEY=\"API key\" # Secret!\n")),
+		owl.WithDotenv(".env", strings.NewReader("API_URL=https://api.example.com\nAPI_KEY=secret\nREDIS_PASSWORD=hunter2\n")),
+		owl.WithEnvSpec(".env.spec", strings.NewReader("API_URL=\"API URL\" # Plain!\nAPI_KEY=\"API key\" # Secret!\n")),
 	)
 	require.NoError(t, err)
 
@@ -64,8 +65,8 @@ func TestPublicAPIVisibilityAndExposure(t *testing.T) {
 	t.Parallel()
 
 	store, err := owl.NewStore(
-		owl.WithEnvBytes(".env", []byte("API_URL=https://api.example.com\nAPI_KEY=secret\nDATABASE_URL=postgres://example\n")),
-		owl.WithEnvSpecBytes(".env.spec", []byte("API_URL=\"API URL\" # Plain!\nAPI_KEY=\"API key\" # Secret!\nDATABASE_URL=\"Database URL\" # Opaque\nMISSING_TOKEN=\"Missing token\" # Secret!\n")),
+		owl.WithDotenv(".env", strings.NewReader("API_URL=https://api.example.com\nAPI_KEY=secret\nDATABASE_URL=postgres://example\n")),
+		owl.WithEnvSpec(".env.spec", strings.NewReader("API_URL=\"API URL\" # Plain!\nAPI_KEY=\"API key\" # Secret!\nDATABASE_URL=\"Database URL\" # Opaque\nMISSING_TOKEN=\"Missing token\" # Secret!\n")),
 	)
 	require.NoError(t, err)
 
@@ -103,8 +104,8 @@ func TestPublicAPIGetRevealPolicy(t *testing.T) {
 	t.Parallel()
 
 	store, err := owl.NewStore(
-		owl.WithEnvBytes(".env", []byte("API_KEY=secret\nDATABASE_URL=postgres://example\n")),
-		owl.WithEnvSpecBytes(".env.spec", []byte("API_KEY=\"API key\" # Secret!\nDATABASE_URL=\"Database URL\" # Opaque\n")),
+		owl.WithDotenv(".env", strings.NewReader("API_KEY=secret\nDATABASE_URL=postgres://example\n")),
+		owl.WithEnvSpec(".env.spec", strings.NewReader("API_KEY=\"API key\" # Secret!\nDATABASE_URL=\"Database URL\" # Opaque\n")),
 	)
 	require.NoError(t, err)
 
@@ -140,8 +141,8 @@ func TestPublicAPIDotenvSecureAndInsecure(t *testing.T) {
 	t.Parallel()
 
 	store, err := owl.NewStore(
-		owl.WithEnvBytes(".env", []byte("API_URL=https://api.example.com\nAPI_KEY=secret\nDATABASE_URL=postgres://example\n")),
-		owl.WithEnvSpecBytes(".env.spec", []byte("API_URL=\"API URL\" # Plain!\nAPI_KEY=\"API key\" # Secret!\nDATABASE_URL=\"Database URL\" # Opaque\nMISSING_TOKEN=\"Missing token\" # Secret!\n")),
+		owl.WithDotenv(".env", strings.NewReader("API_URL=https://api.example.com\nAPI_KEY=secret\nDATABASE_URL=postgres://example\n")),
+		owl.WithEnvSpec(".env.spec", strings.NewReader("API_URL=\"API URL\" # Plain!\nAPI_KEY=\"API key\" # Secret!\nDATABASE_URL=\"Database URL\" # Opaque\nMISSING_TOKEN=\"Missing token\" # Secret!\n")),
 	)
 	require.NoError(t, err)
 
@@ -170,8 +171,8 @@ func TestPublicAPIStateEnvelopeRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	store, err := owl.NewStore(
-		owl.WithEnvBytes(".env", []byte("API_URL=https://api.example.com\nAPI_KEY=secret\nDATABASE_URL=postgres://example\n")),
-		owl.WithEnvSpecBytes(".env.spec", []byte("API_URL=\"API URL\" # Plain!\nAPI_KEY=\"API key\" # Secret!\nDATABASE_URL=\"Database URL\" # Opaque\n")),
+		owl.WithDotenv(".env", strings.NewReader("API_URL=https://api.example.com\nAPI_KEY=secret\nDATABASE_URL=postgres://example\n")),
+		owl.WithEnvSpec(".env.spec", strings.NewReader("API_URL=\"API URL\" # Plain!\nAPI_KEY=\"API key\" # Secret!\nDATABASE_URL=\"Database URL\" # Opaque\n")),
 	)
 	require.NoError(t, err)
 
@@ -205,7 +206,7 @@ func TestPublicAPIWithEnvContractMapsBindings(t *testing.T) {
 	t.Parallel()
 
 	store, err := owl.NewStore(
-		owl.WithEnvBytes(".env", []byte("DATABASE_URL=postgres://example\n")),
+		owl.WithDotenv(".env", strings.NewReader("DATABASE_URL=postgres://example\n")),
 		owl.WithEnvContract(owl.EnvContract{
 			Source:     owl.Source{Name: "package.json", Kind: "package-json"},
 			Projection: "dotenv",
@@ -237,8 +238,8 @@ func TestV2PublicAPIDiagnostics(t *testing.T) {
 	t.Parallel()
 
 	_, err := owl.NewStore(
-		owl.WithEnvBytes(".env", []byte("DATABASE_URL=postgres://example\n")),
-		owl.WithEnvSpecBytes(".env.spec", []byte("DATABASE_URL=\"Database URL\" # Url!\n")),
+		owl.WithDotenv(".env", strings.NewReader("DATABASE_URL=postgres://example\n")),
+		owl.WithEnvSpec(".env.spec", strings.NewReader("DATABASE_URL=\"Database URL\" # Url!\n")),
 	)
 	require.Error(t, err)
 

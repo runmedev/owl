@@ -1,7 +1,6 @@
 package owl
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"strings"
@@ -91,42 +90,26 @@ func NewStore(opts ...StoreOption) (*Store, error) {
 	return &Store{runtime: runtime, load: load}, nil
 }
 
-func WithEnvFile(name string, r io.Reader) StoreOption {
+func WithDotenv(source string, r io.Reader) StoreOption {
 	return func(cfg *config) error {
 		raw, err := io.ReadAll(r)
 		if err != nil {
 			return err
 		}
-		cfg.envs = append(cfg.envs, store.SourceBytes{Name: name, Raw: raw})
+		cfg.envs = append(cfg.envs, store.SourceBytes{Name: source, Raw: raw})
 		return nil
 	}
 }
 
-func WithEnvSpecFile(name string, r io.Reader) StoreOption {
+func WithEnvSpec(source string, r io.Reader) StoreOption {
 	return func(cfg *config) error {
 		raw, err := io.ReadAll(r)
 		if err != nil {
 			return err
 		}
-		cfg.specs = append(cfg.specs, store.SourceBytes{Name: name, Raw: raw})
+		cfg.specs = append(cfg.specs, store.SourceBytes{Name: source, Raw: raw})
 		return nil
 	}
-}
-
-func WithEnvBytes(name string, raw []byte) StoreOption {
-	return WithEnvFile(name, bytes.NewReader(raw))
-}
-
-func WithEnvSpecBytes(name string, raw []byte) StoreOption {
-	return WithEnvSpecFile(name, bytes.NewReader(raw))
-}
-
-func WithEnvs(source string, envs ...string) StoreOption {
-	raw := strings.Join(envs, "\n")
-	if raw != "" {
-		raw += "\n"
-	}
-	return WithEnvFile(source, strings.NewReader(raw))
 }
 
 func WithEnvContract(contract EnvContract) StoreOption {
@@ -263,12 +246,4 @@ func (s *Store) applyDotenvWithContext(ctx context.Context, source Source, vars 
 	}
 	s.load = store.LoadInput{Envelope: &envelope}
 	return nil
-}
-
-func WithSpecFile(name string, r io.Reader) StoreOption {
-	return WithEnvSpecFile(name, r)
-}
-
-func WithSpecBytes(name string, raw []byte) StoreOption {
-	return WithEnvSpecBytes(name, raw)
 }
