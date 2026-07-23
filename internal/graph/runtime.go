@@ -120,7 +120,9 @@ func (r *Runtime) SensitiveKeys(ctx context.Context, input LoadInput) ([]string,
 }
 
 func (r *Runtime) StateEnvelope(ctx context.Context, input LoadInput) (StateEnvelope, error) {
-	return r.StateEnvelopeAfter(ctx, input, store.LoadInput{}, nil)
+	return r.StateEnvelopeForOperations(ctx, []store.OperationRecord{
+		{Kind: store.OperationRecordLoad, Load: input},
+	})
 }
 
 func (r *Runtime) StateEnvelopeForOperations(ctx context.Context, records []store.OperationRecord) (StateEnvelope, error) {
@@ -140,19 +142,23 @@ func (r *Runtime) StateEnvelopeForOperations(ctx context.Context, records []stor
 }
 
 func (r *Runtime) StateEnvelopeAfter(ctx context.Context, input LoadInput, patch store.LoadInput, deleted []string) (StateEnvelope, error) {
-	result, err := r.do(ctx, stateEnvelopeQuery, map[string]interface{}{
-		"input":   marshalInput(input),
-		"updates": marshalDotenvInput(patch),
-		"deleted": deleted,
-	})
-	if err != nil {
-		return StateEnvelope{}, err
+	records := []store.OperationRecord{{Kind: store.OperationRecordLoad, Load: input}}
+	if len(patch.Dotenv) > 0 {
+		records = append(records, store.OperationRecord{
+			Kind: store.OperationRecordUpdate,
+			Update: store.UpdateOperation{
+				Source: patch.DotenvSource,
+				Dotenv: patch.Dotenv,
+			},
+		})
 	}
-	raw, err := extractPath(result.Data, "Environment", "load", "update", "delete", "normalize", "validate", "state", "envelope")
-	if err != nil {
-		return StateEnvelope{}, err
+	if len(deleted) > 0 {
+		records = append(records, store.OperationRecord{
+			Kind:   store.OperationRecordDelete,
+			Delete: store.DeleteOperation{Keys: append([]string{}, deleted...)},
+		})
 	}
-	return decodeEnvelope(raw)
+	return r.StateEnvelopeForOperations(ctx, records)
 }
 
 func (r *Runtime) Check(ctx context.Context, input LoadInput) (CheckResult, error) {
@@ -587,53 +593,6 @@ query OwlSensitiveKeys($input: LoadInput!) {
         validate {
           render {
             sensitiveKeys
-          }
-        }
-      }
-    }
-  }
-}`
-
-const stateEnvelopeQuery = `
-query OwlStateEnvelope($input: LoadInput!, $updates: DotenvInput, $deleted: [String!]) {
-  Environment {
-    load(input: $input) {
-      update(dotenv: $updates) {
-        delete(keys: $deleted) {
-          normalize {
-            validate {
-              state {
-                envelope {
-                  modelVersion
-                  state {
-                    values {
-                      field { typeID instance field }
-                      original
-                      resolved
-                      visibility
-                      sensitivity
-                      exposure
-                      origin { name kind }
-                      source { name kind }
-                    }
-                    bindings {
-                      id
-                      field { typeID instance field }
-                      projection
-                      key
-                      description
-                      source { name kind }
-                      origin { name kind }
-                      confidence
-                      explicit
-                      preserveKey
-                    }
-                    diagnostics { severity code message key field }
-                  }
-                  provenance { sources { name kind } }
-                }
-              }
-            }
           }
         }
       }
