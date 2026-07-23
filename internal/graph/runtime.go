@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 
 	"github.com/graphql-go/graphql"
@@ -188,6 +189,14 @@ func (r *Runtime) SchemaJSON(ctx context.Context) (string, error) {
 }
 
 func (r *Runtime) do(ctx context.Context, query string, vars map[string]interface{}) (*graphql.Result, error) {
+	if os.Getenv("OWL_GQL_TRACE") != "" {
+		formattedVars, err := json.MarshalIndent(vars, "", "  ")
+		if err != nil {
+			formattedVars = []byte(fmt.Sprintf("%#v", vars))
+		}
+		_, _ = fmt.Fprintf(os.Stderr, "\n--- owl graphql ---\n%s\nvariables: %s\n", query, formattedVars)
+	}
+
 	result := graphql.Do(graphql.Params{
 		Schema:         r.schema,
 		RequestString:  query,
