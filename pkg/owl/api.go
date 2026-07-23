@@ -56,8 +56,10 @@ const (
 )
 
 type Store struct {
-	runtime *graph.Runtime
-	load    store.LoadInput
+	runtime    *graph.Runtime
+	types      registry.TypeProvider
+	state      model.EffectiveState
+	operations []store.OperationRecord
 }
 
 type StoreOption func(*config) error
@@ -87,7 +89,17 @@ func NewStore(opts ...StoreOption) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Store{runtime: runtime, load: load}, nil
+	s := &Store{
+		runtime: runtime,
+		types:   cfg.types,
+		operations: []store.OperationRecord{
+			{Kind: store.OperationRecordLoad, Load: load},
+		},
+	}
+	if err := s.materialize(context.Background()); err != nil {
+		return nil, err
+	}
+	return s, nil
 }
 
 func WithDotenv(source string, r io.Reader) StoreOption {
@@ -141,34 +153,23 @@ func WithTypeProvider(types registry.TypeProvider) StoreOption {
 }
 
 func (s *Store) Snapshot(policy SnapshotPolicy) ([]SnapshotItem, error) {
-	return s.runtime.Snapshot(context.Background(), s.load, policy)
+	return store.NewState(s.state, s.types).Snapshot(policy)
 }
 
 func (s *Store) Dotenv(policy DotenvPolicy) ([]string, error) {
-	return s.runtime.Dotenv(context.Background(), s.load, policy)
+	return store.NewState(s.state, s.types).Dotenv(policy)
 }
 
 func (s *Store) Get(key string, policy GetPolicy) (GetResult, bool, error) {
-	return s.runtime.Get(context.Background(), s.load, key, policy)
+	return store.NewState(s.state, s.types).Get(key, policy)
 }
 
 func (s *Store) SensitiveKeys() ([]string, error) {
-	return s.runtime.SensitiveKeys(context.Background(), s.load)
+	return store.NewState(s.state, s.types).SensitiveKeys()
 }
 
 func (s *Store) Check() CheckResult {
-	check, err := s.runtime.Check(context.Background(), s.load)
-	if err != nil {
-		return CheckResult{
-			OK: false,
-			Diagnostics: []model.Diagnostic{{
-				Severity: model.DiagnosticError,
-				Code:     "graphql.check-failed",
-				Message:  err.Error(),
-			}},
-		}
-	}
-	return check
+	return store.NewState(s.state, s.types).Check()
 }
 
 func (s *Store) LoadDotenv(source Source, vars []DotenvVariable) error {
@@ -210,10 +211,7 @@ func (s *Store) Delete(ctx context.Context, keys ...string) error {
 }
 
 func (s *Store) StateEnvelope(ctx context.Context) (StateEnvelope, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return s.runtime.StateEnvelope(ctx, s.load)
+	return store.NewState(s.state, s.types).StateEnvelope(), nil
 }
 
 func (s *Store) GraphQLSchema() (string, error) {
@@ -237,13 +235,38 @@ func (s *Store) applyDotenv(source Source, vars []DotenvVariable, deleted []stri
 }
 
 func (s *Store) applyDotenvWithContext(ctx context.Context, source Source, vars []DotenvVariable, deleted []string) error {
-	envelope, err := s.runtime.StateEnvelopeAfter(ctx, s.load, store.LoadInput{
-		DotenvSource: source,
-		Dotenv:       vars,
-	}, deleted)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if len(vars) == 0 && len(deleted) == 0 {
+		return nil
+	}
+	if len(vars) > 0 {
+		s.operations = append(s.operations, store.OperationRecord{
+			Kind: store.OperationRecordUpdate,
+			Update: store.UpdateOperation{
+				Source: source,
+				Dotenv: vars,
+			},
+		})
+	}
+	if len(deleted) > 0 {
+		s.operations = append(s.operations, store.OperationRecord{
+			Kind: store.OperationRecordDelete,
+			Delete: store.DeleteOperation{
+				Keys:   append([]string{}, deleted...),
+				Source: source,
+			},
+		})
+	}
+	return s.materialize(ctx)
+}
+
+func (s *Store) materialize(ctx context.Context) error {
+	envelope, err := s.runtime.StateEnvelopeForOperations(ctx, s.operations)
 	if err != nil {
 		return err
 	}
-	s.load = store.LoadInput{Envelope: &envelope}
+	s.state = envelope.State
 	return nil
 }

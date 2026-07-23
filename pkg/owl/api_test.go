@@ -202,6 +202,37 @@ func TestPublicAPIStateEnvelopeRoundTrip(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestPublicAPIUpdatesMaterializeFromOperationLog(t *testing.T) {
+	t.Parallel()
+
+	store, err := owl.NewStore(
+		owl.WithDotenv(".env", strings.NewReader("API_URL=https://api.example.com\nAPI_KEY=secret\n")),
+		owl.WithEnvSpec(".env.spec", strings.NewReader("API_URL=\"API URL\" # Plain\nAPI_KEY=\"API key\" # Secret\n")),
+	)
+	require.NoError(t, err)
+
+	require.NoError(t, store.Update(context.Background(), []string{"API_URL=https://one.example.com"}, nil))
+	require.NoError(t, store.Update(context.Background(), []string{"API_URL=https://two.example.com"}, nil))
+	got, ok, err := store.Get("API_URL", owl.GetPolicy{Reveal: true})
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, "https://two.example.com", got.Value)
+
+	require.NoError(t, store.Delete(context.Background(), "API_KEY"))
+	_, ok, err = store.Get("API_KEY", owl.GetPolicy{Reveal: true})
+	require.NoError(t, err)
+	assert.False(t, ok)
+
+	envelope, err := store.StateEnvelope(context.Background())
+	require.NoError(t, err)
+	roundTripped, err := owl.NewStore(owl.WithStateEnvelope(envelope))
+	require.NoError(t, err)
+	got, ok, err = roundTripped.Get("API_URL", owl.GetPolicy{Reveal: true})
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, "https://two.example.com", got.Value)
+}
+
 func TestPublicAPIWithEnvContractMapsBindings(t *testing.T) {
 	t.Parallel()
 
