@@ -123,6 +123,22 @@ func (r *Runtime) StateEnvelope(ctx context.Context, input LoadInput) (StateEnve
 	return r.StateEnvelopeAfter(ctx, input, store.LoadInput{}, nil)
 }
 
+func (r *Runtime) StateEnvelopeForOperations(ctx context.Context, records []store.OperationRecord) (StateEnvelope, error) {
+	plan, err := planStateEnvelopeQuery(records)
+	if err != nil {
+		return StateEnvelope{}, err
+	}
+	result, err := r.do(ctx, plan.Query, plan.Vars)
+	if err != nil {
+		return StateEnvelope{}, err
+	}
+	raw, err := extractPath(result.Data, append([]string{"Environment"}, plan.Path...)...)
+	if err != nil {
+		return StateEnvelope{}, err
+	}
+	return decodeEnvelope(raw)
+}
+
 func (r *Runtime) StateEnvelopeAfter(ctx context.Context, input LoadInput, patch store.LoadInput, deleted []string) (StateEnvelope, error) {
 	result, err := r.do(ctx, stateEnvelopeQuery, map[string]interface{}{
 		"input":   marshalInput(input),

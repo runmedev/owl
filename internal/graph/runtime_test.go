@@ -153,6 +153,96 @@ func TestRuntimeSchemaUsesVisibilityAndExposureNames(t *testing.T) {
 	}
 }
 
+func TestPlanStateEnvelopeQueryStacksOperationRecords(t *testing.T) {
+	t.Parallel()
+
+	plan, err := planStateEnvelopeQuery([]store.OperationRecord{
+		{
+			Kind: store.OperationRecordLoad,
+			Load: store.LoadInput{
+				DotenvSource: model.Source{Name: ".env", Kind: "dotenv"},
+				Dotenv:       []store.DotenvVariable{{Key: "API_URL", Value: "https://api.example.com"}},
+			},
+		},
+		{
+			Kind: store.OperationRecordUpdate,
+			Update: store.UpdateOperation{
+				Source: model.Source{Name: "[update]", Kind: "dotenv"},
+				Dotenv: []store.DotenvVariable{{Key: "API_URL", Value: "https://next.example.com"}},
+			},
+		},
+		{
+			Kind:   store.OperationRecordDelete,
+			Delete: store.DeleteOperation{Keys: []string{"API_KEY"}},
+		},
+	})
+	require.NoError(t, err)
+
+	assert.Contains(t, plan.Query, "$load_0: LoadInput!")
+	assert.Contains(t, plan.Query, "$update_1: DotenvInput")
+	assert.Contains(t, plan.Query, "$delete_2: [String!]")
+	assert.Contains(t, plan.Query, "load(input: $load_0)")
+	assert.Contains(t, plan.Query, "update(dotenv: $update_1)")
+	assert.Contains(t, plan.Query, "delete(keys: $delete_2)")
+	assert.NotContains(t, plan.Query, "reconcile")
+	assert.Equal(t, []string{"load", "update", "delete", "normalize", "validate", "state", "envelope"}, plan.Path)
+}
+
+func TestRuntimeMaterializesStateEnvelopeFromOperationRecords(t *testing.T) {
+	t.Parallel()
+
+	runtime, err := NewRuntime(nil)
+	require.NoError(t, err)
+
+	envelope, err := runtime.StateEnvelopeForOperations(context.Background(), []store.OperationRecord{
+		{
+			Kind: store.OperationRecordLoad,
+			Load: store.LoadInput{
+				DotenvSource: model.Source{Name: ".env", Kind: "dotenv"},
+				Dotenv: []store.DotenvVariable{
+					{Key: "API_URL", Value: "https://api.example.com"},
+					{Key: "API_KEY", Value: "secret"},
+				},
+				Contracts: []store.EnvContract{
+					{
+						Source:     model.Source{Name: ".env.spec", Kind: "dotenv-spec"},
+						Projection: model.ProjectionDotenv,
+						Bindings: []store.EnvBinding{
+							{
+								Key:        "API_KEY",
+								FieldRef:   model.FieldRef{TypeID: model.TypeCoreSecret, Instance: "default", Field: "api.key"},
+								Projection: model.ProjectionDotenv,
+								Source:     model.Source{Name: ".env.spec", Kind: "dotenv-spec"},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			Kind: store.OperationRecordUpdate,
+			Update: store.UpdateOperation{
+				Source: model.Source{Name: "[update]", Kind: "dotenv"},
+				Dotenv: []store.DotenvVariable{{Key: "API_URL", Value: "https://next.example.com"}},
+			},
+		},
+		{
+			Kind:   store.OperationRecordDelete,
+			Delete: store.DeleteOperation{Keys: []string{"API_KEY"}},
+		},
+	})
+	require.NoError(t, err)
+
+	s := store.NewState(envelope.State, nil)
+	got, ok, err := s.Get("API_URL", store.GetPolicy{Reveal: true})
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, "https://next.example.com", got.Value)
+	_, ok, err = s.Get("API_KEY", store.GetPolicy{Reveal: true})
+	require.NoError(t, err)
+	assert.False(t, ok)
+}
+
 func snapshotByName(items []SnapshotItem) map[string]SnapshotItem {
 	result := make(map[string]SnapshotItem, len(items))
 	for _, item := range items {
