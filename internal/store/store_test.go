@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -58,6 +59,33 @@ func TestStoreWithDotenv(t *testing.T) {
 
 	assert.Equal(t, model.TypeUniverseRedis, byName["REDIS_HOST"].Type)
 	assert.Equal(t, `universe/redis("default").host`, byName["REDIS_HOST"].Field.String())
+}
+
+func TestStoreRecordsFactOperationsOnly(t *testing.T) {
+	t.Parallel()
+
+	s, err := NewStore(WithDotenv(".env", strings.NewReader("API_URL=https://api.example.com\n")))
+	require.NoError(t, err)
+
+	records := s.OperationRecords()
+	require.Len(t, records, 1)
+	assert.Equal(t, OperationRecordLoad, records[0].Kind)
+	assert.Equal(t, ".env", records[0].Load.DotenvSource.Name)
+	assert.Equal(t, []DotenvVariable{{Key: "API_URL", Value: "https://api.example.com"}}, records[0].Load.Dotenv)
+
+	_, err = s.Apply(context.Background(), UpdateOperation{
+		Source: model.Source{Name: "[update]", Kind: "dotenv"},
+		Dotenv: []DotenvVariable{{Key: "API_URL", Value: "https://next.example.com"}},
+	})
+	require.NoError(t, err)
+	_, err = s.Apply(context.Background(), DeleteOperation{Keys: []string{"API_URL"}})
+	require.NoError(t, err)
+
+	records = s.OperationRecords()
+	require.Len(t, records, 3)
+	assert.Equal(t, OperationRecordUpdate, records[1].Kind)
+	assert.Equal(t, OperationRecordDelete, records[2].Kind)
+	assert.Equal(t, []string{"API_URL"}, records[2].Delete.Keys)
 }
 
 func snapshotByName(items []SnapshotItem) map[string]SnapshotItem {

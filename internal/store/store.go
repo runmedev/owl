@@ -15,12 +15,18 @@ import (
 )
 
 type Store struct {
-	types registry.TypeProvider
-	state model.EffectiveState
+	types      registry.TypeProvider
+	state      model.EffectiveState
+	operations []OperationRecord
 }
 
 type Operation interface {
 	Apply(context.Context, model.EffectiveState) (model.EffectiveState, error)
+}
+
+type RecordedOperation interface {
+	Operation
+	Record() OperationRecord
 }
 
 type StoreOption func(*config) error
@@ -118,14 +124,41 @@ type LoadOperation struct {
 	Input LoadInput
 }
 
+func (op LoadOperation) Record() OperationRecord {
+	return OperationRecord{Kind: OperationRecordLoad, Load: op.Input}
+}
+
 type UpdateOperation struct {
 	Source model.Source
 	Dotenv []DotenvVariable
 }
 
+func (op UpdateOperation) Record() OperationRecord {
+	return OperationRecord{Kind: OperationRecordUpdate, Update: op}
+}
+
 type DeleteOperation struct {
 	Keys   []string
 	Source model.Source
+}
+
+func (op DeleteOperation) Record() OperationRecord {
+	return OperationRecord{Kind: OperationRecordDelete, Delete: op}
+}
+
+type OperationRecordKind string
+
+const (
+	OperationRecordLoad   OperationRecordKind = "load"
+	OperationRecordUpdate OperationRecordKind = "update"
+	OperationRecordDelete OperationRecordKind = "delete"
+)
+
+type OperationRecord struct {
+	Kind   OperationRecordKind
+	Load   LoadInput
+	Update UpdateOperation
+	Delete DeleteOperation
 }
 
 type NormalizeOperation struct{}
@@ -233,6 +266,9 @@ func WithTypeProvider(types registry.TypeProvider) StoreOption {
 }
 
 func (s *Store) Apply(ctx context.Context, op Operation) (model.EffectiveState, error) {
+	if recorded, ok := op.(RecordedOperation); ok {
+		s.operations = append(s.operations, recorded.Record())
+	}
 	state, err := op.Apply(ctx, s.state)
 	if err != nil {
 		return model.EffectiveState{}, err
@@ -438,6 +474,10 @@ func (s *Store) Check() CheckResult {
 
 func (s *Store) State() model.EffectiveState {
 	return s.state
+}
+
+func (s *Store) OperationRecords() []OperationRecord {
+	return append([]OperationRecord{}, s.operations...)
 }
 
 func (s *Store) StateEnvelope() StateEnvelope {

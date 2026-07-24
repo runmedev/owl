@@ -39,6 +39,8 @@ type CheckResult = store.CheckResult
 
 type StateEnvelope = store.StateEnvelope
 
+var traceGraphQLQuery func(query string, vars map[string]interface{})
+
 func NewRuntime(types registry.TypeProvider) (*Runtime, error) {
 	if types == nil {
 		types = registry.NewBuiltInRegistry()
@@ -120,23 +122,45 @@ func (r *Runtime) SensitiveKeys(ctx context.Context, input LoadInput) ([]string,
 }
 
 func (r *Runtime) StateEnvelope(ctx context.Context, input LoadInput) (StateEnvelope, error) {
-	return r.StateEnvelopeAfter(ctx, input, store.LoadInput{}, nil)
+	return r.StateEnvelopeForOperations(ctx, []store.OperationRecord{
+		{Kind: store.OperationRecordLoad, Load: input},
+	})
 }
 
-func (r *Runtime) StateEnvelopeAfter(ctx context.Context, input LoadInput, patch store.LoadInput, deleted []string) (StateEnvelope, error) {
-	result, err := r.do(ctx, stateEnvelopeQuery, map[string]interface{}{
-		"input":   marshalInput(input),
-		"updates": marshalDotenvInput(patch),
-		"deleted": deleted,
-	})
+func (r *Runtime) StateEnvelopeForOperations(ctx context.Context, records []store.OperationRecord) (StateEnvelope, error) {
+	plan, err := planStateEnvelopeQuery(records)
 	if err != nil {
 		return StateEnvelope{}, err
 	}
-	raw, err := extractPath(result.Data, "Environment", "load", "update", "delete", "normalize", "validate", "state", "envelope")
+	result, err := r.do(ctx, plan.Query, plan.Vars)
+	if err != nil {
+		return StateEnvelope{}, err
+	}
+	raw, err := extractPath(result.Data, append([]string{"Environment"}, plan.Path...)...)
 	if err != nil {
 		return StateEnvelope{}, err
 	}
 	return decodeEnvelope(raw)
+}
+
+func (r *Runtime) StateEnvelopeAfter(ctx context.Context, input LoadInput, patch store.LoadInput, deleted []string) (StateEnvelope, error) {
+	records := []store.OperationRecord{{Kind: store.OperationRecordLoad, Load: input}}
+	if len(patch.Dotenv) > 0 {
+		records = append(records, store.OperationRecord{
+			Kind: store.OperationRecordUpdate,
+			Update: store.UpdateOperation{
+				Source: patch.DotenvSource,
+				Dotenv: patch.Dotenv,
+			},
+		})
+	}
+	if len(deleted) > 0 {
+		records = append(records, store.OperationRecord{
+			Kind:   store.OperationRecordDelete,
+			Delete: store.DeleteOperation{Keys: append([]string{}, deleted...)},
+		})
+	}
+	return r.StateEnvelopeForOperations(ctx, records)
 }
 
 func (r *Runtime) Check(ctx context.Context, input LoadInput) (CheckResult, error) {
@@ -166,6 +190,10 @@ func (r *Runtime) SchemaJSON(ctx context.Context) (string, error) {
 }
 
 func (r *Runtime) do(ctx context.Context, query string, vars map[string]interface{}) (*graphql.Result, error) {
+	if traceGraphQLQuery != nil {
+		traceGraphQLQuery(query, vars)
+	}
+
 	result := graphql.Do(graphql.Params{
 		Schema:         r.schema,
 		RequestString:  query,
@@ -571,53 +599,6 @@ query OwlSensitiveKeys($input: LoadInput!) {
         validate {
           render {
             sensitiveKeys
-          }
-        }
-      }
-    }
-  }
-}`
-
-const stateEnvelopeQuery = `
-query OwlStateEnvelope($input: LoadInput!, $updates: DotenvInput, $deleted: [String!]) {
-  Environment {
-    load(input: $input) {
-      update(dotenv: $updates) {
-        delete(keys: $deleted) {
-          normalize {
-            validate {
-              state {
-                envelope {
-                  modelVersion
-                  state {
-                    values {
-                      field { typeID instance field }
-                      original
-                      resolved
-                      visibility
-                      sensitivity
-                      exposure
-                      origin { name kind }
-                      source { name kind }
-                    }
-                    bindings {
-                      id
-                      field { typeID instance field }
-                      projection
-                      key
-                      description
-                      source { name kind }
-                      origin { name kind }
-                      confidence
-                      explicit
-                      preserveKey
-                    }
-                    diagnostics { severity code message key field }
-                  }
-                  provenance { sources { name kind } }
-                }
-              }
-            }
           }
         }
       }
