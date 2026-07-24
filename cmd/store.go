@@ -263,7 +263,7 @@ func newTypeCommand(opts StoreCommandOptions) *cobra.Command {
 
 	cmd.Flags().StringVar(&req.SpecPath, "spec", ".env.spec", "Env spec file to type")
 	cmd.Flags().StringVar(&req.Format, "format", "table", "Output format: table or dotenv-spec")
-	cmd.Flags().StringVar(&req.Output, "output", "", "Save proposed dotenv spec to a file")
+	cmd.Flags().StringVar(&req.Output, "output", "", "Write the changed env spec to a file, or '-' for stdout")
 	cmd.Flags().BoolVar(&req.Fix, "fix", false, "Append proposed types to the spec file")
 	cmd.Flags().BoolVar(&req.All, "all", false, "Show envs without type suggestions")
 	if opts.ConfigureTypeCommand != nil {
@@ -355,6 +355,12 @@ func renderSource(w io.Writer, result *SourceResult, req SourceRequest) error {
 }
 
 func renderType(w io.Writer, result *TypeResult, req TypeRequest) error {
+	if req.Output == "-" {
+		if _, err := fmt.Fprint(w, result.Rendered); err != nil {
+			return err
+		}
+		return nil
+	}
 	if req.Format == "dotenv-spec" {
 		if _, err := fmt.Fprint(w, result.Rendered); err != nil {
 			return err

@@ -102,14 +102,22 @@ func (c *LocalStoreClient) Type(_ context.Context, req TypeRequest) (*TypeResult
 		return nil, err
 	}
 
-	rendered := renderDotenvSpecTypeProposals(result.Proposals)
+	proposals := renderDotenvSpecTypeProposals(result.Proposals)
+	rendered := proposals
 	if req.Output != "" {
-		if err := os.WriteFile(req.Output, []byte(rendered), 0o600); err != nil {
+		materialized, err := materializeDotenvSpecTypeProposals(req.SpecPath, proposals)
+		if err != nil {
 			return nil, err
+		}
+		rendered = materialized
+		if req.Output != "-" {
+			if err := os.WriteFile(req.Output, []byte(materialized), 0o600); err != nil {
+				return nil, err
+			}
 		}
 	}
 	if req.Fix {
-		if err := appendDotenvSpecTypeProposals(req.SpecPath, rendered); err != nil {
+		if err := appendDotenvSpecTypeProposals(req.SpecPath, proposals); err != nil {
 			return nil, err
 		}
 	}
@@ -203,9 +211,17 @@ func appendDotenvSpecTypeProposals(path string, rendered string) error {
 	if rendered == "" {
 		return nil
 	}
+	materialized, err := materializeDotenvSpecTypeProposals(path, rendered)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(materialized), 0o600)
+}
+
+func materializeDotenvSpecTypeProposals(path string, rendered string) (string, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
+		return "", err
 	}
 	var b strings.Builder
 	_, _ = b.Write(raw)
@@ -213,7 +229,7 @@ func appendDotenvSpecTypeProposals(path string, rendered string) error {
 		_ = b.WriteByte('\n')
 	}
 	_, _ = b.WriteString(rendered)
-	return os.WriteFile(path, []byte(b.String()), 0o600)
+	return b.String(), nil
 }
 
 func dotenvSpecName(typeID owl.TypeID) string {

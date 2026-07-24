@@ -205,6 +205,27 @@ func TestStoreTypeRendersDotenvSpec(t *testing.T) {
 	assert.Equal(t, "API_KEY=\"Api Key\" # Secret\n", out.String())
 }
 
+func TestStoreTypeOutputDashRendersChangedSpec(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeStoreClient{
+		typeResult: &TypeResult{Rendered: "API_URL=\"API URL\" # Plain\nAPI_KEY=\"Api Key\" # Secret\n"},
+	}
+	cmd := NewStoreCommand(StoreCommandOptions{
+		ClientFactory: func(*cobra.Command) (StoreClient, error) {
+			return client, nil
+		},
+	})
+
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"type", "--output", "-"})
+
+	require.NoError(t, cmd.Execute())
+	assert.Equal(t, "API_URL=\"API URL\" # Plain\nAPI_KEY=\"Api Key\" # Secret\n", out.String())
+}
+
 func TestStoreTypeRendersMissingSuggestionAsDash(t *testing.T) {
 	t.Parallel()
 

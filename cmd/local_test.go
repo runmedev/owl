@@ -145,6 +145,28 @@ func TestLocalStoreClientTypeFixAppendsSpec(t *testing.T) {
 	assert.Contains(t, string(raw), "API_KEY=\"Api Key\" # Secret\n")
 }
 
+func TestLocalStoreClientTypeOutputDashRendersChangedSpec(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	envFile := filepath.Join(dir, ".env")
+	specFile := filepath.Join(dir, ".env.spec")
+	require.NoError(t, os.WriteFile(envFile, []byte("API_KEY=secret\n"), 0o600))
+	require.NoError(t, os.WriteFile(specFile, []byte("API_URL=\"API URL\" # Plain"), 0o600))
+
+	client := NewLocalStoreClient(LocalStoreOptions{
+		EnvFiles: []string{envFile},
+	})
+
+	result, err := client.Type(context.Background(), TypeRequest{SpecPath: specFile, Output: "-"})
+	require.NoError(t, err)
+
+	assert.Equal(t, "API_URL=\"API URL\" # Plain\nAPI_KEY=\"Api Key\" # Secret\n", result.Rendered)
+	raw, err := os.ReadFile(specFile)
+	require.NoError(t, err)
+	assert.Equal(t, "API_URL=\"API URL\" # Plain", string(raw))
+}
+
 func TestLocalStoreClientTypeUsesDefaultMissingSpec(t *testing.T) {
 	t.Parallel()
 
