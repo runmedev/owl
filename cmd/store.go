@@ -265,7 +265,7 @@ func newTypeCommand(opts StoreCommandOptions) *cobra.Command {
 	cmd.Flags().StringVar(&req.Format, "format", "table", "Output format: table or dotenv-spec")
 	cmd.Flags().StringVar(&req.Output, "output", "", "Save proposed dotenv spec to a file")
 	cmd.Flags().BoolVar(&req.Fix, "fix", false, "Append proposed types to the spec file")
-	cmd.Flags().BoolVar(&req.All, "all", false, "Show default plain type proposals")
+	cmd.Flags().BoolVar(&req.All, "all", false, "Show envs without type suggestions")
 	if opts.ConfigureTypeCommand != nil {
 		opts.ConfigureTypeCommand(&cmd)
 	}
