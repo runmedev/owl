@@ -32,6 +32,7 @@ const (
 	BindingConfidenceTypeDerived BindingConfidence = "type-derived"
 	BindingConfidenceHeuristic   BindingConfidence = "heuristic"
 	BindingConfidenceOpaque      BindingConfidence = "opaque"
+	BindingConfidenceNone        BindingConfidence = "none"
 )
 
 type Binding struct {

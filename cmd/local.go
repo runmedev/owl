@@ -163,6 +163,9 @@ func renderDotenvSpecTypeProposals(proposals []owl.TypeProposal) string {
 	}
 	var b strings.Builder
 	for _, proposal := range proposals {
+		if proposal.SuggestedType == "" {
+			continue
+		}
 		_, _ = b.WriteString(proposal.Key)
 		_, _ = b.WriteString("=")
 		_, _ = b.WriteString(strconvQuote(proposal.Description))
@@ -235,10 +238,14 @@ func filesOrDefaults(files []string, defaults ...string) ([]string, error) {
 func typeProposalsFromItems(items []owl.TypeProposal) []TypeProposal {
 	proposals := make([]TypeProposal, 0, len(items))
 	for _, item := range items {
+		suggestedType := "-"
+		if item.SuggestedType != "" {
+			suggestedType = item.SuggestedType.Alias()
+		}
 		proposals = append(proposals, TypeProposal{
 			Key:           item.Key,
 			CurrentType:   item.CurrentType.Alias(),
-			SuggestedType: item.SuggestedType.Alias(),
+			SuggestedType: suggestedType,
 			Confidence:    string(item.Confidence),
 			Reason:        item.Reason,
 			Description:   item.Description,

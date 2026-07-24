@@ -370,12 +370,16 @@ func renderType(w io.Writer, result *TypeResult, req TypeRequest) error {
 		return err
 	}
 	for _, proposal := range result.Proposals {
+		suggestedType := proposal.SuggestedType
+		if suggestedType == "" {
+			suggestedType = "-"
+		}
 		if _, err := fmt.Fprintf(
 			tw,
 			"%s\t%s\t%s\t%s\t%s\n",
 			proposal.Key,
 			proposal.CurrentType,
-			proposal.SuggestedType,
+			suggestedType,
 			proposal.Confidence,
 			proposal.Reason,
 		); err != nil {

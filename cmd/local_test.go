@@ -96,7 +96,10 @@ func TestLocalStoreClientTypeAllIncludesDefaultPlainTypes(t *testing.T) {
 	assert.Equal(t, "API_KEY", result.Proposals[0].Key)
 	assert.Equal(t, "core/secret", result.Proposals[0].SuggestedType)
 	assert.Equal(t, "TARGET_PLATFORM", result.Proposals[1].Key)
-	assert.Equal(t, "core/plain", result.Proposals[1].SuggestedType)
+	assert.Equal(t, "-", result.Proposals[1].SuggestedType)
+	assert.Equal(t, "none", result.Proposals[1].Confidence)
+	assert.Equal(t, "no primitive type heuristic matched", result.Proposals[1].Reason)
+	assert.NotContains(t, result.Rendered, "TARGET_PLATFORM")
 }
 
 func TestLocalStoreClientTypeFixAppendsSpec(t *testing.T) {

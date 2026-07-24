@@ -205,6 +205,37 @@ func TestStoreTypeRendersDotenvSpec(t *testing.T) {
 	assert.Equal(t, "API_KEY=\"Api Key\" # Secret\n", out.String())
 }
 
+func TestStoreTypeRendersMissingSuggestionAsDash(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeStoreClient{
+		typeResult: &TypeResult{Proposals: []TypeProposal{
+			{
+				Key:           "TARGET_PLATFORM",
+				CurrentType:   "core/opaque",
+				SuggestedType: "",
+				Confidence:    "none",
+				Reason:        "no primitive type heuristic matched",
+			},
+		}},
+	}
+	cmd := NewStoreCommand(StoreCommandOptions{
+		ClientFactory: func(*cobra.Command) (StoreClient, error) {
+			return client, nil
+		},
+	})
+
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"type", "--all"})
+
+	require.NoError(t, cmd.Execute())
+	assert.Contains(t, out.String(), "TARGET_PLATFORM")
+	assert.Contains(t, out.String(), "-")
+	assert.Contains(t, out.String(), "none")
+}
+
 func TestStoreSourceRequiresInsecureFlag(t *testing.T) {
 	t.Parallel()
 

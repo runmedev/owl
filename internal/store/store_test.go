@@ -66,7 +66,9 @@ func TestStoreTypeProposesMissingPrimitiveTypes(t *testing.T) {
 	assert.Equal(t, "key name suggests sensitive value", byKey["API_KEY"].Reason)
 	assert.Equal(t, model.TypeCoreHost, byKey["SERVICE_HOST"].SuggestedType)
 	assert.Equal(t, model.TypeCorePort, byKey["SERVICE_PORT"].SuggestedType)
-	assert.Equal(t, model.TypeCorePlain, byKey["TARGET_PLATFORM"].SuggestedType)
+	assert.Empty(t, byKey["TARGET_PLATFORM"].SuggestedType)
+	assert.Equal(t, model.BindingConfidenceNone, byKey["TARGET_PLATFORM"].Confidence)
+	assert.Equal(t, "no primitive type heuristic matched", byKey["TARGET_PLATFORM"].Reason)
 	assert.NotContains(t, byKey, "API_URL")
 }
 

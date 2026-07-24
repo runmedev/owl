@@ -457,15 +457,19 @@ func (s *Store) Type(policy TypePolicy) (TypeResult, error) {
 			continue
 		}
 		value := s.state.Values[binding.FieldRef]
-		suggested, reason := suggestPrimitiveType(string(binding.Key), value)
-		if !policy.All && suggested == model.TypeCorePlain {
+		suggested, reason, ok := suggestPrimitiveType(string(binding.Key), value)
+		if !policy.All && !ok {
 			continue
+		}
+		confidence := model.BindingConfidenceHeuristic
+		if !ok {
+			confidence = model.BindingConfidenceNone
 		}
 		proposals = append(proposals, TypeProposal{
 			Key:           string(binding.Key),
 			CurrentType:   value.FieldRef.TypeID,
 			SuggestedType: suggested,
-			Confidence:    model.BindingConfidenceHeuristic,
+			Confidence:    confidence,
 			Reason:        reason,
 			Description:   descriptionForKey(string(binding.Key)),
 		})
@@ -747,7 +751,7 @@ func redisField(suffix string) (string, bool) {
 	}
 }
 
-func suggestPrimitiveType(key string, value model.Value) (model.TypeID, string) {
+func suggestPrimitiveType(key string, value model.Value) (model.TypeID, string, bool) {
 	upper := strings.ToUpper(key)
 	switch {
 	case strings.Contains(upper, "PASSWORD"),
@@ -755,17 +759,17 @@ func suggestPrimitiveType(key string, value model.Value) (model.TypeID, string) 
 		strings.Contains(upper, "TOKEN"),
 		strings.Contains(upper, "API_KEY"),
 		strings.Contains(upper, "PRIVATE_KEY"):
-		return model.TypeCoreSecret, "key name suggests sensitive value"
+		return model.TypeCoreSecret, "key name suggests sensitive value", true
 	case upper == "URL" || strings.HasSuffix(upper, "_URL") || strings.Contains(upper, "URL_"):
-		return model.TypeCoreURL, "key name suggests URL"
+		return model.TypeCoreURL, "key name suggests URL", true
 	case upper == "HOST" || strings.HasSuffix(upper, "_HOST") || strings.Contains(upper, "HOST_"):
-		return model.TypeCoreHost, "key name suggests host"
+		return model.TypeCoreHost, "key name suggests host", true
 	case upper == "PORT" || strings.HasSuffix(upper, "_PORT") || strings.Contains(upper, "PORT_"):
-		return model.TypeCorePort, "key name suggests port"
+		return model.TypeCorePort, "key name suggests port", true
 	case value.Sensitivity == model.SensitivitySensitive:
-		return model.TypeCoreSecret, "value sensitivity suggests secret"
+		return model.TypeCoreSecret, "value sensitivity suggests secret", true
 	default:
-		return model.TypeCorePlain, "default primitive binding"
+		return "", "no primitive type heuristic matched", false
 	}
 }
 
