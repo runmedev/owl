@@ -4,10 +4,13 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/runmedev/owl/pkg/owl"
 )
 
 func TestLocalStoreClientUsesV2StoreSemantics(t *testing.T) {
@@ -100,6 +103,24 @@ func TestLocalStoreClientTypeAllIncludesDefaultPlainTypes(t *testing.T) {
 	assert.Equal(t, "none", result.Proposals[1].Confidence)
 	assert.Equal(t, "no primitive type heuristic matched", result.Proposals[1].Reason)
 	assert.NotContains(t, result.Rendered, "TARGET_PLATFORM")
+}
+
+func TestRenderDotenvSpecTypeProposalsAlignsComments(t *testing.T) {
+	t.Parallel()
+
+	rendered := renderDotenvSpecTypeProposals([]owl.TypeProposal{
+		{Key: "GITHUB_TOKEN", SuggestedType: owl.TypeCoreSecret, Description: "The GitHub token to use for API requests."},
+		{Key: "RUNME_TEST_TOKEN", SuggestedType: owl.TypeCoreSecret, Description: "The Runme test token to use for integration tests."},
+		{Key: "TARGET_PLATFORM", SuggestedType: owl.TypeCorePlain, Description: "The target platform to build binary artifacts for.", Required: true},
+		{Key: "UNMATCHED", SuggestedType: "", Description: "No suggestion."},
+	})
+
+	assert.Equal(t, strings.Join([]string{
+		`GITHUB_TOKEN="The GitHub token to use for API requests."              # Secret`,
+		`RUNME_TEST_TOKEN="The Runme test token to use for integration tests." # Secret`,
+		`TARGET_PLATFORM="The target platform to build binary artifacts for."  # Plain!`,
+		"",
+	}, "\n"), rendered)
 }
 
 func TestLocalStoreClientTypeFixAppendsSpec(t *testing.T) {
