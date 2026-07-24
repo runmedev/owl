@@ -97,7 +97,7 @@ func (c *LocalStoreClient) Type(_ context.Context, req TypeRequest) (*TypeResult
 		return nil, err
 	}
 
-	result, err := store.Type(owl.TypePolicy{})
+	result, err := store.Type(owl.TypePolicy{All: req.All})
 	if err != nil {
 		return nil, err
 	}

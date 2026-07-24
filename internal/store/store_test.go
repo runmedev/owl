@@ -57,7 +57,7 @@ func TestStoreTypeProposesMissingPrimitiveTypes(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	result, err := s.Type(TypePolicy{})
+	result, err := s.Type(TypePolicy{All: true})
 	require.NoError(t, err)
 
 	require.Len(t, result.Proposals, 4)
@@ -68,6 +68,22 @@ func TestStoreTypeProposesMissingPrimitiveTypes(t *testing.T) {
 	assert.Equal(t, model.TypeCorePort, byKey["SERVICE_PORT"].SuggestedType)
 	assert.Equal(t, model.TypeCorePlain, byKey["TARGET_PLATFORM"].SuggestedType)
 	assert.NotContains(t, byKey, "API_URL")
+}
+
+func TestStoreTypeSkipsDefaultPlainProposalsByDefault(t *testing.T) {
+	t.Parallel()
+
+	s, err := NewStore(
+		WithDotenv(".env", strings.NewReader("API_KEY=secret\nTARGET_PLATFORM=darwin/arm64\n")),
+	)
+	require.NoError(t, err)
+
+	result, err := s.Type(TypePolicy{})
+	require.NoError(t, err)
+
+	require.Len(t, result.Proposals, 1)
+	assert.Equal(t, "API_KEY", result.Proposals[0].Key)
+	assert.Equal(t, model.TypeCoreSecret, result.Proposals[0].SuggestedType)
 }
 
 func TestStoreWithDotenv(t *testing.T) {

@@ -55,7 +55,9 @@ type DotenvPolicy struct {
 	Insecure bool
 }
 
-type TypePolicy struct{}
+type TypePolicy struct {
+	All bool
+}
 
 type TypeResult struct {
 	Proposals []TypeProposal
@@ -448,7 +450,7 @@ func (s *Store) Dotenv(policy DotenvPolicy) ([]string, error) {
 	return envs, nil
 }
 
-func (s *Store) Type(TypePolicy) (TypeResult, error) {
+func (s *Store) Type(policy TypePolicy) (TypeResult, error) {
 	proposals := make([]TypeProposal, 0, len(s.state.Bindings))
 	for _, binding := range s.state.Bindings {
 		if binding.Explicit {
@@ -456,6 +458,9 @@ func (s *Store) Type(TypePolicy) (TypeResult, error) {
 		}
 		value := s.state.Values[binding.FieldRef]
 		suggested, reason := suggestPrimitiveType(string(binding.Key), value)
+		if !policy.All && suggested == model.TypeCorePlain {
+			continue
+		}
 		proposals = append(proposals, TypeProposal{
 			Key:           string(binding.Key),
 			CurrentType:   value.FieldRef.TypeID,

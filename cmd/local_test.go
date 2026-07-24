@@ -70,13 +70,33 @@ func TestLocalStoreClientTypeProposesMissingPrimitiveTypes(t *testing.T) {
 	result, err := client.Type(context.Background(), TypeRequest{SpecPath: specFile, Format: "dotenv-spec"})
 	require.NoError(t, err)
 
+	require.Len(t, result.Proposals, 1)
+	assert.Equal(t, "API_KEY", result.Proposals[0].Key)
+	assert.Equal(t, "core/secret", result.Proposals[0].SuggestedType)
+	assert.Contains(t, result.Rendered, "API_KEY=\"Api Key\" # Secret")
+	assert.NotContains(t, result.Rendered, "TARGET_PLATFORM")
+}
+
+func TestLocalStoreClientTypeAllIncludesDefaultPlainTypes(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	envFile := filepath.Join(dir, ".env")
+	specFile := filepath.Join(dir, ".env.spec")
+	require.NoError(t, os.WriteFile(envFile, []byte("API_KEY=secret\nTARGET_PLATFORM=darwin/arm64\n"), 0o600))
+
+	client := NewLocalStoreClient(LocalStoreOptions{
+		EnvFiles: []string{envFile},
+	})
+
+	result, err := client.Type(context.Background(), TypeRequest{SpecPath: specFile, All: true})
+	require.NoError(t, err)
+
 	require.Len(t, result.Proposals, 2)
 	assert.Equal(t, "API_KEY", result.Proposals[0].Key)
 	assert.Equal(t, "core/secret", result.Proposals[0].SuggestedType)
 	assert.Equal(t, "TARGET_PLATFORM", result.Proposals[1].Key)
 	assert.Equal(t, "core/plain", result.Proposals[1].SuggestedType)
-	assert.Contains(t, result.Rendered, "API_KEY=\"Api Key\" # Secret")
-	assert.Contains(t, result.Rendered, "TARGET_PLATFORM=\"Target Platform\" # Plain")
 }
 
 func TestLocalStoreClientTypeFixAppendsSpec(t *testing.T) {
