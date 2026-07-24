@@ -297,6 +297,8 @@ func marshalEffectiveState(state model.EffectiveState) map[string]interface{} {
 			"exposure":    string(value.Exposure),
 			"origin":      marshalSource(value.Origin),
 			"source":      marshalSource(value.Source),
+			"createdAt":   timeString(value.CreatedAt),
+			"updatedAt":   timeString(value.UpdatedAt),
 		})
 	}
 	bindings := make([]map[string]interface{}, 0, len(state.Bindings))
@@ -442,6 +444,7 @@ func decodeSnapshot(raw interface{}) []SnapshotItem {
 			Visibility:  model.Visibility(stringValue(item["visibility"])),
 			Exposure:    model.Exposure(stringValue(item["exposure"])),
 			Description: stringValue(item["description"]),
+			UpdatedAt:   timeValue(item["updatedAt"]),
 			Diagnostics: decodeDiagnostics(item["diagnostics"]),
 		})
 	}
@@ -506,6 +509,8 @@ func decodeEffectiveState(raw interface{}) model.EffectiveState {
 			Exposure:    model.Exposure(stringValue(valueRaw["exposure"])),
 			Origin:      decodeSource(valueRaw["origin"]),
 			Source:      decodeSource(valueRaw["source"]),
+			CreatedAt:   timeValue(valueRaw["createdAt"]),
+			UpdatedAt:   timeValue(valueRaw["updatedAt"]),
 		}
 		state.Values[value.FieldRef] = value
 	}

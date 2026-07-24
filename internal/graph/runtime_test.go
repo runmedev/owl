@@ -141,6 +141,8 @@ func TestRuntimeSchemaUsesVisibilityAndExposureNames(t *testing.T) {
 		`"name": "GetResult"`,
 		`"name": "visibility"`,
 		`"name": "exposure"`,
+		`"name": "createdAt"`,
+		`"name": "updatedAt"`,
 	} {
 		assert.Contains(t, schemaJSON, name)
 	}
@@ -238,6 +240,7 @@ func TestRuntimeMaterializesStateEnvelopeFromOperationRecords(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, "https://next.example.com", got.Value)
+	assert.False(t, envelope.State.Values[got.Field].UpdatedAt.IsZero())
 	_, ok, err = s.Get("API_KEY", store.GetPolicy{Reveal: true})
 	require.NoError(t, err)
 	assert.False(t, ok)

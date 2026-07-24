@@ -101,6 +101,8 @@ func stateEnvelopeTerminal() *ast.Field {
 							field("exposure", nil, nil),
 							field("origin", nil, sourceSelection()),
 							field("source", nil, sourceSelection()),
+							field("createdAt", nil, nil),
+							field("updatedAt", nil, nil),
 						}})),
 						field("bindings", nil, ast.NewSelectionSet(&ast.SelectionSet{Selections: []ast.Selection{
 							field("id", nil, nil),

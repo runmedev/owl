@@ -259,8 +259,10 @@ func TestPublicAPIExecutionInfoSetsUpdateSource(t *testing.T) {
 	assert.Equal(t, "[direnv]", byName["API_URL"].Source.Name)
 	assert.Equal(t, "execution", byName["API_URL"].Source.Kind)
 	assert.Equal(t, ".env.spec", byName["API_URL"].Origin.Name)
+	assert.False(t, byName["API_URL"].UpdatedAt.IsZero())
 	assert.Equal(t, "[direnv]", byName["TOKEN"].Source.Name)
 	assert.Equal(t, "[direnv]", byName["TOKEN"].Origin.Name)
+	assert.False(t, byName["TOKEN"].UpdatedAt.IsZero())
 }
 
 func TestPublicAPIWithEnvContractMapsBindings(t *testing.T) {

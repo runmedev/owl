@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"sort"
+	"time"
 
 	"github.com/graphql-go/graphql"
 
@@ -80,6 +81,8 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"exposure":    &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"origin":      &graphql.InputObjectFieldConfig{Type: sourceInput},
 			"source":      &graphql.InputObjectFieldConfig{Type: sourceInput},
+			"createdAt":   &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"updatedAt":   &graphql.InputObjectFieldConfig{Type: graphql.String},
 		},
 	})
 	stateBindingInput := graphql.NewInputObject(graphql.InputObjectConfig{
@@ -185,6 +188,8 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"exposure":    &graphql.Field{Type: graphql.String},
 			"origin":      &graphql.Field{Type: sourceType},
 			"source":      &graphql.Field{Type: sourceType},
+			"createdAt":   &graphql.Field{Type: graphql.String},
+			"updatedAt":   &graphql.Field{Type: graphql.String},
 		},
 	})
 	stateBindingType := graphql.NewObject(graphql.ObjectConfig{
@@ -326,6 +331,13 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			},
 			"description": &graphql.Field{Type: graphql.String},
 			"diagnostics": &graphql.Field{Type: graphql.NewList(diagnosticType)},
+			"updatedAt": &graphql.Field{
+				Type: graphql.String,
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					item := p.Source.(store.SnapshotItem)
+					return timeString(item.UpdatedAt), nil
+				},
+			},
 		},
 	})
 
@@ -590,6 +602,8 @@ func decodeEffectiveStateInput(raw interface{}) model.EffectiveState {
 			Exposure:    model.Exposure(stringValue(valueRaw["exposure"])),
 			Origin:      decodeSource(valueRaw["origin"]),
 			Source:      decodeSource(valueRaw["source"]),
+			CreatedAt:   timeValue(valueRaw["createdAt"]),
+			UpdatedAt:   timeValue(valueRaw["updatedAt"]),
 		}
 		state.Values[value.FieldRef] = value
 	}
@@ -676,6 +690,25 @@ func boolValue(raw interface{}) bool {
 	return value
 }
 
+func timeString(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.Format(time.RFC3339Nano)
+}
+
+func timeValue(raw interface{}) time.Time {
+	value := stringValue(raw)
+	if value == "" {
+		return time.Time{}
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed
+}
+
 func stateEnvelopeView(envelope store.StateEnvelope) map[string]interface{} {
 	return map[string]interface{}{
 		"modelVersion": envelope.ModelVersion,
@@ -699,6 +732,8 @@ func effectiveStateView(state model.EffectiveState) map[string]interface{} {
 			"exposure":    string(value.Exposure),
 			"origin":      sourceView(value.Origin),
 			"source":      sourceView(value.Source),
+			"createdAt":   timeString(value.CreatedAt),
+			"updatedAt":   timeString(value.UpdatedAt),
 		})
 	}
 	sort.SliceStable(values, func(i, j int) bool {
