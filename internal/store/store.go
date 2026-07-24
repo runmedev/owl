@@ -55,13 +55,13 @@ type DotenvPolicy struct {
 	Insecure bool
 }
 
-type BindPolicy struct{}
+type TypePolicy struct{}
 
-type BindResult struct {
-	Proposals []BindingProposal
+type TypeResult struct {
+	Proposals []TypeProposal
 }
 
-type BindingProposal struct {
+type TypeProposal struct {
 	Key           string
 	CurrentType   model.TypeID
 	SuggestedType model.TypeID
@@ -448,15 +448,15 @@ func (s *Store) Dotenv(policy DotenvPolicy) ([]string, error) {
 	return envs, nil
 }
 
-func (s *Store) Bind(BindPolicy) (BindResult, error) {
-	proposals := make([]BindingProposal, 0, len(s.state.Bindings))
+func (s *Store) Type(TypePolicy) (TypeResult, error) {
+	proposals := make([]TypeProposal, 0, len(s.state.Bindings))
 	for _, binding := range s.state.Bindings {
 		if binding.Explicit {
 			continue
 		}
 		value := s.state.Values[binding.FieldRef]
 		suggested, reason := suggestPrimitiveType(string(binding.Key), value)
-		proposals = append(proposals, BindingProposal{
+		proposals = append(proposals, TypeProposal{
 			Key:           string(binding.Key),
 			CurrentType:   value.FieldRef.TypeID,
 			SuggestedType: suggested,
@@ -468,7 +468,7 @@ func (s *Store) Bind(BindPolicy) (BindResult, error) {
 	sort.SliceStable(proposals, func(i, j int) bool {
 		return proposals[i].Key < proposals[j].Key
 	})
-	return BindResult{Proposals: proposals}, nil
+	return TypeResult{Proposals: proposals}, nil
 }
 
 func (s *Store) Get(key string, policy GetPolicy) (GetResult, bool, error) {

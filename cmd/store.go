@@ -16,7 +16,7 @@ type StoreClient interface {
 	Snapshot(context.Context, SnapshotRequest) (*SnapshotResult, error)
 	Source(context.Context, SourceRequest) (*SourceResult, error)
 	Check(context.Context, CheckRequest) (*CheckResult, error)
-	Bind(context.Context, BindRequest) (*BindResult, error)
+	Type(context.Context, TypeRequest) (*TypeResult, error)
 }
 
 type StoreCommandOptions struct {
@@ -24,7 +24,7 @@ type StoreCommandOptions struct {
 	ConfigureSnapshotCommand func(*cobra.Command)
 	ConfigureSourceCommand   func(*cobra.Command)
 	ConfigureCheckCommand    func(*cobra.Command)
-	ConfigureBindCommand     func(*cobra.Command)
+	ConfigureTypeCommand     func(*cobra.Command)
 	Hidden                   bool
 	InsecureAllowed          func() bool
 }
@@ -67,19 +67,19 @@ type CheckResult struct {
 	Diagnostics []string
 }
 
-type BindRequest struct {
+type TypeRequest struct {
 	SpecPath string
 	Format   string
 	Output   string
-	Write    bool
+	Fix      bool
 }
 
-type BindResult struct {
-	Proposals []BindProposal
+type TypeResult struct {
+	Proposals []TypeProposal
 	Rendered  string
 }
 
-type BindProposal struct {
+type TypeProposal struct {
 	Key           string
 	CurrentType   string
 	SuggestedType string
@@ -115,7 +115,7 @@ func NewStoreCommands(opts StoreCommandOptions) []*cobra.Command {
 		newSnapshotCommand(opts),
 		newSourceCommand(opts),
 		newCheckCommand(opts),
-		newBindCommand(opts),
+		newTypeCommand(opts),
 	}
 }
 
@@ -230,20 +230,20 @@ func newCheckCommand(opts StoreCommandOptions) *cobra.Command {
 	return &cmd
 }
 
-func newBindCommand(opts StoreCommandOptions) *cobra.Command {
-	var req BindRequest
+func newTypeCommand(opts StoreCommandOptions) *cobra.Command {
+	var req TypeRequest
 
 	cmd := cobra.Command{
 		Hidden: opts.Hidden,
-		Use:    "bind",
-		Short:  "Proposes missing env bindings",
-		Long:   "Proposes missing primitive env bindings for a dotenv spec.",
+		Use:    "type",
+		Short:  "Proposes missing env types",
+		Long:   "Proposes missing primitive env types for a dotenv spec.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if req.Format == "" {
 				req.Format = "table"
 			}
-			if req.Write && req.Output != "" {
-				return errors.New("use either --write or --output, not both")
+			if req.Fix && req.Output != "" {
+				return errors.New("use either --fix or --output, not both")
 			}
 
 			client, err := opts.client(cmd)
@@ -251,21 +251,21 @@ func newBindCommand(opts StoreCommandOptions) *cobra.Command {
 				return err
 			}
 
-			result, err := client.Bind(cmd.Context(), req)
+			result, err := client.Type(cmd.Context(), req)
 			if err != nil {
 				return err
 			}
 
-			return errors.Wrap(renderBind(cmd.OutOrStdout(), result, req), "failed to render")
+			return errors.Wrap(renderType(cmd.OutOrStdout(), result, req), "failed to render")
 		},
 	}
 
-	cmd.Flags().StringVar(&req.SpecPath, "spec", ".env.spec", "Env spec file to bind")
+	cmd.Flags().StringVar(&req.SpecPath, "spec", ".env.spec", "Env spec file to type")
 	cmd.Flags().StringVar(&req.Format, "format", "table", "Output format: table or dotenv-spec")
-	cmd.Flags().StringVar(&req.Output, "output", "", "Write proposed dotenv spec to a file")
-	cmd.Flags().BoolVar(&req.Write, "write", false, "Append proposed bindings to the spec file")
-	if opts.ConfigureBindCommand != nil {
-		opts.ConfigureBindCommand(&cmd)
+	cmd.Flags().StringVar(&req.Output, "output", "", "Save proposed dotenv spec to a file")
+	cmd.Flags().BoolVar(&req.Fix, "fix", false, "Append proposed types to the spec file")
+	if opts.ConfigureTypeCommand != nil {
+		opts.ConfigureTypeCommand(&cmd)
 	}
 
 	return &cmd
@@ -352,7 +352,7 @@ func renderSource(w io.Writer, result *SourceResult, req SourceRequest) error {
 	return nil
 }
 
-func renderBind(w io.Writer, result *BindResult, req BindRequest) error {
+func renderType(w io.Writer, result *TypeResult, req TypeRequest) error {
 	if req.Format == "dotenv-spec" {
 		if _, err := fmt.Fprint(w, result.Rendered); err != nil {
 			return err
@@ -360,7 +360,7 @@ func renderBind(w io.Writer, result *BindResult, req BindRequest) error {
 		return nil
 	}
 	if req.Format != "table" {
-		return errors.Errorf("unsupported bind output format: %s", req.Format)
+		return errors.Errorf("unsupported type output format: %s", req.Format)
 	}
 
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)

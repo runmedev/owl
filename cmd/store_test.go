@@ -151,11 +151,11 @@ func TestStoreSnapshotRevealPassesRequestWhenInsecureAllowed(t *testing.T) {
 	assert.Contains(t, out.String(), "literal")
 }
 
-func TestStoreBindRendersTable(t *testing.T) {
+func TestStoreTypeRendersTable(t *testing.T) {
 	t.Parallel()
 
 	client := &fakeStoreClient{
-		bind: &BindResult{Proposals: []BindProposal{
+		typeResult: &TypeResult{Proposals: []TypeProposal{
 			{
 				Key:           "API_KEY",
 				CurrentType:   "core/opaque",
@@ -174,21 +174,21 @@ func TestStoreBindRendersTable(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"bind", "--spec", ".env.spec"})
+	cmd.SetArgs([]string{"type", "--spec", ".env.spec"})
 
 	require.NoError(t, cmd.Execute())
-	assert.True(t, client.bindCalled)
-	assert.Equal(t, ".env.spec", client.bindReq.SpecPath)
+	assert.True(t, client.typeCalled)
+	assert.Equal(t, ".env.spec", client.typeReq.SpecPath)
 	assert.Contains(t, out.String(), "SUGGESTED")
 	assert.Contains(t, out.String(), "API_KEY")
 	assert.Contains(t, out.String(), "core/secret")
 }
 
-func TestStoreBindRendersDotenvSpec(t *testing.T) {
+func TestStoreTypeRendersDotenvSpec(t *testing.T) {
 	t.Parallel()
 
 	client := &fakeStoreClient{
-		bind: &BindResult{Rendered: "API_KEY=\"Api Key\" # Secret\n"},
+		typeResult: &TypeResult{Rendered: "API_KEY=\"Api Key\" # Secret\n"},
 	}
 	cmd := NewStoreCommand(StoreCommandOptions{
 		ClientFactory: func(*cobra.Command) (StoreClient, error) {
@@ -199,7 +199,7 @@ func TestStoreBindRendersDotenvSpec(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"bind", "--format", "dotenv-spec"})
+	cmd.SetArgs([]string{"type", "--format", "dotenv-spec"})
 
 	require.NoError(t, cmd.Execute())
 	assert.Equal(t, "API_KEY=\"Api Key\" # Secret\n", out.String())
@@ -226,14 +226,14 @@ type fakeStoreClient struct {
 	snapshot       *SnapshotResult
 	source         *SourceResult
 	check          *CheckResult
-	bind           *BindResult
+	typeResult     *TypeResult
 	snapshotReq    SnapshotRequest
 	sourceReq      SourceRequest
-	bindReq        BindRequest
+	typeReq        TypeRequest
 	snapshotCalled bool
 	sourceCalled   bool
 	checkCalled    bool
-	bindCalled     bool
+	typeCalled     bool
 }
 
 func (c *fakeStoreClient) Snapshot(_ context.Context, req SnapshotRequest) (*SnapshotResult, error) {
@@ -253,8 +253,8 @@ func (c *fakeStoreClient) Check(context.Context, CheckRequest) (*CheckResult, er
 	return c.check, nil
 }
 
-func (c *fakeStoreClient) Bind(_ context.Context, req BindRequest) (*BindResult, error) {
-	c.bindReq = req
-	c.bindCalled = true
-	return c.bind, nil
+func (c *fakeStoreClient) Type(_ context.Context, req TypeRequest) (*TypeResult, error) {
+	c.typeReq = req
+	c.typeCalled = true
+	return c.typeResult, nil
 }

@@ -54,7 +54,7 @@ func TestLocalStoreClientUsesV2StoreSemantics(t *testing.T) {
 	assert.Contains(t, check.Diagnostics[len(check.Diagnostics)-1], "error dotenv.unresolved-required MISSING_TOKEN")
 }
 
-func TestLocalStoreClientBindProposesMissingPrimitiveBindings(t *testing.T) {
+func TestLocalStoreClientTypeProposesMissingPrimitiveTypes(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -67,7 +67,7 @@ func TestLocalStoreClientBindProposesMissingPrimitiveBindings(t *testing.T) {
 		EnvFiles: []string{envFile},
 	})
 
-	result, err := client.Bind(context.Background(), BindRequest{SpecPath: specFile, Format: "dotenv-spec"})
+	result, err := client.Type(context.Background(), TypeRequest{SpecPath: specFile, Format: "dotenv-spec"})
 	require.NoError(t, err)
 
 	require.Len(t, result.Proposals, 2)
@@ -79,7 +79,7 @@ func TestLocalStoreClientBindProposesMissingPrimitiveBindings(t *testing.T) {
 	assert.Contains(t, result.Rendered, "TARGET_PLATFORM=\"Target Platform\" # Plain")
 }
 
-func TestLocalStoreClientBindWriteAppendsSpec(t *testing.T) {
+func TestLocalStoreClientTypeFixAppendsSpec(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -92,7 +92,7 @@ func TestLocalStoreClientBindWriteAppendsSpec(t *testing.T) {
 		EnvFiles: []string{envFile},
 	})
 
-	_, err := client.Bind(context.Background(), BindRequest{SpecPath: specFile, Write: true})
+	_, err := client.Type(context.Background(), TypeRequest{SpecPath: specFile, Fix: true})
 	require.NoError(t, err)
 
 	raw, err := os.ReadFile(specFile)
@@ -101,7 +101,7 @@ func TestLocalStoreClientBindWriteAppendsSpec(t *testing.T) {
 	assert.Contains(t, string(raw), "API_KEY=\"Api Key\" # Secret\n")
 }
 
-func TestLocalStoreClientBindUsesDefaultMissingSpec(t *testing.T) {
+func TestLocalStoreClientTypeUsesDefaultMissingSpec(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -113,9 +113,9 @@ func TestLocalStoreClientBindUsesDefaultMissingSpec(t *testing.T) {
 		EnvFiles: []string{envFile},
 	})
 
-	result, err := client.Bind(context.Background(), BindRequest{
+	result, err := client.Type(context.Background(), TypeRequest{
 		SpecPath: specFile,
-		Write:    true,
+		Fix:      true,
 	})
 	require.NoError(t, err)
 	require.Len(t, result.Proposals, 1)

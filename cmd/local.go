@@ -36,7 +36,7 @@ func NewLocalCommands() []*cobra.Command {
 		ConfigureSnapshotCommand: configureLocalFlags,
 		ConfigureSourceCommand:   configureLocalFlags,
 		ConfigureCheckCommand:    configureLocalFlags,
-		ConfigureBindCommand:     configureLocalFlags,
+		ConfigureTypeCommand:     configureLocalFlags,
 		InsecureAllowed:          func() bool { return true },
 	})
 }
@@ -86,7 +86,7 @@ func (c *LocalStoreClient) Check(context.Context, CheckRequest) (*CheckResult, e
 	}, nil
 }
 
-func (c *LocalStoreClient) Bind(_ context.Context, req BindRequest) (*BindResult, error) {
+func (c *LocalStoreClient) Type(_ context.Context, req TypeRequest) (*TypeResult, error) {
 	if req.SpecPath == "" {
 		req.SpecPath = ".env.spec"
 	}
@@ -97,25 +97,25 @@ func (c *LocalStoreClient) Bind(_ context.Context, req BindRequest) (*BindResult
 		return nil, err
 	}
 
-	result, err := store.Bind(owl.BindPolicy{})
+	result, err := store.Type(owl.TypePolicy{})
 	if err != nil {
 		return nil, err
 	}
 
-	rendered := renderDotenvSpecProposals(result.Proposals)
+	rendered := renderDotenvSpecTypeProposals(result.Proposals)
 	if req.Output != "" {
 		if err := os.WriteFile(req.Output, []byte(rendered), 0o600); err != nil {
 			return nil, err
 		}
 	}
-	if req.Write {
-		if err := appendDotenvSpec(req.SpecPath, rendered); err != nil {
+	if req.Fix {
+		if err := appendDotenvSpecTypeProposals(req.SpecPath, rendered); err != nil {
 			return nil, err
 		}
 	}
 
-	return &BindResult{
-		Proposals: bindProposalsFromItems(result.Proposals),
+	return &TypeResult{
+		Proposals: typeProposalsFromItems(result.Proposals),
 		Rendered:  rendered,
 	}, nil
 }
@@ -157,7 +157,7 @@ func (c *LocalStoreClient) storeWithOptions(allowMissingSpec bool) (*owl.Store, 
 	return owl.NewStore(opts...)
 }
 
-func renderDotenvSpecProposals(proposals []owl.BindProposal) string {
+func renderDotenvSpecTypeProposals(proposals []owl.TypeProposal) string {
 	if len(proposals) == 0 {
 		return ""
 	}
@@ -176,7 +176,7 @@ func renderDotenvSpecProposals(proposals []owl.BindProposal) string {
 	return b.String()
 }
 
-func appendDotenvSpec(path string, rendered string) error {
+func appendDotenvSpecTypeProposals(path string, rendered string) error {
 	if rendered == "" {
 		return nil
 	}
@@ -232,10 +232,10 @@ func filesOrDefaults(files []string, defaults ...string) ([]string, error) {
 	return existing, nil
 }
 
-func bindProposalsFromItems(items []owl.BindProposal) []BindProposal {
-	proposals := make([]BindProposal, 0, len(items))
+func typeProposalsFromItems(items []owl.TypeProposal) []TypeProposal {
+	proposals := make([]TypeProposal, 0, len(items))
 	for _, item := range items {
-		proposals = append(proposals, BindProposal{
+		proposals = append(proposals, TypeProposal{
 			Key:           item.Key,
 			CurrentType:   item.CurrentType.Alias(),
 			SuggestedType: item.SuggestedType.Alias(),

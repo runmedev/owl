@@ -48,7 +48,7 @@ func TestStoreSnapshotSourceAndCheck(t *testing.T) {
 	assert.Equal(t, model.DiagnosticError, check.Diagnostics[len(check.Diagnostics)-1].Severity)
 }
 
-func TestStoreBindProposesMissingPrimitiveBindings(t *testing.T) {
+func TestStoreTypeProposesMissingPrimitiveTypes(t *testing.T) {
 	t.Parallel()
 
 	s, err := NewStore(
@@ -57,11 +57,11 @@ func TestStoreBindProposesMissingPrimitiveBindings(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	result, err := s.Bind(BindPolicy{})
+	result, err := s.Type(TypePolicy{})
 	require.NoError(t, err)
 
 	require.Len(t, result.Proposals, 4)
-	byKey := bindProposalsByKey(result.Proposals)
+	byKey := typeProposalsByKey(result.Proposals)
 	assert.Equal(t, model.TypeCoreSecret, byKey["API_KEY"].SuggestedType)
 	assert.Equal(t, "key name suggests sensitive value", byKey["API_KEY"].Reason)
 	assert.Equal(t, model.TypeCoreHost, byKey["SERVICE_HOST"].SuggestedType)
@@ -119,8 +119,8 @@ func snapshotByName(items []SnapshotItem) map[string]SnapshotItem {
 	return result
 }
 
-func bindProposalsByKey(items []BindingProposal) map[string]BindingProposal {
-	result := make(map[string]BindingProposal, len(items))
+func typeProposalsByKey(items []TypeProposal) map[string]TypeProposal {
+	result := make(map[string]TypeProposal, len(items))
 	for _, item := range items {
 		result[item.Key] = item
 	}
