@@ -233,6 +233,36 @@ func TestPublicAPIUpdatesMaterializeFromOperationLog(t *testing.T) {
 	assert.Equal(t, "https://two.example.com", got.Value)
 }
 
+func TestPublicAPIExecutionInfoSetsUpdateSource(t *testing.T) {
+	t.Parallel()
+
+	store, err := owl.NewStore(
+		owl.WithDotenv(".env", strings.NewReader("API_URL=https://api.example.com\n")),
+		owl.WithEnvSpec(".env.spec", strings.NewReader("API_URL=\"API URL\" # Plain\n")),
+	)
+	require.NoError(t, err)
+
+	ctx := owl.ContextWithExecutionInfo(context.Background(), owl.ExecutionInfo{
+		KnownID:     "cell-id",
+		KnownName:   "cell-name",
+		ExecContext: "direnv",
+	})
+	require.NoError(t, store.Update(ctx, []string{
+		"API_URL=https://next.example.com",
+		"TOKEN=secret",
+	}, nil))
+
+	snapshot, err := store.Snapshot(owl.SnapshotPolicy{Reveal: true})
+	require.NoError(t, err)
+	byName := snapshotByName(snapshot)
+
+	assert.Equal(t, "[direnv]", byName["API_URL"].Source.Name)
+	assert.Equal(t, "execution", byName["API_URL"].Source.Kind)
+	assert.Equal(t, ".env.spec", byName["API_URL"].Origin.Name)
+	assert.Equal(t, "[direnv]", byName["TOKEN"].Source.Name)
+	assert.Equal(t, "[direnv]", byName["TOKEN"].Origin.Name)
+}
+
 func TestPublicAPIWithEnvContractMapsBindings(t *testing.T) {
 	t.Parallel()
 

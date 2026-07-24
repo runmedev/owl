@@ -72,6 +72,30 @@ type config struct {
 	types     registry.TypeProvider
 }
 
+type executionInfoKey struct{}
+
+// ExecutionInfo describes the execution context that produced an env update.
+type ExecutionInfo struct {
+	KnownID     string
+	KnownName   string
+	ExecContext string
+}
+
+func ContextWithExecutionInfo(ctx context.Context, info ExecutionInfo) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, executionInfoKey{}, info)
+}
+
+func ExecutionInfoFromContext(ctx context.Context) (ExecutionInfo, bool) {
+	if ctx == nil {
+		return ExecutionInfo{}, false
+	}
+	info, ok := ctx.Value(executionInfoKey{}).(ExecutionInfo)
+	return info, ok
+}
+
 func NewStore(opts ...StoreOption) (*Store, error) {
 	cfg := config{types: registry.NewBuiltInRegistry()}
 	for _, opt := range opts {
@@ -200,14 +224,14 @@ func (s *Store) Update(ctx context.Context, newOrUpdated, deleted []string) erro
 	if err != nil {
 		return err
 	}
-	return s.applyDotenvWithContext(ctx, input.DotenvSource, input.Dotenv, deleted)
+	return s.applyDotenvWithContext(ctx, sourceFromContext(ctx, input.DotenvSource), input.Dotenv, deleted)
 }
 
 func (s *Store) Delete(ctx context.Context, keys ...string) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return s.applyDotenvWithContext(ctx, Source{}, nil, keys)
+	return s.applyDotenvWithContext(ctx, sourceFromContext(ctx, Source{}), nil, keys)
 }
 
 func (s *Store) StateEnvelope(ctx context.Context) (StateEnvelope, error) {
@@ -269,4 +293,23 @@ func (s *Store) materialize(ctx context.Context) error {
 	}
 	s.state = envelope.State
 	return nil
+}
+
+func sourceFromContext(ctx context.Context, fallback Source) Source {
+	info, ok := ExecutionInfoFromContext(ctx)
+	if !ok {
+		return fallback
+	}
+
+	name := "[execution]"
+	if info.KnownID != "" {
+		name = "#" + info.KnownID
+	}
+	if info.KnownName != "" {
+		name = "#" + info.KnownName
+	}
+	if info.ExecContext != "" {
+		name = "[" + info.ExecContext + "]"
+	}
+	return Source{Name: name, Kind: "execution"}
 }
