@@ -302,7 +302,7 @@ func TestV2PublicAPIDiagnostics(t *testing.T) {
 
 	_, err := owl.NewStore(
 		owl.WithDotenv(".env", strings.NewReader("DATABASE_URL=postgres://example\n")),
-		owl.WithEnvSpec(".env.spec", strings.NewReader("DATABASE_URL=\"Database URL\" # Url!\n")),
+		owl.WithEnvSpec(".env.spec", strings.NewReader("DATABASE_URL=\"Database URL\" # DatabaseUrl!\n")),
 	)
 	require.Error(t, err)
 

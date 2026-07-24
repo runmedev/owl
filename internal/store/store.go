@@ -55,6 +55,22 @@ type DotenvPolicy struct {
 	Insecure bool
 }
 
+type BindPolicy struct{}
+
+type BindResult struct {
+	Proposals []BindingProposal
+}
+
+type BindingProposal struct {
+	Key           string
+	CurrentType   model.TypeID
+	SuggestedType model.TypeID
+	Confidence    model.BindingConfidence
+	Reason        string
+	Description   string
+	Required      bool
+}
+
 type SnapshotPolicy struct {
 	Reveal bool
 }
@@ -432,6 +448,29 @@ func (s *Store) Dotenv(policy DotenvPolicy) ([]string, error) {
 	return envs, nil
 }
 
+func (s *Store) Bind(BindPolicy) (BindResult, error) {
+	proposals := make([]BindingProposal, 0, len(s.state.Bindings))
+	for _, binding := range s.state.Bindings {
+		if binding.Explicit {
+			continue
+		}
+		value := s.state.Values[binding.FieldRef]
+		suggested, reason := suggestPrimitiveType(string(binding.Key), value)
+		proposals = append(proposals, BindingProposal{
+			Key:           string(binding.Key),
+			CurrentType:   value.FieldRef.TypeID,
+			SuggestedType: suggested,
+			Confidence:    model.BindingConfidenceHeuristic,
+			Reason:        reason,
+			Description:   descriptionForKey(string(binding.Key)),
+		})
+	}
+	sort.SliceStable(proposals, func(i, j int) bool {
+		return proposals[i].Key < proposals[j].Key
+	})
+	return BindResult{Proposals: proposals}, nil
+}
+
 func (s *Store) Get(key string, policy GetPolicy) (GetResult, bool, error) {
 	ref, binding, found := findBinding(s.state.Bindings, key)
 	if !found {
@@ -701,6 +740,39 @@ func redisField(suffix string) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+func suggestPrimitiveType(key string, value model.Value) (model.TypeID, string) {
+	upper := strings.ToUpper(key)
+	switch {
+	case strings.Contains(upper, "PASSWORD"),
+		strings.Contains(upper, "SECRET"),
+		strings.Contains(upper, "TOKEN"),
+		strings.Contains(upper, "API_KEY"),
+		strings.Contains(upper, "PRIVATE_KEY"):
+		return model.TypeCoreSecret, "key name suggests sensitive value"
+	case upper == "URL" || strings.HasSuffix(upper, "_URL") || strings.Contains(upper, "URL_"):
+		return model.TypeCoreURL, "key name suggests URL"
+	case upper == "HOST" || strings.HasSuffix(upper, "_HOST") || strings.Contains(upper, "HOST_"):
+		return model.TypeCoreHost, "key name suggests host"
+	case upper == "PORT" || strings.HasSuffix(upper, "_PORT") || strings.Contains(upper, "PORT_"):
+		return model.TypeCorePort, "key name suggests port"
+	case value.Sensitivity == model.SensitivitySensitive:
+		return model.TypeCoreSecret, "value sensitivity suggests secret"
+	default:
+		return model.TypeCorePlain, "default primitive binding"
+	}
+}
+
+func descriptionForKey(key string) string {
+	words := strings.Split(strings.ToLower(strings.ReplaceAll(key, "_", " ")), " ")
+	for i, word := range words {
+		if word == "" {
+			continue
+		}
+		words[i] = strings.ToUpper(word[:1]) + word[1:]
+	}
+	return strings.Join(words, " ")
 }
 
 func opaqueFieldName(key string) string {

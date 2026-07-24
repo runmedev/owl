@@ -16,6 +16,7 @@ type StoreClient interface {
 	Snapshot(context.Context, SnapshotRequest) (*SnapshotResult, error)
 	Source(context.Context, SourceRequest) (*SourceResult, error)
 	Check(context.Context, CheckRequest) (*CheckResult, error)
+	Bind(context.Context, BindRequest) (*BindResult, error)
 }
 
 type StoreCommandOptions struct {
@@ -23,6 +24,7 @@ type StoreCommandOptions struct {
 	ConfigureSnapshotCommand func(*cobra.Command)
 	ConfigureSourceCommand   func(*cobra.Command)
 	ConfigureCheckCommand    func(*cobra.Command)
+	ConfigureBindCommand     func(*cobra.Command)
 	Hidden                   bool
 	InsecureAllowed          func() bool
 }
@@ -65,6 +67,28 @@ type CheckResult struct {
 	Diagnostics []string
 }
 
+type BindRequest struct {
+	SpecPath string
+	Format   string
+	Output   string
+	Write    bool
+}
+
+type BindResult struct {
+	Proposals []BindProposal
+	Rendered  string
+}
+
+type BindProposal struct {
+	Key           string
+	CurrentType   string
+	SuggestedType string
+	Confidence    string
+	Reason        string
+	Description   string
+	Required      bool
+}
+
 func NewStoreCommand(opts StoreCommandOptions) *cobra.Command {
 	if opts.InsecureAllowed == nil {
 		opts.InsecureAllowed = func() bool { return false }
@@ -91,6 +115,7 @@ func NewStoreCommands(opts StoreCommandOptions) []*cobra.Command {
 		newSnapshotCommand(opts),
 		newSourceCommand(opts),
 		newCheckCommand(opts),
+		newBindCommand(opts),
 	}
 }
 
@@ -205,6 +230,47 @@ func newCheckCommand(opts StoreCommandOptions) *cobra.Command {
 	return &cmd
 }
 
+func newBindCommand(opts StoreCommandOptions) *cobra.Command {
+	var req BindRequest
+
+	cmd := cobra.Command{
+		Hidden: opts.Hidden,
+		Use:    "bind",
+		Short:  "Proposes missing env bindings",
+		Long:   "Proposes missing primitive env bindings for a dotenv spec.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if req.Format == "" {
+				req.Format = "table"
+			}
+			if req.Write && req.Output != "" {
+				return errors.New("use either --write or --output, not both")
+			}
+
+			client, err := opts.client(cmd)
+			if err != nil {
+				return err
+			}
+
+			result, err := client.Bind(cmd.Context(), req)
+			if err != nil {
+				return err
+			}
+
+			return errors.Wrap(renderBind(cmd.OutOrStdout(), result, req), "failed to render")
+		},
+	}
+
+	cmd.Flags().StringVar(&req.SpecPath, "spec", ".env.spec", "Env spec file to bind")
+	cmd.Flags().StringVar(&req.Format, "format", "table", "Output format: table or dotenv-spec")
+	cmd.Flags().StringVar(&req.Output, "output", "", "Write proposed dotenv spec to a file")
+	cmd.Flags().BoolVar(&req.Write, "write", false, "Append proposed bindings to the spec file")
+	if opts.ConfigureBindCommand != nil {
+		opts.ConfigureBindCommand(&cmd)
+	}
+
+	return &cmd
+}
+
 func (opts StoreCommandOptions) client(cmd *cobra.Command) (StoreClient, error) {
 	if opts.ClientFactory == nil {
 		return nil, errors.New("store client factory is required")
@@ -284,4 +350,35 @@ func renderSource(w io.Writer, result *SourceResult, req SourceRequest) error {
 	}
 
 	return nil
+}
+
+func renderBind(w io.Writer, result *BindResult, req BindRequest) error {
+	if req.Format == "dotenv-spec" {
+		if _, err := fmt.Fprint(w, result.Rendered); err != nil {
+			return err
+		}
+		return nil
+	}
+	if req.Format != "table" {
+		return errors.Errorf("unsupported bind output format: %s", req.Format)
+	}
+
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	if _, err := fmt.Fprintln(tw, "KEY\tCURRENT\tSUGGESTED\tCONFIDENCE\tREASON"); err != nil {
+		return err
+	}
+	for _, proposal := range result.Proposals {
+		if _, err := fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\n",
+			proposal.Key,
+			proposal.CurrentType,
+			proposal.SuggestedType,
+			proposal.Confidence,
+			proposal.Reason,
+		); err != nil {
+			return err
+		}
+	}
+	return tw.Flush()
 }

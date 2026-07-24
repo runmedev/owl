@@ -14,8 +14,11 @@ import (
 type (
 	SnapshotPolicy = store.SnapshotPolicy
 	DotenvPolicy   = store.DotenvPolicy
+	BindPolicy     = store.BindPolicy
 	GetPolicy      = store.GetPolicy
 	SnapshotItem   = store.SnapshotItem
+	BindResult     = store.BindResult
+	BindProposal   = store.BindingProposal
 	GetResult      = store.GetResult
 	CheckResult    = store.CheckResult
 
@@ -182,6 +185,10 @@ func (s *Store) Snapshot(policy SnapshotPolicy) ([]SnapshotItem, error) {
 
 func (s *Store) Dotenv(policy DotenvPolicy) ([]string, error) {
 	return store.NewState(s.state, s.types).Dotenv(policy)
+}
+
+func (s *Store) Bind(policy BindPolicy) (BindResult, error) {
+	return store.NewState(s.state, s.types).Bind(policy)
 }
 
 func (s *Store) Get(key string, policy GetPolicy) (GetResult, bool, error) {

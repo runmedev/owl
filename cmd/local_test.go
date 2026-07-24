@@ -54,6 +54,53 @@ func TestLocalStoreClientUsesV2StoreSemantics(t *testing.T) {
 	assert.Contains(t, check.Diagnostics[len(check.Diagnostics)-1], "error dotenv.unresolved-required MISSING_TOKEN")
 }
 
+func TestLocalStoreClientBindProposesMissingPrimitiveBindings(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	envFile := filepath.Join(dir, ".env")
+	specFile := filepath.Join(dir, ".env.spec")
+	require.NoError(t, os.WriteFile(envFile, []byte("API_URL=https://api.example.com\nAPI_KEY=secret\nTARGET_PLATFORM=darwin/arm64\n"), 0o600))
+	require.NoError(t, os.WriteFile(specFile, []byte("API_URL=\"API URL\" # Plain\n"), 0o600))
+
+	client := NewLocalStoreClient(LocalStoreOptions{
+		EnvFiles: []string{envFile},
+	})
+
+	result, err := client.Bind(context.Background(), BindRequest{SpecPath: specFile, Format: "dotenv-spec"})
+	require.NoError(t, err)
+
+	require.Len(t, result.Proposals, 2)
+	assert.Equal(t, "API_KEY", result.Proposals[0].Key)
+	assert.Equal(t, "core/secret", result.Proposals[0].SuggestedType)
+	assert.Equal(t, "TARGET_PLATFORM", result.Proposals[1].Key)
+	assert.Equal(t, "core/plain", result.Proposals[1].SuggestedType)
+	assert.Contains(t, result.Rendered, "API_KEY=\"Api Key\" # Secret")
+	assert.Contains(t, result.Rendered, "TARGET_PLATFORM=\"Target Platform\" # Plain")
+}
+
+func TestLocalStoreClientBindWriteAppendsSpec(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	envFile := filepath.Join(dir, ".env")
+	specFile := filepath.Join(dir, ".env.spec")
+	require.NoError(t, os.WriteFile(envFile, []byte("API_KEY=secret\n"), 0o600))
+	require.NoError(t, os.WriteFile(specFile, []byte("API_URL=\"API URL\" # Plain\n"), 0o600))
+
+	client := NewLocalStoreClient(LocalStoreOptions{
+		EnvFiles: []string{envFile},
+	})
+
+	_, err := client.Bind(context.Background(), BindRequest{SpecPath: specFile, Write: true})
+	require.NoError(t, err)
+
+	raw, err := os.ReadFile(specFile)
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), "API_URL=\"API URL\" # Plain\n")
+	assert.Contains(t, string(raw), "API_KEY=\"Api Key\" # Secret\n")
+}
+
 func snapshotByName(envs []SnapshotEnv) map[string]SnapshotEnv {
 	result := make(map[string]SnapshotEnv, len(envs))
 	for _, env := range envs {

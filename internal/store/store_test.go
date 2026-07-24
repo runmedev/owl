@@ -48,6 +48,28 @@ func TestStoreSnapshotSourceAndCheck(t *testing.T) {
 	assert.Equal(t, model.DiagnosticError, check.Diagnostics[len(check.Diagnostics)-1].Severity)
 }
 
+func TestStoreBindProposesMissingPrimitiveBindings(t *testing.T) {
+	t.Parallel()
+
+	s, err := NewStore(
+		WithDotenv(".env", strings.NewReader("API_URL=https://api.example.com\nAPI_KEY=secret\nSERVICE_HOST=localhost\nSERVICE_PORT=8080\nTARGET_PLATFORM=darwin/arm64\n")),
+		WithEnvSpec(".env.spec", strings.NewReader("API_URL=\"API URL\" # Plain\n")),
+	)
+	require.NoError(t, err)
+
+	result, err := s.Bind(BindPolicy{})
+	require.NoError(t, err)
+
+	require.Len(t, result.Proposals, 4)
+	byKey := bindProposalsByKey(result.Proposals)
+	assert.Equal(t, model.TypeCoreSecret, byKey["API_KEY"].SuggestedType)
+	assert.Equal(t, "key name suggests sensitive value", byKey["API_KEY"].Reason)
+	assert.Equal(t, model.TypeCoreHost, byKey["SERVICE_HOST"].SuggestedType)
+	assert.Equal(t, model.TypeCorePort, byKey["SERVICE_PORT"].SuggestedType)
+	assert.Equal(t, model.TypeCorePlain, byKey["TARGET_PLATFORM"].SuggestedType)
+	assert.NotContains(t, byKey, "API_URL")
+}
+
 func TestStoreWithDotenv(t *testing.T) {
 	t.Parallel()
 
@@ -93,6 +115,14 @@ func snapshotByName(items []SnapshotItem) map[string]SnapshotItem {
 	result := make(map[string]SnapshotItem, len(items))
 	for _, item := range items {
 		result[item.Name] = item
+	}
+	return result
+}
+
+func bindProposalsByKey(items []BindingProposal) map[string]BindingProposal {
+	result := make(map[string]BindingProposal, len(items))
+	for _, item := range items {
+		result[item.Key] = item
 	}
 	return result
 }

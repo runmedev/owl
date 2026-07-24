@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -35,6 +36,7 @@ func NewLocalCommands() []*cobra.Command {
 		ConfigureSnapshotCommand: configureLocalFlags,
 		ConfigureSourceCommand:   configureLocalFlags,
 		ConfigureCheckCommand:    configureLocalFlags,
+		ConfigureBindCommand:     configureLocalFlags,
 		InsecureAllowed:          func() bool { return true },
 	})
 }
@@ -84,6 +86,39 @@ func (c *LocalStoreClient) Check(context.Context, CheckRequest) (*CheckResult, e
 	}, nil
 }
 
+func (c *LocalStoreClient) Bind(_ context.Context, req BindRequest) (*BindResult, error) {
+	options := c.options
+	if req.SpecPath != "" {
+		options.SpecFiles = []string{req.SpecPath}
+	}
+	store, err := NewLocalStoreClient(options).store()
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := store.Bind(owl.BindPolicy{})
+	if err != nil {
+		return nil, err
+	}
+
+	rendered := renderDotenvSpecProposals(result.Proposals)
+	if req.Output != "" {
+		if err := os.WriteFile(req.Output, []byte(rendered), 0o600); err != nil {
+			return nil, err
+		}
+	}
+	if req.Write {
+		if err := appendDotenvSpec(req.SpecPath, rendered); err != nil {
+			return nil, err
+		}
+	}
+
+	return &BindResult{
+		Proposals: bindProposalsFromItems(result.Proposals),
+		Rendered:  rendered,
+	}, nil
+}
+
 func (c *LocalStoreClient) store() (*owl.Store, error) {
 	var opts []owl.StoreOption
 
@@ -114,6 +149,63 @@ func (c *LocalStoreClient) store() (*owl.Store, error) {
 	return owl.NewStore(opts...)
 }
 
+func renderDotenvSpecProposals(proposals []owl.BindProposal) string {
+	if len(proposals) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, proposal := range proposals {
+		_, _ = b.WriteString(proposal.Key)
+		_, _ = b.WriteString("=")
+		_, _ = b.WriteString(strconvQuote(proposal.Description))
+		_, _ = b.WriteString(" # ")
+		_, _ = b.WriteString(dotenvSpecName(proposal.SuggestedType))
+		if proposal.Required {
+			_ = b.WriteByte('!')
+		}
+		_ = b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+func appendDotenvSpec(path string, rendered string) error {
+	if rendered == "" {
+		return nil
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	var b strings.Builder
+	_, _ = b.Write(raw)
+	if len(raw) > 0 && !strings.HasSuffix(string(raw), "\n") {
+		_ = b.WriteByte('\n')
+	}
+	_, _ = b.WriteString(rendered)
+	return os.WriteFile(path, []byte(b.String()), 0o600)
+}
+
+func dotenvSpecName(typeID owl.TypeID) string {
+	switch typeID {
+	case owl.TypeCoreSecret:
+		return "Secret"
+	case owl.TypeCoreURL:
+		return "Url"
+	case owl.TypeCoreHost:
+		return "Host"
+	case owl.TypeCorePort:
+		return "Port"
+	case owl.TypeCorePlain:
+		return "Plain"
+	default:
+		return "Opaque"
+	}
+}
+
+func strconvQuote(s string) string {
+	return `"` + strings.ReplaceAll(strings.ReplaceAll(s, `\`, `\\`), `"`, `\"`) + `"`
+}
+
 func filesOrDefaults(files []string, defaults ...string) ([]string, error) {
 	if len(files) > 0 {
 		return files, nil
@@ -130,6 +222,22 @@ func filesOrDefaults(files []string, defaults ...string) ([]string, error) {
 	}
 
 	return existing, nil
+}
+
+func bindProposalsFromItems(items []owl.BindProposal) []BindProposal {
+	proposals := make([]BindProposal, 0, len(items))
+	for _, item := range items {
+		proposals = append(proposals, BindProposal{
+			Key:           item.Key,
+			CurrentType:   item.CurrentType.Alias(),
+			SuggestedType: item.SuggestedType.Alias(),
+			Confidence:    string(item.Confidence),
+			Reason:        item.Reason,
+			Description:   item.Description,
+			Required:      item.Required,
+		})
+	}
+	return proposals
 }
 
 func snapshotEnvsFromItems(items []owl.SnapshotItem) []SnapshotEnv {

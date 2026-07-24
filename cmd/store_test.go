@@ -151,6 +151,60 @@ func TestStoreSnapshotRevealPassesRequestWhenInsecureAllowed(t *testing.T) {
 	assert.Contains(t, out.String(), "literal")
 }
 
+func TestStoreBindRendersTable(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeStoreClient{
+		bind: &BindResult{Proposals: []BindProposal{
+			{
+				Key:           "API_KEY",
+				CurrentType:   "core/opaque",
+				SuggestedType: "core/secret",
+				Confidence:    "heuristic",
+				Reason:        "key name suggests sensitive value",
+			},
+		}},
+	}
+	cmd := NewStoreCommand(StoreCommandOptions{
+		ClientFactory: func(*cobra.Command) (StoreClient, error) {
+			return client, nil
+		},
+	})
+
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"bind", "--spec", ".env.spec"})
+
+	require.NoError(t, cmd.Execute())
+	assert.True(t, client.bindCalled)
+	assert.Equal(t, ".env.spec", client.bindReq.SpecPath)
+	assert.Contains(t, out.String(), "SUGGESTED")
+	assert.Contains(t, out.String(), "API_KEY")
+	assert.Contains(t, out.String(), "core/secret")
+}
+
+func TestStoreBindRendersDotenvSpec(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeStoreClient{
+		bind: &BindResult{Rendered: "API_KEY=\"Api Key\" # Secret\n"},
+	}
+	cmd := NewStoreCommand(StoreCommandOptions{
+		ClientFactory: func(*cobra.Command) (StoreClient, error) {
+			return client, nil
+		},
+	})
+
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"bind", "--format", "dotenv-spec"})
+
+	require.NoError(t, cmd.Execute())
+	assert.Equal(t, "API_KEY=\"Api Key\" # Secret\n", out.String())
+}
+
 func TestStoreSourceRequiresInsecureFlag(t *testing.T) {
 	t.Parallel()
 
@@ -172,11 +226,14 @@ type fakeStoreClient struct {
 	snapshot       *SnapshotResult
 	source         *SourceResult
 	check          *CheckResult
+	bind           *BindResult
 	snapshotReq    SnapshotRequest
 	sourceReq      SourceRequest
+	bindReq        BindRequest
 	snapshotCalled bool
 	sourceCalled   bool
 	checkCalled    bool
+	bindCalled     bool
 }
 
 func (c *fakeStoreClient) Snapshot(_ context.Context, req SnapshotRequest) (*SnapshotResult, error) {
@@ -194,4 +251,10 @@ func (c *fakeStoreClient) Source(_ context.Context, req SourceRequest) (*SourceR
 func (c *fakeStoreClient) Check(context.Context, CheckRequest) (*CheckResult, error) {
 	c.checkCalled = true
 	return c.check, nil
+}
+
+func (c *fakeStoreClient) Bind(_ context.Context, req BindRequest) (*BindResult, error) {
+	c.bindReq = req
+	c.bindCalled = true
+	return c.bind, nil
 }
