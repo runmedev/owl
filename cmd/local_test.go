@@ -101,6 +101,30 @@ func TestLocalStoreClientBindWriteAppendsSpec(t *testing.T) {
 	assert.Contains(t, string(raw), "API_KEY=\"Api Key\" # Secret\n")
 }
 
+func TestLocalStoreClientBindUsesDefaultMissingSpec(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	envFile := filepath.Join(dir, ".env")
+	specFile := filepath.Join(dir, ".env.spec")
+	require.NoError(t, os.WriteFile(envFile, []byte("API_KEY=secret\n"), 0o600))
+
+	client := NewLocalStoreClient(LocalStoreOptions{
+		EnvFiles: []string{envFile},
+	})
+
+	result, err := client.Bind(context.Background(), BindRequest{
+		SpecPath: specFile,
+		Write:    true,
+	})
+	require.NoError(t, err)
+	require.Len(t, result.Proposals, 1)
+
+	raw, err := os.ReadFile(specFile)
+	require.NoError(t, err)
+	assert.Equal(t, "API_KEY=\"Api Key\" # Secret\n", string(raw))
+}
+
 func snapshotByName(envs []SnapshotEnv) map[string]SnapshotEnv {
 	result := make(map[string]SnapshotEnv, len(envs))
 	for _, env := range envs {

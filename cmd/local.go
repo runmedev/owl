@@ -87,11 +87,12 @@ func (c *LocalStoreClient) Check(context.Context, CheckRequest) (*CheckResult, e
 }
 
 func (c *LocalStoreClient) Bind(_ context.Context, req BindRequest) (*BindResult, error) {
-	options := c.options
-	if req.SpecPath != "" {
-		options.SpecFiles = []string{req.SpecPath}
+	if req.SpecPath == "" {
+		req.SpecPath = ".env.spec"
 	}
-	store, err := NewLocalStoreClient(options).store()
+	options := c.options
+	options.SpecFiles = []string{req.SpecPath}
+	store, err := NewLocalStoreClient(options).storeWithOptions(true)
 	if err != nil {
 		return nil, err
 	}
@@ -120,6 +121,10 @@ func (c *LocalStoreClient) Bind(_ context.Context, req BindRequest) (*BindResult
 }
 
 func (c *LocalStoreClient) store() (*owl.Store, error) {
+	return c.storeWithOptions(false)
+}
+
+func (c *LocalStoreClient) storeWithOptions(allowMissingSpec bool) (*owl.Store, error) {
 	var opts []owl.StoreOption
 
 	specFiles, err := filesOrDefaults(c.options.SpecFiles, ".env.example")
@@ -128,6 +133,9 @@ func (c *LocalStoreClient) store() (*owl.Store, error) {
 	}
 	for _, file := range specFiles {
 		raw, err := os.ReadFile(file)
+		if allowMissingSpec && errors.Is(err, os.ErrNotExist) {
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}
