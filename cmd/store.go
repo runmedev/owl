@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"text/tabwriter"
 
@@ -43,6 +44,7 @@ type SnapshotEnv struct {
 	Type        string
 	Field       string
 	Source      string
+	Explicit    bool
 	Visibility  string
 	Diagnostics []string
 }
@@ -216,9 +218,9 @@ func renderSnapshot(w io.Writer, result *SnapshotResult, req SnapshotRequest) er
 		return err
 	}
 
-	lines := req.Limit
-	for i, env := range result.Envs {
-		if i >= lines && !req.All {
+	envs := snapshotEnvsForRender(result.Envs, req)
+	for i, env := range envs {
+		if i >= req.Limit && !req.All {
 			break
 		}
 
@@ -238,6 +240,30 @@ func renderSnapshot(w io.Writer, result *SnapshotResult, req SnapshotRequest) er
 	}
 
 	return tw.Flush()
+}
+
+func snapshotEnvsForRender(envs []SnapshotEnv, req SnapshotRequest) []SnapshotEnv {
+	explicit := make([]SnapshotEnv, 0, len(envs))
+	inherited := make([]SnapshotEnv, 0, len(envs))
+	for _, env := range envs {
+		if env.Explicit {
+			explicit = append(explicit, env)
+			continue
+		}
+		inherited = append(inherited, env)
+	}
+	sortSnapshotEnvs(explicit)
+	sortSnapshotEnvs(inherited)
+	if !req.All {
+		return explicit
+	}
+	return append(explicit, inherited...)
+}
+
+func sortSnapshotEnvs(envs []SnapshotEnv) {
+	sort.SliceStable(envs, func(i, j int) bool {
+		return envs[i].Name < envs[j].Name
+	})
 }
 
 func renderSource(w io.Writer, result *SourceResult, req SourceRequest) error {

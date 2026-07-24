@@ -406,6 +406,8 @@ query OwlSnapshot($input: LoadInput!, $reveal: Boolean = false) {
               fieldName
               source
               origin
+              explicit
+              confidence
               visibility
               exposure
               description
@@ -441,6 +443,8 @@ func decodeSnapshot(raw interface{}) []SnapshotItem {
 			},
 			Source:      model.Source{Name: stringValue(item["source"])},
 			Origin:      model.Source{Name: stringValue(item["origin"])},
+			Explicit:    boolValue(item["explicit"]),
+			Confidence:  model.BindingConfidence(stringValue(item["confidence"])),
 			Visibility:  model.Visibility(stringValue(item["visibility"])),
 			Exposure:    model.Exposure(stringValue(item["exposure"])),
 			Description: stringValue(item["description"]),

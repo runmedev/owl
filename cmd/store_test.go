@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -41,6 +42,65 @@ func TestStoreSnapshotRendersVisibilityColumn(t *testing.T) {
 	assert.NotContains(t, out.String(), "STATUS")
 	assert.NotContains(t, out.String(), "EXPOSURE")
 	assert.Contains(t, out.String(), "masked")
+}
+
+func TestStoreSnapshotRendersExplicitItemsByDefault(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeStoreClient{
+		snapshot: &SnapshotResult{Envs: []SnapshotEnv{
+			{Name: "ZZZ_SYSTEM", Value: "[hidden]", Type: "core/opaque", Source: "(system)", Visibility: "hidden"},
+			{Name: "API_KEY", Value: "[masked]", Type: "core/secret", Source: ".env", Explicit: true, Visibility: "masked"},
+			{Name: "AAA_SYSTEM", Value: "[hidden]", Type: "core/opaque", Source: "(system)", Visibility: "hidden"},
+			{Name: "API_URL", Value: "https://api.example.com", Type: "core/plain", Source: ".env", Explicit: true, Visibility: "literal"},
+		}},
+	}
+	cmd := NewStoreCommand(StoreCommandOptions{
+		ClientFactory: func(*cobra.Command) (StoreClient, error) {
+			return client, nil
+		},
+	})
+
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"snapshot"})
+
+	require.NoError(t, cmd.Execute())
+	assert.Contains(t, out.String(), "API_KEY")
+	assert.Contains(t, out.String(), "API_URL")
+	assert.NotContains(t, out.String(), "AAA_SYSTEM")
+	assert.NotContains(t, out.String(), "ZZZ_SYSTEM")
+	assert.Less(t, strings.Index(out.String(), "API_KEY"), strings.Index(out.String(), "API_URL"))
+}
+
+func TestStoreSnapshotAllRendersInheritedAfterExplicit(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeStoreClient{
+		snapshot: &SnapshotResult{Envs: []SnapshotEnv{
+			{Name: "ZZZ_SYSTEM", Value: "[hidden]", Type: "core/opaque", Source: "(system)", Visibility: "hidden"},
+			{Name: "API_KEY", Value: "[masked]", Type: "core/secret", Source: ".env", Explicit: true, Visibility: "masked"},
+			{Name: "AAA_SYSTEM", Value: "[hidden]", Type: "core/opaque", Source: "(system)", Visibility: "hidden"},
+			{Name: "API_URL", Value: "https://api.example.com", Type: "core/plain", Source: ".env", Explicit: true, Visibility: "literal"},
+		}},
+	}
+	cmd := NewStoreCommand(StoreCommandOptions{
+		ClientFactory: func(*cobra.Command) (StoreClient, error) {
+			return client, nil
+		},
+	})
+
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"snapshot", "--all"})
+
+	require.NoError(t, cmd.Execute())
+	rendered := out.String()
+	assert.Less(t, strings.Index(rendered, "API_KEY"), strings.Index(rendered, "API_URL"))
+	assert.Less(t, strings.Index(rendered, "API_URL"), strings.Index(rendered, "AAA_SYSTEM"))
+	assert.Less(t, strings.Index(rendered, "AAA_SYSTEM"), strings.Index(rendered, "ZZZ_SYSTEM"))
 }
 
 func TestStoreSnapshotRevealRequiresInsecurePermission(t *testing.T) {

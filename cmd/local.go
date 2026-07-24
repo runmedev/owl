@@ -146,6 +146,7 @@ func snapshotEnvsFromItems(items []owl.SnapshotItem) []SnapshotEnv {
 			Type:        item.Type.Alias(),
 			Field:       item.Field.String(),
 			Source:      item.Source.Name,
+			Explicit:    item.Explicit,
 			Visibility:  visibility,
 			Diagnostics: diagnosticStrings(item.Diagnostics),
 		})

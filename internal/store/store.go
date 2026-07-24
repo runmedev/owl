@@ -67,6 +67,8 @@ type SnapshotItem struct {
 	Field         model.FieldRef
 	Source        model.Source
 	Origin        model.Source
+	Explicit      bool
+	Confidence    model.BindingConfidence
 	Visibility    model.Visibility
 	Exposure      model.Exposure
 	Description   string
@@ -401,6 +403,8 @@ func (s *Store) Snapshot(policy SnapshotPolicy) ([]SnapshotItem, error) {
 			Field:         value.FieldRef,
 			Source:        value.Source,
 			Origin:        value.Origin,
+			Explicit:      binding.Explicit,
+			Confidence:    binding.Confidence,
 			Visibility:    rendered.visibility,
 			Exposure:      value.Exposure,
 			Description:   binding.Description,

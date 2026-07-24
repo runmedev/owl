@@ -315,6 +315,14 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 					return item.Origin.Name, nil
 				},
 			},
+			"explicit": &graphql.Field{Type: graphql.Boolean},
+			"confidence": &graphql.Field{
+				Type: graphql.String,
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					item := p.Source.(store.SnapshotItem)
+					return string(item.Confidence), nil
+				},
+			},
 			"visibility": &graphql.Field{
 				Type: graphql.String,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
