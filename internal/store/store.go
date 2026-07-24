@@ -687,14 +687,7 @@ func inferDotenvFieldRef(key string) (model.FieldRef, *model.Diagnostic) {
 		}
 	}
 
-	ref := model.FieldRef{TypeID: model.TypeCoreOpaque, Instance: "default", Field: opaqueFieldName(key)}
-	return ref, &model.Diagnostic{
-		Severity: model.DiagnosticInfo,
-		Code:     "dotenv.opaque",
-		Message:  "dotenv key has no explicit type declaration and remains core/opaque",
-		Key:      key,
-		FieldRef: ref,
-	}
+	return model.FieldRef{TypeID: model.TypeCoreOpaque, Instance: "default", Field: opaqueFieldName(key)}, nil
 }
 
 func redisField(suffix string) (string, bool) {

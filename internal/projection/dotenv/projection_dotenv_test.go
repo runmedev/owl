@@ -57,9 +57,7 @@ func TestIngestDotenv_RedisAndOpaque(t *testing.T) {
 	token := model.FieldRef{TypeID: model.TypeCoreOpaque, Instance: "default", Field: "custom.service.token"}
 	require.Contains(t, state.Values, token)
 	assert.Equal(t, model.SensitivitySensitive, state.Values[token].Sensitivity)
-
-	require.NotEmpty(t, state.Diagnostics)
-	assert.Contains(t, diagnosticCodes(state.Diagnostics), "dotenv.opaque")
+	assert.Empty(t, state.Diagnostics)
 }
 
 func TestRenderDotenv_SafeAndInsecure(t *testing.T) {

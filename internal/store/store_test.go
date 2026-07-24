@@ -30,6 +30,7 @@ func TestStoreSnapshotSourceAndCheck(t *testing.T) {
 	assert.Equal(t, model.TypeCoreSecret, byName["API_KEY"].Type)
 	assert.Equal(t, "[hidden]", byName["DATABASE_URL"].Value)
 	assert.Equal(t, model.TypeCoreOpaque, byName["DATABASE_URL"].Type)
+	assert.Empty(t, byName["DATABASE_URL"].Diagnostics)
 	assert.Equal(t, "[unset]", byName["MISSING_TOKEN"].Value)
 	assert.Equal(t, model.VisibilityUnresolved, byName["MISSING_TOKEN"].Visibility)
 
