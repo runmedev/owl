@@ -161,10 +161,32 @@ func TestLocalStoreClientTypeOutputDashRendersChangedSpec(t *testing.T) {
 	result, err := client.Type(context.Background(), TypeRequest{SpecPath: specFile, Output: "-"})
 	require.NoError(t, err)
 
-	assert.Equal(t, "API_URL=\"API URL\" # Plain\nAPI_KEY=\"Api Key\" # Secret\n", result.Rendered)
+	assert.Equal(t, "API_URL=\"API URL\" # Plain\n\nAPI_KEY=\"Api Key\" # Secret\n", result.Rendered)
 	raw, err := os.ReadFile(specFile)
 	require.NoError(t, err)
 	assert.Equal(t, "API_URL=\"API URL\" # Plain", string(raw))
+}
+
+func TestMaterializeDotenvSpecTypeProposalsSeparatesBlocks(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	specFile := filepath.Join(dir, ".env.spec")
+
+	require.NoError(t, os.WriteFile(specFile, []byte("API_URL=\"API URL\" # Plain"), 0o600))
+	materialized, err := materializeDotenvSpecTypeProposals(specFile, "API_KEY=\"Api Key\" # Secret\n")
+	require.NoError(t, err)
+	assert.Equal(t, "API_URL=\"API URL\" # Plain\n\nAPI_KEY=\"Api Key\" # Secret\n", materialized)
+
+	require.NoError(t, os.WriteFile(specFile, []byte("API_URL=\"API URL\" # Plain\n"), 0o600))
+	materialized, err = materializeDotenvSpecTypeProposals(specFile, "API_KEY=\"Api Key\" # Secret\n")
+	require.NoError(t, err)
+	assert.Equal(t, "API_URL=\"API URL\" # Plain\n\nAPI_KEY=\"Api Key\" # Secret\n", materialized)
+
+	require.NoError(t, os.WriteFile(specFile, []byte("API_URL=\"API URL\" # Plain\n\n"), 0o600))
+	materialized, err = materializeDotenvSpecTypeProposals(specFile, "API_KEY=\"Api Key\" # Secret\n")
+	require.NoError(t, err)
+	assert.Equal(t, "API_URL=\"API URL\" # Plain\n\nAPI_KEY=\"Api Key\" # Secret\n", materialized)
 }
 
 func TestLocalStoreClientTypeUsesDefaultMissingSpec(t *testing.T) {
