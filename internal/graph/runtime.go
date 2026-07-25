@@ -228,6 +228,7 @@ func marshalInput(input LoadInput) map[string]interface{} {
 				"projection":  string(binding.Projection),
 				"required":    binding.Required,
 				"description": binding.Description,
+				"order":       int(binding.Order),
 			}
 			if source := marshalSource(binding.Source); source != nil {
 				bindingInput["source"] = source
@@ -347,6 +348,7 @@ func marshalEffectiveState(state model.EffectiveState) map[string]interface{} {
 			"origin":      marshalSource(binding.Origin),
 			"confidence":  string(binding.Confidence),
 			"explicit":    binding.Explicit,
+			"order":       int(binding.Order),
 			"preserveKey": binding.PreserveKey,
 			"required":    binding.Required,
 		})
@@ -571,6 +573,7 @@ func decodeEffectiveState(raw interface{}) model.EffectiveState {
 			Origin:       decodeSource(bindingRaw["origin"]),
 			Confidence:   model.BindingConfidence(stringValue(bindingRaw["confidence"])),
 			Explicit:     boolValue(bindingRaw["explicit"]),
+			Order:        uintValue(bindingRaw["order"]),
 			PreserveKey:  boolValue(bindingRaw["preserveKey"]),
 			Required:     boolValue(bindingRaw["required"]),
 		})

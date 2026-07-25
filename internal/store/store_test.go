@@ -48,6 +48,25 @@ func TestStoreSnapshotSourceAndCheck(t *testing.T) {
 	assert.Equal(t, model.DiagnosticError, check.Diagnostics[len(check.Diagnostics)-1].Severity)
 }
 
+func TestStoreSnapshotOrdersExplicitBindingsBeforeInferredBindings(t *testing.T) {
+	t.Parallel()
+
+	s, err := NewStore(
+		WithDotenv(".env", strings.NewReader("OMEGA=value\nAPPLE=value\nZETA=value\nBETA=value\n")),
+		WithEnvSpec(".env.example", strings.NewReader("ZETA=\"Zeta\" # Plain\nBETA=\"Beta\" # Plain\n")),
+	)
+	require.NoError(t, err)
+
+	snapshot, err := s.Snapshot(SnapshotPolicy{Reveal: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"ZETA", "BETA", "APPLE", "OMEGA"}, snapshotNames(snapshot))
+	assert.True(t, snapshot[0].Explicit)
+	assert.True(t, snapshot[1].Explicit)
+	assert.False(t, snapshot[2].Explicit)
+	assert.False(t, snapshot[3].Explicit)
+}
+
 func TestStoreTypeProposesMissingPrimitiveTypes(t *testing.T) {
 	t.Parallel()
 
@@ -133,6 +152,14 @@ func snapshotByName(items []SnapshotItem) map[string]SnapshotItem {
 	result := make(map[string]SnapshotItem, len(items))
 	for _, item := range items {
 		result[item.Name] = item
+	}
+	return result
+}
+
+func snapshotNames(items []SnapshotItem) []string {
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		result = append(result, item.Name)
 	}
 	return result
 }

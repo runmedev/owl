@@ -61,6 +61,26 @@ func TestV2PublicAPI(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestPublicAPISnapshotOrderSurvivesStateEnvelopeRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	store, err := owl.NewStore(
+		owl.WithDotenv(".env", strings.NewReader("OMEGA=value\nAPPLE=value\nZETA=value\nBETA=value\n")),
+		owl.WithEnvSpec(".env.spec", strings.NewReader("ZETA=\"Zeta\" # Plain\nBETA=\"Beta\" # Plain\n")),
+	)
+	require.NoError(t, err)
+
+	envelope, err := store.StateEnvelope(context.Background())
+	require.NoError(t, err)
+
+	roundTripped, err := owl.NewStore(owl.WithStateEnvelope(envelope))
+	require.NoError(t, err)
+
+	snapshot, err := roundTripped.Snapshot(owl.SnapshotPolicy{Reveal: true})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"ZETA", "BETA", "APPLE", "OMEGA"}, snapshotNames(snapshot))
+}
+
 func TestPublicAPIVisibilityAndExposure(t *testing.T) {
 	t.Parallel()
 
@@ -331,6 +351,14 @@ func snapshotByName(items []owl.SnapshotItem) map[string]owl.SnapshotItem {
 	result := make(map[string]owl.SnapshotItem, len(items))
 	for _, item := range items {
 		result[item.Name] = item
+	}
+	return result
+}
+
+func snapshotNames(items []owl.SnapshotItem) []string {
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		result = append(result, item.Name)
 	}
 	return result
 }

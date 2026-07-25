@@ -22,6 +22,7 @@ type FieldDeclaration struct {
 	Required    bool
 	Description string
 	Source      model.Source
+	Order       uint
 	Sensitivity model.Sensitivity
 	Exposure    model.Exposure
 	UnknownType string
@@ -56,7 +57,17 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 		declarationsByKey[key] = declaration
 		declarationKeys = append(declarationKeys, key)
 	}
-	sort.Strings(declarationKeys)
+	sort.SliceStable(declarationKeys, func(i, j int) bool {
+		left := declarationsByKey[declarationKeys[i]]
+		right := declarationsByKey[declarationKeys[j]]
+		if left.Order > 0 && right.Order > 0 && left.Order != right.Order {
+			return left.Order < right.Order
+		}
+		if left.Order > 0 != (right.Order > 0) {
+			return left.Order > 0
+		}
+		return declarationKeys[i] < declarationKeys[j]
+	})
 
 	seenKeys := make(map[string]struct{}, len(values))
 	seenFields := make(map[model.FieldRef]string, len(values)+len(opts.Declarations))
@@ -73,6 +84,7 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 		fieldRef, confidence, diagnostic := dotenvFieldRef(key)
 		origin := source
 		explicit := false
+		order := uint(0)
 		preserveKey := confidence == model.BindingConfidenceOpaque
 		description := ""
 		if declaration, ok := declarationsByKey[key]; ok {
@@ -81,6 +93,7 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 			diagnostic = nil
 			origin = declaration.Source
 			explicit = true
+			order = declaration.Order
 			preserveKey = false
 			description = declaration.Description
 		}
@@ -97,7 +110,7 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 				FieldRef: fieldRef,
 				Owner:    model.DiagnosticOwnerProjection,
 			})
-			state.Bindings = append(state.Bindings, newBinding(opID, key, fieldRef, description, source, origin, confidence, explicit, preserveKey, false, now))
+			state.Bindings = append(state.Bindings, newBinding(opID, key, fieldRef, description, source, origin, confidence, explicit, order, preserveKey, false, now))
 			seenKeys[key] = struct{}{}
 			continue
 		}
@@ -127,7 +140,7 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 		if declaration, ok := declarationsByKey[key]; ok {
 			required = declaration.Required
 		}
-		state.Bindings = append(state.Bindings, newBinding(opID, key, fieldRef, description, source, origin, confidence, explicit, preserveKey, required, now))
+		state.Bindings = append(state.Bindings, newBinding(opID, key, fieldRef, description, source, origin, confidence, explicit, order, preserveKey, required, now))
 		state.Operations = append(state.Operations, model.OperationMetadata{
 			ID:           opID,
 			Kind:         model.OperationKindLoad,
@@ -179,6 +192,7 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 			declaration.Source,
 			model.BindingConfidenceExplicit,
 			true,
+			declaration.Order,
 			false,
 			declaration.Required,
 			now,
@@ -264,6 +278,7 @@ func newBinding(
 	origin model.Source,
 	confidence model.BindingConfidence,
 	explicit bool,
+	order uint,
 	preserveKey bool,
 	required bool,
 	now time.Time,
@@ -278,6 +293,7 @@ func newBinding(
 		Origin:          origin,
 		Confidence:      confidence,
 		Explicit:        explicit,
+		Order:           order,
 		PreserveKey:     preserveKey,
 		Required:        required,
 		CreatedAt:       now,

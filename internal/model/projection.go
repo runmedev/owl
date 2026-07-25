@@ -45,6 +45,7 @@ type Binding struct {
 	Origin          Source
 	Confidence      BindingConfidence
 	Explicit        bool
+	Order           uint
 	PreserveKey     bool
 	Required        bool
 	CreatedAt       time.Time

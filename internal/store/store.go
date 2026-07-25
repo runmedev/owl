@@ -86,6 +86,7 @@ type SnapshotItem struct {
 	Source        model.Source
 	Origin        model.Source
 	Explicit      bool
+	Order         uint
 	Confidence    model.BindingConfidence
 	Visibility    model.Visibility
 	Exposure      model.Exposure
@@ -125,6 +126,7 @@ type EnvBinding struct {
 	Required    bool
 	Description string
 	Source      model.Source
+	Order       uint
 }
 
 type EnvContract struct {
@@ -498,6 +500,7 @@ func (s *Store) Snapshot(policy SnapshotPolicy) ([]SnapshotItem, error) {
 			Source:        value.Source,
 			Origin:        value.Origin,
 			Explicit:      binding.Explicit,
+			Order:         binding.Order,
 			Confidence:    binding.Confidence,
 			Visibility:    rendered.visibility,
 			Exposure:      value.Exposure,
@@ -507,6 +510,17 @@ func (s *Store) Snapshot(policy SnapshotPolicy) ([]SnapshotItem, error) {
 		})
 	}
 	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].Explicit != items[j].Explicit {
+			return items[i].Explicit
+		}
+		if items[i].Explicit && items[j].Explicit {
+			if items[i].Order > 0 && items[j].Order > 0 && items[i].Order != items[j].Order {
+				return items[i].Order < items[j].Order
+			}
+			if items[i].Order > 0 != (items[j].Order > 0) {
+				return items[i].Order > 0
+			}
+		}
 		return items[i].Name < items[j].Name
 	})
 	return items, nil
@@ -677,6 +691,7 @@ func LoadInputFromSourceBytes(envs, specs []SourceBytes) (LoadInput, error) {
 		load.Dotenv = append(load.Dotenv, DotenvVariable{Key: key, Value: values[key]})
 	}
 
+	var order uint
 	for _, spec := range specs {
 		declarations, err := dotenv.ParseDotenvSpecDeclarations(spec.Raw, model.Source{Name: spec.Name, Kind: "dotenv-spec"})
 		if err != nil {
@@ -700,6 +715,7 @@ func LoadInputFromSourceBytes(envs, specs []SourceBytes) (LoadInput, error) {
 			Projection: model.ProjectionDotenv,
 		}
 		for _, declaration := range declarations {
+			order++
 			contract.Bindings = append(contract.Bindings, EnvBinding{
 				FieldRef:    declaration.FieldRef,
 				Key:         string(declaration.Key),
@@ -707,6 +723,7 @@ func LoadInputFromSourceBytes(envs, specs []SourceBytes) (LoadInput, error) {
 				Required:    declaration.Required,
 				Description: declaration.Description,
 				Source:      declaration.Source,
+				Order:       order,
 			})
 		}
 		load.Contracts = append(load.Contracts, contract)
@@ -725,12 +742,14 @@ func sourceBytesFromInputs(inputs []sourceInput) []SourceBytes {
 
 func declarationsFromContracts(contracts []EnvContract) []dotenv.FieldDeclaration {
 	var declarations []dotenv.FieldDeclaration
+	var order uint
 	for _, contract := range contracts {
 		source := contract.Source
 		if source.Name == "" {
 			source = model.Source{Name: "env-contract", Kind: "env-contract"}
 		}
 		for _, binding := range contract.Bindings {
+			order++
 			projection := binding.Projection
 			if projection == "" {
 				projection = contract.Projection
@@ -748,10 +767,20 @@ func declarationsFromContracts(contracts []EnvContract) []dotenv.FieldDeclaratio
 				Required:    binding.Required,
 				Description: binding.Description,
 				Source:      bindingSource,
+				Order:       firstUint(binding.Order, order),
 			})
 		}
 	}
 	return declarations
+}
+
+func firstUint(values ...uint) uint {
+	for _, value := range values {
+		if value != 0 {
+			return value
+		}
+	}
+	return 0
 }
 
 func findBinding(bindings []model.Binding, key string) (model.FieldRef, model.Binding, bool) {

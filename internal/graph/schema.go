@@ -51,6 +51,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"required":    &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
 			"description": &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"source":      &graphql.InputObjectFieldConfig{Type: sourceInput},
+			"order":       &graphql.InputObjectFieldConfig{Type: graphql.Int},
 		},
 	})
 	envContractInput := graphql.NewInputObject(graphql.InputObjectConfig{
@@ -99,6 +100,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"origin":      &graphql.InputObjectFieldConfig{Type: sourceInput},
 			"confidence":  &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"explicit":    &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
+			"order":       &graphql.InputObjectFieldConfig{Type: graphql.Int},
 			"preserveKey": &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
 			"required":    &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
 		},
@@ -228,6 +230,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"origin":      &graphql.Field{Type: sourceType},
 			"confidence":  &graphql.Field{Type: graphql.String},
 			"explicit":    &graphql.Field{Type: graphql.Boolean},
+			"order":       &graphql.Field{Type: graphql.Int},
 			"preserveKey": &graphql.Field{Type: graphql.Boolean},
 			"required":    &graphql.Field{Type: graphql.Boolean},
 		},
@@ -599,6 +602,7 @@ func decodeLoadInput(raw map[string]interface{}) store.LoadInput {
 				Required:    boolValue(bindingRaw["required"]),
 				Description: stringValue(bindingRaw["description"]),
 				Source:      decodeSource(bindingRaw["source"]),
+				Order:       uintValue(bindingRaw["order"]),
 			})
 		}
 		input.Contracts = append(input.Contracts, contract)
@@ -670,6 +674,7 @@ func decodeEffectiveStateInput(raw interface{}) model.EffectiveState {
 			Origin:       decodeSource(bindingRaw["origin"]),
 			Confidence:   model.BindingConfidence(stringValue(bindingRaw["confidence"])),
 			Explicit:     boolValue(bindingRaw["explicit"]),
+			Order:        uintValue(bindingRaw["order"]),
 			PreserveKey:  boolValue(bindingRaw["preserveKey"]),
 			Required:     boolValue(bindingRaw["required"]),
 		})
@@ -766,6 +771,28 @@ func boolValue(raw interface{}) bool {
 	return value
 }
 
+func uintValue(raw interface{}) uint {
+	switch value := raw.(type) {
+	case int:
+		if value > 0 {
+			return uint(value)
+		}
+	case int32:
+		if value > 0 {
+			return uint(value)
+		}
+	case int64:
+		if value > 0 {
+			return uint(value)
+		}
+	case float64:
+		if value > 0 {
+			return uint(value)
+		}
+	}
+	return 0
+}
+
 func timeString(value time.Time) string {
 	if value.IsZero() {
 		return ""
@@ -843,6 +870,7 @@ func effectiveStateView(state model.EffectiveState) map[string]interface{} {
 			"origin":      sourceView(binding.Origin),
 			"confidence":  string(binding.Confidence),
 			"explicit":    binding.Explicit,
+			"order":       int(binding.Order),
 			"preserveKey": binding.PreserveKey,
 			"required":    binding.Required,
 		})

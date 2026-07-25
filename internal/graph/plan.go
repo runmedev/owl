@@ -117,6 +117,7 @@ func stateEnvelopeTerminal() *ast.Field {
 							field("origin", nil, sourceSelection()),
 							field("confidence", nil, nil),
 							field("explicit", nil, nil),
+							field("order", nil, nil),
 							field("preserveKey", nil, nil),
 							field("required", nil, nil),
 						}})),
