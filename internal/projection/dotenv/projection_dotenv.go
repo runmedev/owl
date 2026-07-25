@@ -178,7 +178,6 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 			Sensitivity:     declarationSensitivity(declaration),
 			Exposure:        declarationExposure(declaration),
 			Origin:          declaration.Source,
-			Source:          declaration.Source,
 			CreatedAt:       now,
 			UpdatedAt:       now,
 			LastOperationID: opID,

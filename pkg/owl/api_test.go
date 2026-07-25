@@ -109,6 +109,8 @@ func TestPublicAPIVisibilityAndExposure(t *testing.T) {
 	assert.Equal(t, "[unset]", byName["MISSING_TOKEN"].Value)
 	assert.Equal(t, owl.VisibilityUnresolved, byName["MISSING_TOKEN"].Visibility)
 	assert.Equal(t, owl.ExposureClear, byName["MISSING_TOKEN"].Exposure)
+	assert.Empty(t, byName["MISSING_TOKEN"].Source)
+	assert.Equal(t, ".env.spec", byName["MISSING_TOKEN"].Origin.Name)
 
 	revealed, err := store.Snapshot(owl.SnapshotPolicy{Reveal: true})
 	require.NoError(t, err)
