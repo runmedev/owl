@@ -123,6 +123,33 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 			sensitivity = declarationSensitivity(declaration)
 			exposure = declarationExposure(declaration)
 		}
+		if value == "" && (sensitivity == model.SensitivitySensitive || exposure == model.ExposureOpaque) {
+			state.Values[fieldRef] = model.Value{
+				FieldRef:        fieldRef,
+				Visibility:      model.VisibilityUnresolved,
+				Sensitivity:     sensitivity,
+				Exposure:        exposure,
+				Origin:          origin,
+				Source:          source,
+				CreatedAt:       now,
+				UpdatedAt:       now,
+				LastOperationID: opID,
+			}
+			required := false
+			if declaration, ok := declarationsByKey[key]; ok {
+				required = declaration.Required
+			}
+			state.Bindings = append(state.Bindings, newBinding(opID, key, fieldRef, description, source, origin, confidence, explicit, order, preserveKey, required, now))
+			state.Operations = append(state.Operations, model.OperationMetadata{
+				ID:           opID,
+				Kind:         model.OperationKindLoad,
+				Timestamp:    now,
+				Actor:        opts.Actor,
+				Source:       source,
+				ProjectionID: model.ProjectionDotenv,
+			})
+			continue
+		}
 		state.Values[fieldRef] = model.Value{
 			FieldRef:        fieldRef,
 			Original:        value,
