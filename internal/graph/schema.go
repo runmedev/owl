@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"sort"
+	"time"
 
 	"github.com/graphql-go/graphql"
 
@@ -38,6 +39,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 		Fields: graphql.InputObjectConfigFieldMap{
 			"source":    &graphql.InputObjectFieldConfig{Type: sourceInput},
 			"variables": &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(dotenvVariableInput))},
+			"timestamp": &graphql.InputObjectFieldConfig{Type: graphql.String},
 		},
 	})
 	envBindingInput := graphql.NewInputObject(graphql.InputObjectConfig{
@@ -49,6 +51,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"required":    &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
 			"description": &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"source":      &graphql.InputObjectFieldConfig{Type: sourceInput},
+			"order":       &graphql.InputObjectFieldConfig{Type: graphql.Int},
 		},
 	})
 	envContractInput := graphql.NewInputObject(graphql.InputObjectConfig{
@@ -67,6 +70,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"message":  &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"key":      &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"field":    &graphql.InputObjectFieldConfig{Type: fieldRefInput},
+			"owner":    &graphql.InputObjectFieldConfig{Type: graphql.String},
 		},
 	})
 	stateValueInput := graphql.NewInputObject(graphql.InputObjectConfig{
@@ -80,6 +84,8 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"exposure":    &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"origin":      &graphql.InputObjectFieldConfig{Type: sourceInput},
 			"source":      &graphql.InputObjectFieldConfig{Type: sourceInput},
+			"createdAt":   &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"updatedAt":   &graphql.InputObjectFieldConfig{Type: graphql.String},
 		},
 	})
 	stateBindingInput := graphql.NewInputObject(graphql.InputObjectConfig{
@@ -94,7 +100,9 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"origin":      &graphql.InputObjectFieldConfig{Type: sourceInput},
 			"confidence":  &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"explicit":    &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
+			"order":       &graphql.InputObjectFieldConfig{Type: graphql.Int},
 			"preserveKey": &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
+			"required":    &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
 		},
 	})
 	effectiveStateInput := graphql.NewInputObject(graphql.InputObjectConfig{
@@ -105,11 +113,30 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"diagnostics": &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(diagnosticInput))},
 		},
 	})
+	operationMetadataInput := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "OperationMetadataInput",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"id":         &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"kind":       &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"timestamp":  &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"actor":      &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"source":     &graphql.InputObjectFieldConfig{Type: sourceInput},
+			"projection": &graphql.InputObjectFieldConfig{Type: graphql.String},
+		},
+	})
+	stateProvenanceInput := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "StateProvenanceInput",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"sources":    &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(sourceInput))},
+			"operations": &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(operationMetadataInput))},
+		},
+	})
 	stateEnvelopeInput := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "StateEnvelopeInput",
 		Fields: graphql.InputObjectConfigFieldMap{
 			"modelVersion": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
 			"state":        &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(effectiveStateInput)},
+			"provenance":   &graphql.InputObjectFieldConfig{Type: stateProvenanceInput},
 		},
 	})
 	loadInput := graphql.NewInputObject(graphql.InputObjectConfig{
@@ -118,6 +145,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"dotenv":    &graphql.InputObjectFieldConfig{Type: dotenvInput},
 			"contracts": &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(envContractInput))},
 			"envelope":  &graphql.InputObjectFieldConfig{Type: stateEnvelopeInput},
+			"timestamp": &graphql.InputObjectFieldConfig{Type: graphql.String},
 		},
 	})
 
@@ -128,6 +156,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"code":     &graphql.Field{Type: graphql.String},
 			"message":  &graphql.Field{Type: graphql.String},
 			"key":      &graphql.Field{Type: graphql.String},
+			"owner":    &graphql.Field{Type: graphql.String},
 			"field": &graphql.Field{
 				Type: graphql.String,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -185,6 +214,8 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"exposure":    &graphql.Field{Type: graphql.String},
 			"origin":      &graphql.Field{Type: sourceType},
 			"source":      &graphql.Field{Type: sourceType},
+			"createdAt":   &graphql.Field{Type: graphql.String},
+			"updatedAt":   &graphql.Field{Type: graphql.String},
 		},
 	})
 	stateBindingType := graphql.NewObject(graphql.ObjectConfig{
@@ -199,7 +230,9 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"origin":      &graphql.Field{Type: sourceType},
 			"confidence":  &graphql.Field{Type: graphql.String},
 			"explicit":    &graphql.Field{Type: graphql.Boolean},
+			"order":       &graphql.Field{Type: graphql.Int},
 			"preserveKey": &graphql.Field{Type: graphql.Boolean},
+			"required":    &graphql.Field{Type: graphql.Boolean},
 		},
 	})
 	effectiveStateType := graphql.NewObject(graphql.ObjectConfig{
@@ -210,10 +243,22 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"diagnostics": &graphql.Field{Type: graphql.NewList(diagnosticType)},
 		},
 	})
+	operationMetadataType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "OperationMetadata",
+		Fields: graphql.Fields{
+			"id":         &graphql.Field{Type: graphql.String},
+			"kind":       &graphql.Field{Type: graphql.String},
+			"timestamp":  &graphql.Field{Type: graphql.String},
+			"actor":      &graphql.Field{Type: graphql.String},
+			"source":     &graphql.Field{Type: sourceType},
+			"projection": &graphql.Field{Type: graphql.String},
+		},
+	})
 	stateProvenanceType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "StateProvenance",
 		Fields: graphql.Fields{
-			"sources": &graphql.Field{Type: graphql.NewList(sourceType)},
+			"sources":    &graphql.Field{Type: graphql.NewList(sourceType)},
+			"operations": &graphql.Field{Type: graphql.NewList(operationMetadataType)},
 		},
 	})
 	stateEnvelopeType := graphql.NewObject(graphql.ObjectConfig{
@@ -310,6 +355,14 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 					return item.Origin.Name, nil
 				},
 			},
+			"explicit": &graphql.Field{Type: graphql.Boolean},
+			"confidence": &graphql.Field{
+				Type: graphql.String,
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					item := p.Source.(store.SnapshotItem)
+					return string(item.Confidence), nil
+				},
+			},
 			"visibility": &graphql.Field{
 				Type: graphql.String,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -326,6 +379,13 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			},
 			"description": &graphql.Field{Type: graphql.String},
 			"diagnostics": &graphql.Field{Type: graphql.NewList(diagnosticType)},
+			"updatedAt": &graphql.Field{
+				Type: graphql.String,
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					item := p.Source.(store.SnapshotItem)
+					return timeString(item.UpdatedAt), nil
+				},
+			},
 		},
 	})
 
@@ -407,7 +467,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 						input := decodeLoadInput(p.Args["input"].(map[string]interface{}))
 						gctx := p.Source.(Context)
 						s := store.NewState(gctx.State, gctx.Types)
-						state, err := s.Apply(contextFromParams(p), store.LoadOperation{Input: input})
+						state, err := s.Apply(contextFromParams(p), store.LoadOperation{Input: input, Timestamp: input.Timestamp})
 						if err != nil {
 							return nil, err
 						}
@@ -423,7 +483,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 						gctx := p.Source.(Context)
 						input := decodeDotenvInput(p.Args["dotenv"])
 						s := store.NewState(gctx.State, gctx.Types)
-						state, err := s.Apply(contextFromParams(p), store.UpdateOperation{Source: input.DotenvSource, Dotenv: input.Dotenv})
+						state, err := s.Apply(contextFromParams(p), store.UpdateOperation{Source: input.DotenvSource, Dotenv: input.Dotenv, Timestamp: input.Timestamp})
 						if err != nil {
 							return nil, err
 						}
@@ -513,9 +573,11 @@ func decodeLoadInput(raw map[string]interface{}) store.LoadInput {
 		envelope := store.StateEnvelope{
 			ModelVersion: stringValue(envelopeRaw["modelVersion"]),
 			State:        decodeEffectiveStateInput(envelopeRaw["state"]),
+			Provenance:   decodeStateProvenanceInput(envelopeRaw["provenance"]),
 		}
 		input.Envelope = &envelope
 	}
+	input.Timestamp = timeValue(raw["timestamp"])
 	dotenvInput := decodeDotenvInput(raw["dotenv"])
 	input.DotenvSource = dotenvInput.DotenvSource
 	input.Dotenv = dotenvInput.Dotenv
@@ -540,6 +602,7 @@ func decodeLoadInput(raw map[string]interface{}) store.LoadInput {
 				Required:    boolValue(bindingRaw["required"]),
 				Description: stringValue(bindingRaw["description"]),
 				Source:      decodeSource(bindingRaw["source"]),
+				Order:       uintValue(bindingRaw["order"]),
 			})
 		}
 		input.Contracts = append(input.Contracts, contract)
@@ -557,6 +620,7 @@ func decodeDotenvInput(raw interface{}) store.LoadInput {
 		return input
 	}
 	input.DotenvSource = decodeSource(dotenvRaw["source"])
+	input.Timestamp = timeValue(dotenvRaw["timestamp"])
 	for _, item := range decodeList(dotenvRaw["variables"]) {
 		variable, ok := item.(map[string]interface{})
 		if !ok {
@@ -590,6 +654,8 @@ func decodeEffectiveStateInput(raw interface{}) model.EffectiveState {
 			Exposure:    model.Exposure(stringValue(valueRaw["exposure"])),
 			Origin:      decodeSource(valueRaw["origin"]),
 			Source:      decodeSource(valueRaw["source"]),
+			CreatedAt:   timeValue(valueRaw["createdAt"]),
+			UpdatedAt:   timeValue(valueRaw["updatedAt"]),
 		}
 		state.Values[value.FieldRef] = value
 	}
@@ -608,7 +674,9 @@ func decodeEffectiveStateInput(raw interface{}) model.EffectiveState {
 			Origin:       decodeSource(bindingRaw["origin"]),
 			Confidence:   model.BindingConfidence(stringValue(bindingRaw["confidence"])),
 			Explicit:     boolValue(bindingRaw["explicit"]),
+			Order:        uintValue(bindingRaw["order"]),
 			PreserveKey:  boolValue(bindingRaw["preserveKey"]),
+			Required:     boolValue(bindingRaw["required"]),
 		})
 	}
 	for _, item := range decodeList(row["diagnostics"]) {
@@ -622,9 +690,36 @@ func decodeEffectiveStateInput(raw interface{}) model.EffectiveState {
 			Message:  stringValue(diagnosticRaw["message"]),
 			Key:      stringValue(diagnosticRaw["key"]),
 			FieldRef: decodeFieldRef(diagnosticRaw["field"]),
+			Owner:    model.DiagnosticOwner(stringValue(diagnosticRaw["owner"])),
 		})
 	}
 	return state
+}
+
+func decodeStateProvenanceInput(raw interface{}) store.StateProvenance {
+	var provenance store.StateProvenance
+	row, ok := raw.(map[string]interface{})
+	if !ok {
+		return provenance
+	}
+	for _, item := range decodeList(row["sources"]) {
+		provenance.Sources = append(provenance.Sources, decodeSource(item))
+	}
+	for _, item := range decodeList(row["operations"]) {
+		operationRaw, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		provenance.Operations = append(provenance.Operations, model.OperationMetadata{
+			ID:           model.OperationID(stringValue(operationRaw["id"])),
+			Kind:         model.OperationKind(stringValue(operationRaw["kind"])),
+			Timestamp:    timeValue(operationRaw["timestamp"]),
+			Actor:        stringValue(operationRaw["actor"]),
+			Source:       decodeSource(operationRaw["source"]),
+			ProjectionID: model.ProjectionID(stringValue(operationRaw["projection"])),
+		})
+	}
+	return provenance
 }
 
 func decodeSource(raw interface{}) model.Source {
@@ -676,14 +771,71 @@ func boolValue(raw interface{}) bool {
 	return value
 }
 
+func uintValue(raw interface{}) uint {
+	switch value := raw.(type) {
+	case int:
+		if value > 0 {
+			return uint(value)
+		}
+	case int32:
+		if value > 0 {
+			return uint(value)
+		}
+	case int64:
+		if value > 0 {
+			return uint(value)
+		}
+	case float64:
+		if value > 0 {
+			return uint(value)
+		}
+	}
+	return 0
+}
+
+func timeString(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.Format(time.RFC3339Nano)
+}
+
+func timeValue(raw interface{}) time.Time {
+	value := stringValue(raw)
+	if value == "" {
+		return time.Time{}
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed
+}
+
 func stateEnvelopeView(envelope store.StateEnvelope) map[string]interface{} {
 	return map[string]interface{}{
 		"modelVersion": envelope.ModelVersion,
 		"state":        effectiveStateView(envelope.State),
 		"provenance": map[string]interface{}{
-			"sources": envelope.Provenance.Sources,
+			"sources":    envelope.Provenance.Sources,
+			"operations": operationMetadataViews(envelope.Provenance.Operations),
 		},
 	}
+}
+
+func operationMetadataViews(operations []model.OperationMetadata) []map[string]interface{} {
+	items := make([]map[string]interface{}, 0, len(operations))
+	for _, operation := range operations {
+		items = append(items, map[string]interface{}{
+			"id":         string(operation.ID),
+			"kind":       string(operation.Kind),
+			"timestamp":  timeString(operation.Timestamp),
+			"actor":      operation.Actor,
+			"source":     sourceView(operation.Source),
+			"projection": string(operation.ProjectionID),
+		})
+	}
+	return items
 }
 
 func effectiveStateView(state model.EffectiveState) map[string]interface{} {
@@ -699,6 +851,8 @@ func effectiveStateView(state model.EffectiveState) map[string]interface{} {
 			"exposure":    string(value.Exposure),
 			"origin":      sourceView(value.Origin),
 			"source":      sourceView(value.Source),
+			"createdAt":   timeString(value.CreatedAt),
+			"updatedAt":   timeString(value.UpdatedAt),
 		})
 	}
 	sort.SliceStable(values, func(i, j int) bool {
@@ -716,7 +870,9 @@ func effectiveStateView(state model.EffectiveState) map[string]interface{} {
 			"origin":      sourceView(binding.Origin),
 			"confidence":  string(binding.Confidence),
 			"explicit":    binding.Explicit,
+			"order":       int(binding.Order),
 			"preserveKey": binding.PreserveKey,
+			"required":    binding.Required,
 		})
 	}
 	return map[string]interface{}{

@@ -26,6 +26,9 @@ func TestMapSpec(t *testing.T) {
 				"KEY3": "KEY3",
 				"KEY4": "KEY4",
 				"KEY5": "",
+				"KEY6": "https://example.com",
+				"KEY7": "example.com",
+				"KEY8": "443",
 			},
 			Comments: map[string]string{
 				"KEY1": "",
@@ -33,6 +36,9 @@ func TestMapSpec(t *testing.T) {
 				"KEY3": "Password",
 				"KEY4": "Secret",
 				"KEY5": "Plain",
+				"KEY6": "Url",
+				"KEY7": "Host",
+				"KEY8": "Port",
 			},
 			Expected: Specs{
 				"KEY1": {Name: AtomicNameOpaque, Valid: false},
@@ -40,6 +46,9 @@ func TestMapSpec(t *testing.T) {
 				"KEY3": {Name: AtomicNamePassword, Valid: true},
 				"KEY4": {Name: AtomicNameSecret, Valid: true},
 				"KEY5": {Name: AtomicNamePlain},
+				"KEY6": {Name: AtomicNameURL, Valid: true},
+				"KEY7": {Name: AtomicNameHost, Valid: true},
+				"KEY8": {Name: AtomicNamePort, Valid: true},
 			},
 		},
 		"WithRequiredSpecs": {

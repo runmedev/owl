@@ -2,6 +2,7 @@ package dotenv
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/stateful/godotenv"
 
@@ -55,22 +56,18 @@ func ParseDotenvSpecDeclarations(raw []byte, source model.Source) ([]FieldDeclar
 	if err != nil {
 		return nil, err
 	}
-	return declarationsFromSpecs(ParseRawSpec(specValues, comments), specValues, source), nil
+	return declarationsFromSpecs(ParseRawSpec(specValues, comments), specValues, source, orderedDotenvKeys(raw, specValues)), nil
 }
 
-func declarationsFromSpecs(specs Specs, descriptions map[string]string, source model.Source) []FieldDeclaration {
+func declarationsFromSpecs(specs Specs, descriptions map[string]string, source model.Source, orderedKeys []string) []FieldDeclaration {
 	if source.Name == "" {
 		source = model.Source{Name: ".env.example", Kind: "dotenv-spec"}
 	}
 
-	keys := make([]string, 0, len(specs))
-	for key := range specs {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
+	keys := orderedSpecKeys(specs, orderedKeys)
 
 	declarations := make([]FieldDeclaration, 0, len(keys))
-	for _, key := range keys {
+	for index, key := range keys {
 		spec := specs[key]
 		declaration := FieldDeclaration{
 			FieldRef:    model.FieldRef{TypeID: model.TypeCoreOpaque, Instance: "default", Field: opaqueFieldName(key)},
@@ -78,6 +75,7 @@ func declarationsFromSpecs(specs Specs, descriptions map[string]string, source m
 			Required:    spec.Required,
 			Description: descriptions[key],
 			Source:      source,
+			Order:       uint(index + 1),
 		}
 
 		switch spec.Name {
@@ -87,6 +85,18 @@ func declarationsFromSpecs(specs Specs, descriptions map[string]string, source m
 			declaration.Exposure = model.ExposureClear
 		case AtomicNamePlain:
 			declaration.FieldRef.TypeID = model.TypeCorePlain
+			declaration.Sensitivity = model.SensitivityNonSensitive
+			declaration.Exposure = model.ExposureClear
+		case AtomicNameURL, "URL":
+			declaration.FieldRef.TypeID = model.TypeCoreURL
+			declaration.Sensitivity = model.SensitivityNonSensitive
+			declaration.Exposure = model.ExposureClear
+		case AtomicNameHost:
+			declaration.FieldRef.TypeID = model.TypeCoreHost
+			declaration.Sensitivity = model.SensitivityNonSensitive
+			declaration.Exposure = model.ExposureClear
+		case AtomicNamePort:
+			declaration.FieldRef.TypeID = model.TypeCorePort
 			declaration.Sensitivity = model.SensitivityNonSensitive
 			declaration.Exposure = model.ExposureClear
 		case AtomicNameOpaque, "":
@@ -101,4 +111,54 @@ func declarationsFromSpecs(specs Specs, descriptions map[string]string, source m
 		declarations = append(declarations, declaration)
 	}
 	return declarations
+}
+
+func orderedSpecKeys(specs Specs, orderedKeys []string) []string {
+	keys := make([]string, 0, len(specs))
+	seen := make(map[string]struct{}, len(specs))
+	for _, key := range orderedKeys {
+		if _, ok := specs[key]; !ok {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		keys = append(keys, key)
+		seen[key] = struct{}{}
+	}
+	var remaining []string
+	for key := range specs {
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		remaining = append(remaining, key)
+	}
+	sort.Strings(remaining)
+	return append(keys, remaining...)
+}
+
+func orderedDotenvKeys(raw []byte, parsed map[string]string) []string {
+	keys := make([]string, 0, len(parsed))
+	seen := make(map[string]struct{}, len(parsed))
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		line = strings.TrimPrefix(line, "export ")
+		index := strings.Index(line, "=")
+		if index <= 0 {
+			continue
+		}
+		key := strings.TrimSpace(line[:index])
+		if _, ok := parsed[key]; !ok {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		keys = append(keys, key)
+		seen[key] = struct{}{}
+	}
+	return keys
 }

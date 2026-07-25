@@ -228,6 +228,7 @@ func marshalInput(input LoadInput) map[string]interface{} {
 				"projection":  string(binding.Projection),
 				"required":    binding.Required,
 				"description": binding.Description,
+				"order":       int(binding.Order),
 			}
 			if source := marshalSource(binding.Source); source != nil {
 				bindingInput["source"] = source
@@ -249,9 +250,15 @@ func marshalInput(input LoadInput) map[string]interface{} {
 	if source := marshalSource(input.DotenvSource); source != nil {
 		dotenv["source"] = source
 	}
+	if !input.Timestamp.IsZero() {
+		dotenv["timestamp"] = timeString(input.Timestamp)
+	}
 	result := map[string]interface{}{
 		"dotenv":    dotenv,
 		"contracts": contracts,
+	}
+	if !input.Timestamp.IsZero() {
+		result["timestamp"] = timeString(input.Timestamp)
 	}
 	if input.Envelope != nil {
 		result["envelope"] = marshalEnvelope(*input.Envelope)
@@ -274,6 +281,9 @@ func marshalDotenvInput(input LoadInput) map[string]interface{} {
 	if source := marshalSource(input.DotenvSource); source != nil {
 		dotenv["source"] = source
 	}
+	if !input.Timestamp.IsZero() {
+		dotenv["timestamp"] = timeString(input.Timestamp)
+	}
 	return dotenv
 }
 
@@ -281,6 +291,31 @@ func marshalEnvelope(envelope StateEnvelope) map[string]interface{} {
 	return map[string]interface{}{
 		"modelVersion": envelope.ModelVersion,
 		"state":        marshalEffectiveState(envelope.State),
+		"provenance":   marshalStateProvenance(envelope.Provenance),
+	}
+}
+
+func marshalStateProvenance(provenance store.StateProvenance) map[string]interface{} {
+	sources := make([]map[string]interface{}, 0, len(provenance.Sources))
+	for _, source := range provenance.Sources {
+		if marshaled := marshalSource(source); marshaled != nil {
+			sources = append(sources, marshaled)
+		}
+	}
+	operations := make([]map[string]interface{}, 0, len(provenance.Operations))
+	for _, operation := range provenance.Operations {
+		operations = append(operations, map[string]interface{}{
+			"id":         string(operation.ID),
+			"kind":       string(operation.Kind),
+			"timestamp":  timeString(operation.Timestamp),
+			"actor":      operation.Actor,
+			"source":     marshalSource(operation.Source),
+			"projection": string(operation.ProjectionID),
+		})
+	}
+	return map[string]interface{}{
+		"sources":    sources,
+		"operations": operations,
 	}
 }
 
@@ -297,6 +332,8 @@ func marshalEffectiveState(state model.EffectiveState) map[string]interface{} {
 			"exposure":    string(value.Exposure),
 			"origin":      marshalSource(value.Origin),
 			"source":      marshalSource(value.Source),
+			"createdAt":   timeString(value.CreatedAt),
+			"updatedAt":   timeString(value.UpdatedAt),
 		})
 	}
 	bindings := make([]map[string]interface{}, 0, len(state.Bindings))
@@ -311,7 +348,9 @@ func marshalEffectiveState(state model.EffectiveState) map[string]interface{} {
 			"origin":      marshalSource(binding.Origin),
 			"confidence":  string(binding.Confidence),
 			"explicit":    binding.Explicit,
+			"order":       int(binding.Order),
 			"preserveKey": binding.PreserveKey,
+			"required":    binding.Required,
 		})
 	}
 	diagnostics := make([]map[string]interface{}, 0, len(state.Diagnostics))
@@ -322,6 +361,7 @@ func marshalEffectiveState(state model.EffectiveState) map[string]interface{} {
 			"message":  diagnostic.Message,
 			"key":      diagnostic.Key,
 			"field":    marshalFieldRef(diagnostic.FieldRef),
+			"owner":    string(diagnostic.Owner),
 		})
 	}
 	return map[string]interface{}{
@@ -404,10 +444,13 @@ query OwlSnapshot($input: LoadInput!, $reveal: Boolean = false) {
               fieldName
               source
               origin
+              explicit
+              confidence
               visibility
               exposure
               description
-              diagnostics { severity code message key field }
+              updatedAt
+              diagnostics { severity code message key field owner }
             }
           }
         }
@@ -439,9 +482,12 @@ func decodeSnapshot(raw interface{}) []SnapshotItem {
 			},
 			Source:      model.Source{Name: stringValue(item["source"])},
 			Origin:      model.Source{Name: stringValue(item["origin"])},
+			Explicit:    boolValue(item["explicit"]),
+			Confidence:  model.BindingConfidence(stringValue(item["confidence"])),
 			Visibility:  model.Visibility(stringValue(item["visibility"])),
 			Exposure:    model.Exposure(stringValue(item["exposure"])),
 			Description: stringValue(item["description"]),
+			UpdatedAt:   timeValue(item["updatedAt"]),
 			Diagnostics: decodeDiagnostics(item["diagnostics"]),
 		})
 	}
@@ -483,6 +529,7 @@ func decodeEnvelope(raw interface{}) (StateEnvelope, error) {
 	return StateEnvelope{
 		ModelVersion: stringValue(row["modelVersion"]),
 		State:        decodeEffectiveState(row["state"]),
+		Provenance:   decodeStateProvenance(row["provenance"]),
 	}, nil
 }
 
@@ -506,6 +553,8 @@ func decodeEffectiveState(raw interface{}) model.EffectiveState {
 			Exposure:    model.Exposure(stringValue(valueRaw["exposure"])),
 			Origin:      decodeSource(valueRaw["origin"]),
 			Source:      decodeSource(valueRaw["source"]),
+			CreatedAt:   timeValue(valueRaw["createdAt"]),
+			UpdatedAt:   timeValue(valueRaw["updatedAt"]),
 		}
 		state.Values[value.FieldRef] = value
 	}
@@ -524,11 +573,39 @@ func decodeEffectiveState(raw interface{}) model.EffectiveState {
 			Origin:       decodeSource(bindingRaw["origin"]),
 			Confidence:   model.BindingConfidence(stringValue(bindingRaw["confidence"])),
 			Explicit:     boolValue(bindingRaw["explicit"]),
+			Order:        uintValue(bindingRaw["order"]),
 			PreserveKey:  boolValue(bindingRaw["preserveKey"]),
+			Required:     boolValue(bindingRaw["required"]),
 		})
 	}
 	state.Diagnostics = decodeDiagnostics(row["diagnostics"])
 	return state
+}
+
+func decodeStateProvenance(raw interface{}) store.StateProvenance {
+	var provenance store.StateProvenance
+	row, ok := raw.(map[string]interface{})
+	if !ok {
+		return provenance
+	}
+	for _, item := range decodeList(row["sources"]) {
+		provenance.Sources = append(provenance.Sources, decodeSource(item))
+	}
+	for _, item := range decodeList(row["operations"]) {
+		operationRaw, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		provenance.Operations = append(provenance.Operations, model.OperationMetadata{
+			ID:           model.OperationID(stringValue(operationRaw["id"])),
+			Kind:         model.OperationKind(stringValue(operationRaw["kind"])),
+			Timestamp:    timeValue(operationRaw["timestamp"]),
+			Actor:        stringValue(operationRaw["actor"]),
+			Source:       decodeSource(operationRaw["source"]),
+			ProjectionID: model.ProjectionID(stringValue(operationRaw["projection"])),
+		})
+	}
+	return provenance
 }
 
 func decodeDiagnostics(raw interface{}) []model.Diagnostic {
@@ -548,6 +625,7 @@ func decodeDiagnostics(raw interface{}) []model.Diagnostic {
 			Message:  stringValue(item["message"]),
 			Key:      stringValue(item["key"]),
 			FieldRef: decodeFieldRef(item["field"]),
+			Owner:    model.DiagnosticOwner(stringValue(item["owner"])),
 		})
 	}
 	return diagnostics
@@ -582,7 +660,7 @@ query OwlGet($input: LoadInput!, $key: String!, $reveal: Boolean = false) {
               visibility
               exposure
               source { name kind }
-              diagnostics { severity code message key field }
+              diagnostics { severity code message key field owner }
             }
           }
         }
@@ -613,7 +691,7 @@ query OwlCheck($input: LoadInput!) {
       normalize {
         validate {
           render {
-            check { ok diagnostics { severity code message key field } }
+            check { ok diagnostics { severity code message key field owner } }
           }
         }
       }

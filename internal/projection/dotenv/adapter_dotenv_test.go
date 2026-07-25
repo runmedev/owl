@@ -74,7 +74,7 @@ func renderedAssignments(rendered []model.RenderedVariable) []string {
 	return result
 }
 
-func TestDeclarationsFromSpecs_UsesStableKeys(t *testing.T) {
+func TestDeclarationsFromSpecs_PreservesExplicitOrder(t *testing.T) {
 	t.Parallel()
 
 	specs := ParseRawSpec(
@@ -91,16 +91,17 @@ func TestDeclarationsFromSpecs_UsesStableKeys(t *testing.T) {
 	declarations := declarationsFromSpecs(specs, map[string]string{
 		"MIXPANEL_TOKEN": "Mixpanel token",
 		"API_URL":        "Public API URL",
-	}, model.Source{Name: ".env.example", Kind: "dotenv-spec"})
+	}, model.Source{Name: ".env.example", Kind: "dotenv-spec"}, []string{"MIXPANEL_TOKEN", "API_URL"})
 	keys := make([]string, 0, len(declarations))
 	for _, declaration := range declarations {
 		keys = append(keys, string(declaration.Key)+":"+string(declaration.FieldRef.TypeID))
 	}
 
-	assert.True(t, sort.StringsAreSorted(keys))
 	assert.Equal(t, []string{
-		"API_URL:" + string(model.TypeCorePlain),
 		"MIXPANEL_TOKEN:" + string(model.TypeCoreSecret),
+		"API_URL:" + string(model.TypeCorePlain),
 	}, keys)
+	assert.Equal(t, uint(1), declarations[0].Order)
+	assert.Equal(t, uint(2), declarations[1].Order)
 	assert.False(t, strings.Contains(strings.Join(keys, ","), "Plain"))
 }

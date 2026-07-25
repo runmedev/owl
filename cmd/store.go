@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"text/tabwriter"
 
@@ -15,6 +16,7 @@ type StoreClient interface {
 	Snapshot(context.Context, SnapshotRequest) (*SnapshotResult, error)
 	Source(context.Context, SourceRequest) (*SourceResult, error)
 	Check(context.Context, CheckRequest) (*CheckResult, error)
+	Type(context.Context, TypeRequest) (*TypeResult, error)
 }
 
 type StoreCommandOptions struct {
@@ -22,6 +24,7 @@ type StoreCommandOptions struct {
 	ConfigureSnapshotCommand func(*cobra.Command)
 	ConfigureSourceCommand   func(*cobra.Command)
 	ConfigureCheckCommand    func(*cobra.Command)
+	ConfigureTypeCommand     func(*cobra.Command)
 	Hidden                   bool
 	InsecureAllowed          func() bool
 }
@@ -43,6 +46,7 @@ type SnapshotEnv struct {
 	Type        string
 	Field       string
 	Source      string
+	Explicit    bool
 	Visibility  string
 	Diagnostics []string
 }
@@ -61,6 +65,29 @@ type CheckRequest struct{}
 type CheckResult struct {
 	OK          bool
 	Diagnostics []string
+}
+
+type TypeRequest struct {
+	SpecPath string
+	Format   string
+	Output   string
+	Fix      bool
+	All      bool
+}
+
+type TypeResult struct {
+	Proposals []TypeProposal
+	Rendered  string
+}
+
+type TypeProposal struct {
+	Key           string
+	CurrentType   string
+	SuggestedType string
+	Confidence    string
+	Reason        string
+	Description   string
+	Required      bool
 }
 
 func NewStoreCommand(opts StoreCommandOptions) *cobra.Command {
@@ -89,6 +116,7 @@ func NewStoreCommands(opts StoreCommandOptions) []*cobra.Command {
 		newSnapshotCommand(opts),
 		newSourceCommand(opts),
 		newCheckCommand(opts),
+		newTypeCommand(opts),
 	}
 }
 
@@ -203,6 +231,48 @@ func newCheckCommand(opts StoreCommandOptions) *cobra.Command {
 	return &cmd
 }
 
+func newTypeCommand(opts StoreCommandOptions) *cobra.Command {
+	var req TypeRequest
+
+	cmd := cobra.Command{
+		Hidden: opts.Hidden,
+		Use:    "type",
+		Short:  "Proposes missing env types",
+		Long:   "Proposes missing primitive env types for a dotenv spec.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if req.Format == "" {
+				req.Format = "table"
+			}
+			if req.Fix && req.Output != "" {
+				return errors.New("use either --fix or --output, not both")
+			}
+
+			client, err := opts.client(cmd)
+			if err != nil {
+				return err
+			}
+
+			result, err := client.Type(cmd.Context(), req)
+			if err != nil {
+				return err
+			}
+
+			return errors.Wrap(renderType(cmd.OutOrStdout(), result, req), "failed to render")
+		},
+	}
+
+	cmd.Flags().StringVar(&req.SpecPath, "spec", ".env.spec", "Env spec file to type")
+	cmd.Flags().StringVar(&req.Format, "format", "table", "Output format: table or dotenv-spec")
+	cmd.Flags().StringVar(&req.Output, "output", "", "Write the changed env spec to a file, or '-' for stdout")
+	cmd.Flags().BoolVar(&req.Fix, "fix", false, "Append proposed types to the spec file")
+	cmd.Flags().BoolVar(&req.All, "all", false, "Show envs without type suggestions")
+	if opts.ConfigureTypeCommand != nil {
+		opts.ConfigureTypeCommand(&cmd)
+	}
+
+	return &cmd
+}
+
 func (opts StoreCommandOptions) client(cmd *cobra.Command) (StoreClient, error) {
 	if opts.ClientFactory == nil {
 		return nil, errors.New("store client factory is required")
@@ -216,9 +286,9 @@ func renderSnapshot(w io.Writer, result *SnapshotResult, req SnapshotRequest) er
 		return err
 	}
 
-	lines := req.Limit
-	for i, env := range result.Envs {
-		if i >= lines && !req.All {
+	envs := snapshotEnvsForRender(result.Envs, req)
+	for i, env := range envs {
+		if i >= req.Limit && !req.All {
 			break
 		}
 
@@ -240,6 +310,30 @@ func renderSnapshot(w io.Writer, result *SnapshotResult, req SnapshotRequest) er
 	return tw.Flush()
 }
 
+func snapshotEnvsForRender(envs []SnapshotEnv, req SnapshotRequest) []SnapshotEnv {
+	explicit := make([]SnapshotEnv, 0, len(envs))
+	inherited := make([]SnapshotEnv, 0, len(envs))
+	for _, env := range envs {
+		if env.Explicit {
+			explicit = append(explicit, env)
+			continue
+		}
+		inherited = append(inherited, env)
+	}
+	sortSnapshotEnvs(explicit)
+	sortSnapshotEnvs(inherited)
+	if !req.All {
+		return explicit
+	}
+	return append(explicit, inherited...)
+}
+
+func sortSnapshotEnvs(envs []SnapshotEnv) {
+	sort.SliceStable(envs, func(i, j int) bool {
+		return envs[i].Name < envs[j].Name
+	})
+}
+
 func renderSource(w io.Writer, result *SourceResult, req SourceRequest) error {
 	for _, kv := range result.Envs {
 		parts := strings.Split(kv, "=")
@@ -258,4 +352,45 @@ func renderSource(w io.Writer, result *SourceResult, req SourceRequest) error {
 	}
 
 	return nil
+}
+
+func renderType(w io.Writer, result *TypeResult, req TypeRequest) error {
+	if req.Output == "-" {
+		if _, err := fmt.Fprint(w, result.Rendered); err != nil {
+			return err
+		}
+		return nil
+	}
+	if req.Format == "dotenv-spec" {
+		if _, err := fmt.Fprint(w, result.Rendered); err != nil {
+			return err
+		}
+		return nil
+	}
+	if req.Format != "table" {
+		return errors.Errorf("unsupported type output format: %s", req.Format)
+	}
+
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	if _, err := fmt.Fprintln(tw, "KEY\tCURRENT\tSUGGESTED\tCONFIDENCE\tREASON"); err != nil {
+		return err
+	}
+	for _, proposal := range result.Proposals {
+		suggestedType := proposal.SuggestedType
+		if suggestedType == "" {
+			suggestedType = "-"
+		}
+		if _, err := fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\n",
+			proposal.Key,
+			proposal.CurrentType,
+			suggestedType,
+			proposal.Confidence,
+			proposal.Reason,
+		); err != nil {
+			return err
+		}
+	}
+	return tw.Flush()
 }

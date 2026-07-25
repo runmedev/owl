@@ -61,6 +61,26 @@ func TestV2PublicAPI(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestPublicAPISnapshotOrderSurvivesStateEnvelopeRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	store, err := owl.NewStore(
+		owl.WithDotenv(".env", strings.NewReader("OMEGA=value\nAPPLE=value\nZETA=value\nBETA=value\n")),
+		owl.WithEnvSpec(".env.spec", strings.NewReader("ZETA=\"Zeta\" # Plain\nBETA=\"Beta\" # Plain\n")),
+	)
+	require.NoError(t, err)
+
+	envelope, err := store.StateEnvelope(context.Background())
+	require.NoError(t, err)
+
+	roundTripped, err := owl.NewStore(owl.WithStateEnvelope(envelope))
+	require.NoError(t, err)
+
+	snapshot, err := roundTripped.Snapshot(owl.SnapshotPolicy{Reveal: true})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"ZETA", "BETA", "APPLE", "OMEGA"}, snapshotNames(snapshot))
+}
+
 func TestPublicAPIVisibilityAndExposure(t *testing.T) {
 	t.Parallel()
 
@@ -87,8 +107,12 @@ func TestPublicAPIVisibilityAndExposure(t *testing.T) {
 	assert.Equal(t, owl.ExposureOpaque, byName["DATABASE_URL"].Exposure)
 
 	assert.Equal(t, "[unset]", byName["MISSING_TOKEN"].Value)
+	assert.Empty(t, byName["MISSING_TOKEN"].OriginalValue)
+	assert.Equal(t, "Missing token", byName["MISSING_TOKEN"].Description)
 	assert.Equal(t, owl.VisibilityUnresolved, byName["MISSING_TOKEN"].Visibility)
 	assert.Equal(t, owl.ExposureClear, byName["MISSING_TOKEN"].Exposure)
+	assert.Empty(t, byName["MISSING_TOKEN"].Source)
+	assert.Equal(t, ".env.spec", byName["MISSING_TOKEN"].Origin.Name)
 
 	revealed, err := store.Snapshot(owl.SnapshotPolicy{Reveal: true})
 	require.NoError(t, err)
@@ -98,6 +122,34 @@ func TestPublicAPIVisibilityAndExposure(t *testing.T) {
 	assert.Equal(t, "postgres://example", revealedByName["DATABASE_URL"].Value)
 	assert.Equal(t, owl.VisibilityLiteral, revealedByName["DATABASE_URL"].Visibility)
 	assert.Equal(t, owl.ExposureOpaque, revealedByName["DATABASE_URL"].Exposure)
+}
+
+func TestPublicAPIEmptySensitiveValuesAreUnresolved(t *testing.T) {
+	t.Parallel()
+
+	store, err := owl.NewStore(
+		owl.WithDotenv("[system]", strings.NewReader("RUNME_TEST_TOKEN=\nEMPTY_OPAQUE=\n")),
+		owl.WithEnvSpec(".env.spec", strings.NewReader("RUNME_TEST_TOKEN=\"Runme test token\" # Secret\nEMPTY_OPAQUE=\"Opaque value\" # Opaque\n")),
+	)
+	require.NoError(t, err)
+
+	snapshot, err := store.Snapshot(owl.SnapshotPolicy{})
+	require.NoError(t, err)
+	byName := snapshotByName(snapshot)
+
+	assert.Equal(t, "[unset]", byName["RUNME_TEST_TOKEN"].Value)
+	assert.Empty(t, byName["RUNME_TEST_TOKEN"].OriginalValue)
+	assert.Equal(t, owl.VisibilityUnresolved, byName["RUNME_TEST_TOKEN"].Visibility)
+	assert.Equal(t, owl.ExposureClear, byName["RUNME_TEST_TOKEN"].Exposure)
+	assert.Equal(t, "[system]", byName["RUNME_TEST_TOKEN"].Source.Name)
+	assert.Equal(t, ".env.spec", byName["RUNME_TEST_TOKEN"].Origin.Name)
+
+	assert.Equal(t, "[unset]", byName["EMPTY_OPAQUE"].Value)
+	assert.Empty(t, byName["EMPTY_OPAQUE"].OriginalValue)
+	assert.Equal(t, owl.VisibilityUnresolved, byName["EMPTY_OPAQUE"].Visibility)
+	assert.Equal(t, owl.ExposureOpaque, byName["EMPTY_OPAQUE"].Exposure)
+	assert.Equal(t, "[system]", byName["EMPTY_OPAQUE"].Source.Name)
+	assert.Equal(t, ".env.spec", byName["EMPTY_OPAQUE"].Origin.Name)
 }
 
 func TestPublicAPIGetRevealPolicy(t *testing.T) {
@@ -233,6 +285,38 @@ func TestPublicAPIUpdatesMaterializeFromOperationLog(t *testing.T) {
 	assert.Equal(t, "https://two.example.com", got.Value)
 }
 
+func TestPublicAPIExecutionInfoSetsUpdateSource(t *testing.T) {
+	t.Parallel()
+
+	store, err := owl.NewStore(
+		owl.WithDotenv(".env", strings.NewReader("API_URL=https://api.example.com\n")),
+		owl.WithEnvSpec(".env.spec", strings.NewReader("API_URL=\"API URL\" # Plain\n")),
+	)
+	require.NoError(t, err)
+
+	ctx := owl.ContextWithExecutionInfo(context.Background(), owl.ExecutionInfo{
+		KnownID:     "cell-id",
+		KnownName:   "cell-name",
+		ExecContext: "direnv",
+	})
+	require.NoError(t, store.Update(ctx, []string{
+		"API_URL=https://next.example.com",
+		"TOKEN=secret",
+	}, nil))
+
+	snapshot, err := store.Snapshot(owl.SnapshotPolicy{Reveal: true})
+	require.NoError(t, err)
+	byName := snapshotByName(snapshot)
+
+	assert.Equal(t, "[direnv]", byName["API_URL"].Source.Name)
+	assert.Equal(t, "execution", byName["API_URL"].Source.Kind)
+	assert.Equal(t, ".env.spec", byName["API_URL"].Origin.Name)
+	assert.False(t, byName["API_URL"].UpdatedAt.IsZero())
+	assert.Equal(t, "[direnv]", byName["TOKEN"].Source.Name)
+	assert.Equal(t, "[direnv]", byName["TOKEN"].Origin.Name)
+	assert.False(t, byName["TOKEN"].UpdatedAt.IsZero())
+}
+
 func TestPublicAPIWithEnvContractMapsBindings(t *testing.T) {
 	t.Parallel()
 
@@ -270,7 +354,7 @@ func TestV2PublicAPIDiagnostics(t *testing.T) {
 
 	_, err := owl.NewStore(
 		owl.WithDotenv(".env", strings.NewReader("DATABASE_URL=postgres://example\n")),
-		owl.WithEnvSpec(".env.spec", strings.NewReader("DATABASE_URL=\"Database URL\" # Url!\n")),
+		owl.WithEnvSpec(".env.spec", strings.NewReader("DATABASE_URL=\"Database URL\" # DatabaseUrl!\n")),
 	)
 	require.Error(t, err)
 
@@ -299,6 +383,14 @@ func snapshotByName(items []owl.SnapshotItem) map[string]owl.SnapshotItem {
 	result := make(map[string]owl.SnapshotItem, len(items))
 	for _, item := range items {
 		result[item.Name] = item
+	}
+	return result
+}
+
+func snapshotNames(items []owl.SnapshotItem) []string {
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		result = append(result, item.Name)
 	}
 	return result
 }

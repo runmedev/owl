@@ -55,6 +55,24 @@ type DotenvPolicy struct {
 	Insecure bool
 }
 
+type TypePolicy struct {
+	All bool
+}
+
+type TypeResult struct {
+	Proposals []TypeProposal
+}
+
+type TypeProposal struct {
+	Key           string
+	CurrentType   model.TypeID
+	SuggestedType model.TypeID
+	Confidence    model.BindingConfidence
+	Reason        string
+	Description   string
+	Required      bool
+}
+
 type SnapshotPolicy struct {
 	Reveal bool
 }
@@ -67,6 +85,9 @@ type SnapshotItem struct {
 	Field         model.FieldRef
 	Source        model.Source
 	Origin        model.Source
+	Explicit      bool
+	Order         uint
+	Confidence    model.BindingConfidence
 	Visibility    model.Visibility
 	Exposure      model.Exposure
 	Description   string
@@ -105,6 +126,7 @@ type EnvBinding struct {
 	Required    bool
 	Description string
 	Source      model.Source
+	Order       uint
 }
 
 type EnvContract struct {
@@ -118,32 +140,36 @@ type LoadInput struct {
 	Dotenv       []DotenvVariable
 	Contracts    []EnvContract
 	Envelope     *StateEnvelope
+	Timestamp    time.Time
 }
 
 type LoadOperation struct {
-	Input LoadInput
+	Input     LoadInput
+	Timestamp time.Time
 }
 
 func (op LoadOperation) Record() OperationRecord {
-	return OperationRecord{Kind: OperationRecordLoad, Load: op.Input}
+	return OperationRecord{Kind: OperationRecordLoad, Timestamp: op.Timestamp, Load: op.Input}
 }
 
 type UpdateOperation struct {
-	Source model.Source
-	Dotenv []DotenvVariable
+	Source    model.Source
+	Dotenv    []DotenvVariable
+	Timestamp time.Time
 }
 
 func (op UpdateOperation) Record() OperationRecord {
-	return OperationRecord{Kind: OperationRecordUpdate, Update: op}
+	return OperationRecord{Kind: OperationRecordUpdate, Timestamp: op.Timestamp, Update: op}
 }
 
 type DeleteOperation struct {
-	Keys   []string
-	Source model.Source
+	Keys      []string
+	Source    model.Source
+	Timestamp time.Time
 }
 
 func (op DeleteOperation) Record() OperationRecord {
-	return OperationRecord{Kind: OperationRecordDelete, Delete: op}
+	return OperationRecord{Kind: OperationRecordDelete, Timestamp: op.Timestamp, Delete: op}
 }
 
 type OperationRecordKind string
@@ -155,10 +181,11 @@ const (
 )
 
 type OperationRecord struct {
-	Kind   OperationRecordKind
-	Load   LoadInput
-	Update UpdateOperation
-	Delete DeleteOperation
+	Kind      OperationRecordKind
+	Timestamp time.Time
+	Load      LoadInput
+	Update    UpdateOperation
+	Delete    DeleteOperation
 }
 
 type NormalizeOperation struct{}
@@ -201,7 +228,53 @@ func Diagnostics(err error) []model.Diagnostic {
 		Severity: model.DiagnosticError,
 		Code:     "owl.error",
 		Message:  err.Error(),
+		Owner:    model.DiagnosticOwnerParse,
 	}}
+}
+
+func operationTimestamp(timestamp time.Time) time.Time {
+	if timestamp.IsZero() {
+		return model.RealClock()
+	}
+	return timestamp
+}
+
+func firstTime(values ...time.Time) time.Time {
+	for _, value := range values {
+		if !value.IsZero() {
+			return value
+		}
+	}
+	return time.Time{}
+}
+
+func timestampRecordedOperation(record OperationRecord) (OperationRecord, Operation) {
+	if record.Timestamp.IsZero() {
+		record.Timestamp = model.RealClock()
+	}
+	switch record.Kind {
+	case OperationRecordLoad:
+		return record, LoadOperation{Input: record.Load, Timestamp: record.Timestamp}
+	case OperationRecordUpdate:
+		record.Update.Timestamp = record.Timestamp
+		return record, record.Update
+	case OperationRecordDelete:
+		record.Delete.Timestamp = record.Timestamp
+		return record, record.Delete
+	default:
+		return record, NormalizeOperation{}
+	}
+}
+
+func withoutDiagnosticOwner(diagnostics []model.Diagnostic, owner model.DiagnosticOwner) []model.Diagnostic {
+	filtered := diagnostics[:0]
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Owner == owner {
+			continue
+		}
+		filtered = append(filtered, diagnostic)
+	}
+	return filtered
 }
 
 func NewStore(opts ...StoreOption) (*Store, error) {
@@ -267,7 +340,9 @@ func WithTypeProvider(types registry.TypeProvider) StoreOption {
 
 func (s *Store) Apply(ctx context.Context, op Operation) (model.EffectiveState, error) {
 	if recorded, ok := op.(RecordedOperation); ok {
-		s.operations = append(s.operations, recorded.Record())
+		record, timestamped := timestampRecordedOperation(recorded.Record())
+		s.operations = append(s.operations, record)
+		op = timestamped
 	}
 	state, err := op.Apply(ctx, s.state)
 	if err != nil {
@@ -279,8 +354,13 @@ func (s *Store) Apply(ctx context.Context, op Operation) (model.EffectiveState, 
 
 func (op LoadOperation) Apply(context.Context, model.EffectiveState) (model.EffectiveState, error) {
 	if op.Input.Envelope != nil {
-		return op.Input.Envelope.State, nil
+		state := op.Input.Envelope.State
+		if len(state.Operations) == 0 {
+			state.Operations = append([]model.OperationMetadata{}, op.Input.Envelope.Provenance.Operations...)
+		}
+		return state, nil
 	}
+	timestamp := operationTimestamp(firstTime(op.Timestamp, op.Input.Timestamp))
 	values := make(map[string]string, len(op.Input.Dotenv))
 	for _, variable := range op.Input.Dotenv {
 		values[variable.Key] = variable.Value
@@ -293,6 +373,7 @@ func (op LoadOperation) Apply(context.Context, model.EffectiveState) (model.Effe
 	return dotenv.IngestDotenv(values, dotenv.DotenvIngestOptions{
 		Source:       source,
 		Declarations: declarations,
+		Clock:        func() time.Time { return timestamp },
 	}), nil
 }
 
@@ -300,6 +381,7 @@ func (op UpdateOperation) Apply(_ context.Context, state model.EffectiveState) (
 	if state.Values == nil {
 		state = model.NewEffectiveState()
 	}
+	timestamp := operationTimestamp(op.Timestamp)
 	source := op.Source
 	if source.Name == "" {
 		source = model.Source{Name: ".env", Kind: "dotenv"}
@@ -321,10 +403,16 @@ func (op UpdateOperation) Apply(_ context.Context, state model.EffectiveState) (
 				Origin:       source,
 				Confidence:   model.BindingConfidenceOpaque,
 				PreserveKey:  true,
+				CreatedAt:    timestamp,
+				UpdatedAt:    timestamp,
 			}
 			state.Bindings = append(state.Bindings, binding)
 		}
 		value := state.Values[ref]
+		changed := value.Original != variable.Value ||
+			value.Resolved != variable.Value ||
+			value.Visibility != model.VisibilityLiteral ||
+			value.Source != source
 		value.FieldRef = ref
 		value.Original = variable.Value
 		value.Resolved = variable.Value
@@ -339,11 +427,20 @@ func (op UpdateOperation) Apply(_ context.Context, state model.EffectiveState) (
 			value.Origin = binding.Origin
 		}
 		value.Source = source
-		value.UpdatedAt = model.RealClock()
+		if changed || value.UpdatedAt.IsZero() {
+			value.UpdatedAt = timestamp
+		}
 		if value.CreatedAt.IsZero() {
 			value.CreatedAt = value.UpdatedAt
 		}
 		state.Values[ref] = value
+		state.Operations = append(state.Operations, model.OperationMetadata{
+			ID:           model.OperationID("update:" + variable.Key),
+			Kind:         model.OperationKindSet,
+			Timestamp:    timestamp,
+			Source:       source,
+			ProjectionID: model.ProjectionDotenv,
+		})
 	}
 	return state, nil
 }
@@ -384,6 +481,7 @@ func (op ValidateOperation) Apply(_ context.Context, state model.EffectiveState)
 	if types == nil {
 		types = registry.NewBuiltInRegistry()
 	}
+	state.Diagnostics = withoutDiagnosticOwner(state.Diagnostics, model.DiagnosticOwnerValidation)
 	state.Diagnostics = append(state.Diagnostics, ValidateState(state, types)...)
 	return state, nil
 }
@@ -401,6 +499,9 @@ func (s *Store) Snapshot(policy SnapshotPolicy) ([]SnapshotItem, error) {
 			Field:         value.FieldRef,
 			Source:        value.Source,
 			Origin:        value.Origin,
+			Explicit:      binding.Explicit,
+			Order:         binding.Order,
+			Confidence:    binding.Confidence,
 			Visibility:    rendered.visibility,
 			Exposure:      value.Exposure,
 			Description:   binding.Description,
@@ -409,6 +510,17 @@ func (s *Store) Snapshot(policy SnapshotPolicy) ([]SnapshotItem, error) {
 		})
 	}
 	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].Explicit != items[j].Explicit {
+			return items[i].Explicit
+		}
+		if items[i].Explicit && items[j].Explicit {
+			if items[i].Order > 0 && items[j].Order > 0 && items[i].Order != items[j].Order {
+				return items[i].Order < items[j].Order
+			}
+			if items[i].Order > 0 != (items[j].Order > 0) {
+				return items[i].Order > 0
+			}
+		}
 		return items[i].Name < items[j].Name
 	})
 	return items, nil
@@ -426,6 +538,36 @@ func (s *Store) Dotenv(policy DotenvPolicy) ([]string, error) {
 	}
 	sort.Strings(envs)
 	return envs, nil
+}
+
+func (s *Store) Type(policy TypePolicy) (TypeResult, error) {
+	proposals := make([]TypeProposal, 0, len(s.state.Bindings))
+	for _, binding := range s.state.Bindings {
+		if binding.Explicit {
+			continue
+		}
+		value := s.state.Values[binding.FieldRef]
+		suggested, reason, ok := suggestPrimitiveType(string(binding.Key), value)
+		if !policy.All && !ok {
+			continue
+		}
+		confidence := model.BindingConfidenceHeuristic
+		if !ok {
+			confidence = model.BindingConfidenceNone
+		}
+		proposals = append(proposals, TypeProposal{
+			Key:           string(binding.Key),
+			CurrentType:   value.FieldRef.TypeID,
+			SuggestedType: suggested,
+			Confidence:    confidence,
+			Reason:        reason,
+			Description:   descriptionForKey(string(binding.Key)),
+		})
+	}
+	sort.SliceStable(proposals, func(i, j int) bool {
+		return proposals[i].Key < proposals[j].Key
+	})
+	return TypeResult{Proposals: proposals}, nil
 }
 
 func (s *Store) Get(key string, policy GetPolicy) (GetResult, bool, error) {
@@ -549,6 +691,7 @@ func LoadInputFromSourceBytes(envs, specs []SourceBytes) (LoadInput, error) {
 		load.Dotenv = append(load.Dotenv, DotenvVariable{Key: key, Value: values[key]})
 	}
 
+	var order uint
 	for _, spec := range specs {
 		declarations, err := dotenv.ParseDotenvSpecDeclarations(spec.Raw, model.Source{Name: spec.Name, Kind: "dotenv-spec"})
 		if err != nil {
@@ -564,6 +707,7 @@ func LoadInputFromSourceBytes(envs, specs []SourceBytes) (LoadInput, error) {
 				Message:  fmt.Sprintf("unknown env spec type %q", declaration.UnknownType),
 				Key:      string(declaration.Key),
 				FieldRef: declaration.FieldRef,
+				Owner:    model.DiagnosticOwnerParse,
 			}}}
 		}
 		contract := EnvContract{
@@ -571,6 +715,7 @@ func LoadInputFromSourceBytes(envs, specs []SourceBytes) (LoadInput, error) {
 			Projection: model.ProjectionDotenv,
 		}
 		for _, declaration := range declarations {
+			order++
 			contract.Bindings = append(contract.Bindings, EnvBinding{
 				FieldRef:    declaration.FieldRef,
 				Key:         string(declaration.Key),
@@ -578,6 +723,7 @@ func LoadInputFromSourceBytes(envs, specs []SourceBytes) (LoadInput, error) {
 				Required:    declaration.Required,
 				Description: declaration.Description,
 				Source:      declaration.Source,
+				Order:       order,
 			})
 		}
 		load.Contracts = append(load.Contracts, contract)
@@ -596,12 +742,14 @@ func sourceBytesFromInputs(inputs []sourceInput) []SourceBytes {
 
 func declarationsFromContracts(contracts []EnvContract) []dotenv.FieldDeclaration {
 	var declarations []dotenv.FieldDeclaration
+	var order uint
 	for _, contract := range contracts {
 		source := contract.Source
 		if source.Name == "" {
 			source = model.Source{Name: "env-contract", Kind: "env-contract"}
 		}
 		for _, binding := range contract.Bindings {
+			order++
 			projection := binding.Projection
 			if projection == "" {
 				projection = contract.Projection
@@ -619,10 +767,20 @@ func declarationsFromContracts(contracts []EnvContract) []dotenv.FieldDeclaratio
 				Required:    binding.Required,
 				Description: binding.Description,
 				Source:      bindingSource,
+				Order:       firstUint(binding.Order, order),
 			})
 		}
 	}
 	return declarations
+}
+
+func firstUint(values ...uint) uint {
+	for _, value := range values {
+		if value != 0 {
+			return value
+		}
+	}
+	return 0
 }
 
 func findBinding(bindings []model.Binding, key string) (model.FieldRef, model.Binding, bool) {
@@ -683,14 +841,7 @@ func inferDotenvFieldRef(key string) (model.FieldRef, *model.Diagnostic) {
 		}
 	}
 
-	ref := model.FieldRef{TypeID: model.TypeCoreOpaque, Instance: "default", Field: opaqueFieldName(key)}
-	return ref, &model.Diagnostic{
-		Severity: model.DiagnosticInfo,
-		Code:     "dotenv.opaque",
-		Message:  "dotenv key has no explicit type declaration and remains core/opaque",
-		Key:      key,
-		FieldRef: ref,
-	}
+	return model.FieldRef{TypeID: model.TypeCoreOpaque, Instance: "default", Field: opaqueFieldName(key)}, nil
 }
 
 func redisField(suffix string) (string, bool) {
@@ -704,6 +855,39 @@ func redisField(suffix string) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+func suggestPrimitiveType(key string, value model.Value) (model.TypeID, string, bool) {
+	upper := strings.ToUpper(key)
+	switch {
+	case strings.Contains(upper, "PASSWORD"),
+		strings.Contains(upper, "SECRET"),
+		strings.Contains(upper, "TOKEN"),
+		strings.Contains(upper, "API_KEY"),
+		strings.Contains(upper, "PRIVATE_KEY"):
+		return model.TypeCoreSecret, "key name suggests sensitive value", true
+	case upper == "URL" || strings.HasSuffix(upper, "_URL") || strings.Contains(upper, "URL_"):
+		return model.TypeCoreURL, "key name suggests URL", true
+	case upper == "HOST" || strings.HasSuffix(upper, "_HOST") || strings.Contains(upper, "HOST_"):
+		return model.TypeCoreHost, "key name suggests host", true
+	case upper == "PORT" || strings.HasSuffix(upper, "_PORT") || strings.Contains(upper, "PORT_"):
+		return model.TypeCorePort, "key name suggests port", true
+	case value.Sensitivity == model.SensitivitySensitive:
+		return model.TypeCoreSecret, "value sensitivity suggests secret", true
+	default:
+		return "", "no primitive type heuristic matched", false
+	}
+}
+
+func descriptionForKey(key string) string {
+	words := strings.Split(strings.ToLower(strings.ReplaceAll(key, "_", " ")), " ")
+	for i, word := range words {
+		if word == "" {
+			continue
+		}
+		words[i] = strings.ToUpper(word[:1]) + word[1:]
+	}
+	return strings.Join(words, " ")
 }
 
 func opaqueFieldName(key string) string {

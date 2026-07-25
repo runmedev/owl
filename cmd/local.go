@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -35,6 +36,7 @@ func NewLocalCommands() []*cobra.Command {
 		ConfigureSnapshotCommand: configureLocalFlags,
 		ConfigureSourceCommand:   configureLocalFlags,
 		ConfigureCheckCommand:    configureLocalFlags,
+		ConfigureTypeCommand:     configureLocalFlags,
 		InsecureAllowed:          func() bool { return true },
 	})
 }
@@ -84,7 +86,53 @@ func (c *LocalStoreClient) Check(context.Context, CheckRequest) (*CheckResult, e
 	}, nil
 }
 
+func (c *LocalStoreClient) Type(_ context.Context, req TypeRequest) (*TypeResult, error) {
+	if req.SpecPath == "" {
+		req.SpecPath = ".env.spec"
+	}
+	options := c.options
+	options.SpecFiles = []string{req.SpecPath}
+	store, err := NewLocalStoreClient(options).storeWithOptions(true)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := store.Type(owl.TypePolicy{All: req.All})
+	if err != nil {
+		return nil, err
+	}
+
+	proposals := renderDotenvSpecTypeProposals(result.Proposals)
+	rendered := proposals
+	if req.Output != "" {
+		materialized, err := materializeDotenvSpecTypeProposals(req.SpecPath, proposals)
+		if err != nil {
+			return nil, err
+		}
+		rendered = materialized
+		if req.Output != "-" {
+			if err := os.WriteFile(req.Output, []byte(materialized), 0o600); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if req.Fix {
+		if err := appendDotenvSpecTypeProposals(req.SpecPath, proposals); err != nil {
+			return nil, err
+		}
+	}
+
+	return &TypeResult{
+		Proposals: typeProposalsFromItems(result.Proposals),
+		Rendered:  rendered,
+	}, nil
+}
+
 func (c *LocalStoreClient) store() (*owl.Store, error) {
+	return c.storeWithOptions(false)
+}
+
+func (c *LocalStoreClient) storeWithOptions(allowMissingSpec bool) (*owl.Store, error) {
 	var opts []owl.StoreOption
 
 	specFiles, err := filesOrDefaults(c.options.SpecFiles, ".env.example")
@@ -93,6 +141,9 @@ func (c *LocalStoreClient) store() (*owl.Store, error) {
 	}
 	for _, file := range specFiles {
 		raw, err := os.ReadFile(file)
+		if allowMissingSpec && errors.Is(err, os.ErrNotExist) {
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -114,6 +165,100 @@ func (c *LocalStoreClient) store() (*owl.Store, error) {
 	return owl.NewStore(opts...)
 }
 
+func renderDotenvSpecTypeProposals(proposals []owl.TypeProposal) string {
+	if len(proposals) == 0 {
+		return ""
+	}
+	type renderedProposal struct {
+		left     string
+		typeName string
+		required bool
+	}
+	rendered := make([]renderedProposal, 0, len(proposals))
+	maxLeftWidth := 0
+	for _, proposal := range proposals {
+		if proposal.SuggestedType == "" {
+			continue
+		}
+		left := proposal.Key + "=" + strconvQuote(proposal.Description)
+		rendered = append(rendered, renderedProposal{
+			left:     left,
+			typeName: dotenvSpecName(proposal.SuggestedType),
+			required: proposal.Required,
+		})
+		if len(left) > maxLeftWidth {
+			maxLeftWidth = len(left)
+		}
+	}
+	if len(rendered) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, proposal := range rendered {
+		_, _ = b.WriteString(proposal.left)
+		_, _ = b.WriteString(strings.Repeat(" ", maxLeftWidth-len(proposal.left)+1))
+		_, _ = b.WriteString("# ")
+		_, _ = b.WriteString(proposal.typeName)
+		if proposal.required {
+			_ = b.WriteByte('!')
+		}
+		_ = b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+func appendDotenvSpecTypeProposals(path string, rendered string) error {
+	if rendered == "" {
+		return nil
+	}
+	materialized, err := materializeDotenvSpecTypeProposals(path, rendered)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(materialized), 0o600)
+}
+
+func materializeDotenvSpecTypeProposals(path string, rendered string) (string, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	var b strings.Builder
+	_, _ = b.Write(raw)
+	if len(raw) > 0 {
+		switch {
+		case strings.HasSuffix(string(raw), "\n\n"):
+		case strings.HasSuffix(string(raw), "\n"):
+			_ = b.WriteByte('\n')
+		default:
+			_, _ = b.WriteString("\n\n")
+		}
+	}
+	_, _ = b.WriteString(rendered)
+	return b.String(), nil
+}
+
+func dotenvSpecName(typeID owl.TypeID) string {
+	switch typeID {
+	case owl.TypeCoreSecret:
+		return "Secret"
+	case owl.TypeCoreURL:
+		return "Url"
+	case owl.TypeCoreHost:
+		return "Host"
+	case owl.TypeCorePort:
+		return "Port"
+	case owl.TypeCorePlain:
+		return "Plain"
+	default:
+		return "Opaque"
+	}
+}
+
+func strconvQuote(s string) string {
+	return `"` + strings.ReplaceAll(strings.ReplaceAll(s, `\`, `\\`), `"`, `\"`) + `"`
+}
+
 func filesOrDefaults(files []string, defaults ...string) ([]string, error) {
 	if len(files) > 0 {
 		return files, nil
@@ -132,6 +277,26 @@ func filesOrDefaults(files []string, defaults ...string) ([]string, error) {
 	return existing, nil
 }
 
+func typeProposalsFromItems(items []owl.TypeProposal) []TypeProposal {
+	proposals := make([]TypeProposal, 0, len(items))
+	for _, item := range items {
+		suggestedType := "-"
+		if item.SuggestedType != "" {
+			suggestedType = item.SuggestedType.Alias()
+		}
+		proposals = append(proposals, TypeProposal{
+			Key:           item.Key,
+			CurrentType:   item.CurrentType.Alias(),
+			SuggestedType: suggestedType,
+			Confidence:    string(item.Confidence),
+			Reason:        item.Reason,
+			Description:   item.Description,
+			Required:      item.Required,
+		})
+	}
+	return proposals
+}
+
 func snapshotEnvsFromItems(items []owl.SnapshotItem) []SnapshotEnv {
 	envs := make([]SnapshotEnv, 0, len(items))
 	for _, item := range items {
@@ -146,6 +311,7 @@ func snapshotEnvsFromItems(items []owl.SnapshotItem) []SnapshotEnv {
 			Type:        item.Type.Alias(),
 			Field:       item.Field.String(),
 			Source:      item.Source.Name,
+			Explicit:    item.Explicit,
 			Visibility:  visibility,
 			Diagnostics: diagnosticStrings(item.Diagnostics),
 		})

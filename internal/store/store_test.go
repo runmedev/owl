@@ -30,6 +30,7 @@ func TestStoreSnapshotSourceAndCheck(t *testing.T) {
 	assert.Equal(t, model.TypeCoreSecret, byName["API_KEY"].Type)
 	assert.Equal(t, "[hidden]", byName["DATABASE_URL"].Value)
 	assert.Equal(t, model.TypeCoreOpaque, byName["DATABASE_URL"].Type)
+	assert.Empty(t, byName["DATABASE_URL"].Diagnostics)
 	assert.Equal(t, "[unset]", byName["MISSING_TOKEN"].Value)
 	assert.Equal(t, model.VisibilityUnresolved, byName["MISSING_TOKEN"].Visibility)
 
@@ -45,6 +46,65 @@ func TestStoreSnapshotSourceAndCheck(t *testing.T) {
 	assert.False(t, check.OK)
 	require.NotEmpty(t, check.Diagnostics)
 	assert.Equal(t, model.DiagnosticError, check.Diagnostics[len(check.Diagnostics)-1].Severity)
+}
+
+func TestStoreSnapshotOrdersExplicitBindingsBeforeInferredBindings(t *testing.T) {
+	t.Parallel()
+
+	s, err := NewStore(
+		WithDotenv(".env", strings.NewReader("OMEGA=value\nAPPLE=value\nZETA=value\nBETA=value\n")),
+		WithEnvSpec(".env.example", strings.NewReader("ZETA=\"Zeta\" # Plain\nBETA=\"Beta\" # Plain\n")),
+	)
+	require.NoError(t, err)
+
+	snapshot, err := s.Snapshot(SnapshotPolicy{Reveal: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"ZETA", "BETA", "APPLE", "OMEGA"}, snapshotNames(snapshot))
+	assert.True(t, snapshot[0].Explicit)
+	assert.True(t, snapshot[1].Explicit)
+	assert.False(t, snapshot[2].Explicit)
+	assert.False(t, snapshot[3].Explicit)
+}
+
+func TestStoreTypeProposesMissingPrimitiveTypes(t *testing.T) {
+	t.Parallel()
+
+	s, err := NewStore(
+		WithDotenv(".env", strings.NewReader("API_URL=https://api.example.com\nAPI_KEY=secret\nSERVICE_HOST=localhost\nSERVICE_PORT=8080\nTARGET_PLATFORM=darwin/arm64\n")),
+		WithEnvSpec(".env.spec", strings.NewReader("API_URL=\"API URL\" # Plain\n")),
+	)
+	require.NoError(t, err)
+
+	result, err := s.Type(TypePolicy{All: true})
+	require.NoError(t, err)
+
+	require.Len(t, result.Proposals, 4)
+	byKey := typeProposalsByKey(result.Proposals)
+	assert.Equal(t, model.TypeCoreSecret, byKey["API_KEY"].SuggestedType)
+	assert.Equal(t, "key name suggests sensitive value", byKey["API_KEY"].Reason)
+	assert.Equal(t, model.TypeCoreHost, byKey["SERVICE_HOST"].SuggestedType)
+	assert.Equal(t, model.TypeCorePort, byKey["SERVICE_PORT"].SuggestedType)
+	assert.Empty(t, byKey["TARGET_PLATFORM"].SuggestedType)
+	assert.Equal(t, model.BindingConfidenceNone, byKey["TARGET_PLATFORM"].Confidence)
+	assert.Equal(t, "no primitive type heuristic matched", byKey["TARGET_PLATFORM"].Reason)
+	assert.NotContains(t, byKey, "API_URL")
+}
+
+func TestStoreTypeSkipsDefaultPlainProposalsByDefault(t *testing.T) {
+	t.Parallel()
+
+	s, err := NewStore(
+		WithDotenv(".env", strings.NewReader("API_KEY=secret\nTARGET_PLATFORM=darwin/arm64\n")),
+	)
+	require.NoError(t, err)
+
+	result, err := s.Type(TypePolicy{})
+	require.NoError(t, err)
+
+	require.Len(t, result.Proposals, 1)
+	assert.Equal(t, "API_KEY", result.Proposals[0].Key)
+	assert.Equal(t, model.TypeCoreSecret, result.Proposals[0].SuggestedType)
 }
 
 func TestStoreWithDotenv(t *testing.T) {
@@ -92,6 +152,22 @@ func snapshotByName(items []SnapshotItem) map[string]SnapshotItem {
 	result := make(map[string]SnapshotItem, len(items))
 	for _, item := range items {
 		result[item.Name] = item
+	}
+	return result
+}
+
+func snapshotNames(items []SnapshotItem) []string {
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		result = append(result, item.Name)
+	}
+	return result
+}
+
+func typeProposalsByKey(items []TypeProposal) map[string]TypeProposal {
+	result := make(map[string]TypeProposal, len(items))
+	for _, item := range items {
+		result[item.Key] = item
 	}
 	return result
 }

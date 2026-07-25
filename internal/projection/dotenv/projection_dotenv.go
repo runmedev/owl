@@ -22,6 +22,7 @@ type FieldDeclaration struct {
 	Required    bool
 	Description string
 	Source      model.Source
+	Order       uint
 	Sensitivity model.Sensitivity
 	Exposure    model.Exposure
 	UnknownType string
@@ -56,7 +57,17 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 		declarationsByKey[key] = declaration
 		declarationKeys = append(declarationKeys, key)
 	}
-	sort.Strings(declarationKeys)
+	sort.SliceStable(declarationKeys, func(i, j int) bool {
+		left := declarationsByKey[declarationKeys[i]]
+		right := declarationsByKey[declarationKeys[j]]
+		if left.Order > 0 && right.Order > 0 && left.Order != right.Order {
+			return left.Order < right.Order
+		}
+		if left.Order > 0 != (right.Order > 0) {
+			return left.Order > 0
+		}
+		return declarationKeys[i] < declarationKeys[j]
+	})
 
 	seenKeys := make(map[string]struct{}, len(values))
 	seenFields := make(map[model.FieldRef]string, len(values)+len(opts.Declarations))
@@ -73,6 +84,7 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 		fieldRef, confidence, diagnostic := dotenvFieldRef(key)
 		origin := source
 		explicit := false
+		order := uint(0)
 		preserveKey := confidence == model.BindingConfidenceOpaque
 		description := ""
 		if declaration, ok := declarationsByKey[key]; ok {
@@ -81,10 +93,12 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 			diagnostic = nil
 			origin = declaration.Source
 			explicit = true
+			order = declaration.Order
 			preserveKey = false
 			description = declaration.Description
 		}
 		if diagnostic != nil {
+			diagnostic.Owner = model.DiagnosticOwnerProjection
 			state.Diagnostics = append(state.Diagnostics, *diagnostic)
 		}
 		if _, ok := seenFields[fieldRef]; ok {
@@ -94,8 +108,9 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 				Message:  "dotenv keys project to the same semantic field; keeping the first value",
 				Key:      key,
 				FieldRef: fieldRef,
+				Owner:    model.DiagnosticOwnerProjection,
 			})
-			state.Bindings = append(state.Bindings, newBinding(opID, key, fieldRef, description, source, origin, confidence, explicit, preserveKey, now))
+			state.Bindings = append(state.Bindings, newBinding(opID, key, fieldRef, description, source, origin, confidence, explicit, order, preserveKey, false, now))
 			seenKeys[key] = struct{}{}
 			continue
 		}
@@ -107,6 +122,33 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 		if declaration, ok := declarationsByKey[key]; ok {
 			sensitivity = declarationSensitivity(declaration)
 			exposure = declarationExposure(declaration)
+		}
+		if value == "" && (sensitivity == model.SensitivitySensitive || exposure == model.ExposureOpaque) {
+			state.Values[fieldRef] = model.Value{
+				FieldRef:        fieldRef,
+				Visibility:      model.VisibilityUnresolved,
+				Sensitivity:     sensitivity,
+				Exposure:        exposure,
+				Origin:          origin,
+				Source:          source,
+				CreatedAt:       now,
+				UpdatedAt:       now,
+				LastOperationID: opID,
+			}
+			required := false
+			if declaration, ok := declarationsByKey[key]; ok {
+				required = declaration.Required
+			}
+			state.Bindings = append(state.Bindings, newBinding(opID, key, fieldRef, description, source, origin, confidence, explicit, order, preserveKey, required, now))
+			state.Operations = append(state.Operations, model.OperationMetadata{
+				ID:           opID,
+				Kind:         model.OperationKindLoad,
+				Timestamp:    now,
+				Actor:        opts.Actor,
+				Source:       source,
+				ProjectionID: model.ProjectionDotenv,
+			})
+			continue
 		}
 		state.Values[fieldRef] = model.Value{
 			FieldRef:        fieldRef,
@@ -121,7 +163,11 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 			UpdatedAt:       now,
 			LastOperationID: opID,
 		}
-		state.Bindings = append(state.Bindings, newBinding(opID, key, fieldRef, description, source, origin, confidence, explicit, preserveKey, now))
+		required := false
+		if declaration, ok := declarationsByKey[key]; ok {
+			required = declaration.Required
+		}
+		state.Bindings = append(state.Bindings, newBinding(opID, key, fieldRef, description, source, origin, confidence, explicit, order, preserveKey, required, now))
 		state.Operations = append(state.Operations, model.OperationMetadata{
 			ID:           opID,
 			Kind:         model.OperationKindLoad,
@@ -147,6 +193,7 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 				Message:  "dotenv declarations project to the same semantic field; keeping the first field value",
 				Key:      key,
 				FieldRef: fieldRef,
+				Owner:    model.DiagnosticOwnerProjection,
 			})
 			continue
 		}
@@ -158,7 +205,6 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 			Sensitivity:     declarationSensitivity(declaration),
 			Exposure:        declarationExposure(declaration),
 			Origin:          declaration.Source,
-			Source:          declaration.Source,
 			CreatedAt:       now,
 			UpdatedAt:       now,
 			LastOperationID: opID,
@@ -172,7 +218,9 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 			declaration.Source,
 			model.BindingConfidenceExplicit,
 			true,
+			declaration.Order,
 			false,
+			declaration.Required,
 			now,
 		))
 		state.Operations = append(state.Operations, model.OperationMetadata{
@@ -183,15 +231,6 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 			Source:       declaration.Source,
 			ProjectionID: model.ProjectionDotenv,
 		})
-		if declaration.Required {
-			state.Diagnostics = append(state.Diagnostics, model.Diagnostic{
-				Severity: model.DiagnosticError,
-				Code:     "dotenv.unresolved-required",
-				Message:  "required declared dotenv field has no observed value",
-				Key:      key,
-				FieldRef: fieldRef,
-			})
-		}
 	}
 
 	return state
@@ -215,6 +254,7 @@ func RenderDotenvProjection(state model.EffectiveState, policy model.RenderPolic
 				Message:  "unresolved semantic field has no dotenv value to render",
 				Key:      key,
 				FieldRef: binding.FieldRef,
+				Owner:    model.DiagnosticOwnerProjection,
 			})
 			continue
 		}
@@ -225,6 +265,7 @@ func RenderDotenvProjection(state model.EffectiveState, policy model.RenderPolic
 				Message:  "multiple semantic fields render to the same dotenv key; skipping later value",
 				Key:      key,
 				FieldRef: binding.FieldRef,
+				Owner:    model.DiagnosticOwnerProjection,
 			})
 			continue
 		}
@@ -263,7 +304,9 @@ func newBinding(
 	origin model.Source,
 	confidence model.BindingConfidence,
 	explicit bool,
+	order uint,
 	preserveKey bool,
+	required bool,
 	now time.Time,
 ) model.Binding {
 	return model.Binding{
@@ -276,7 +319,9 @@ func newBinding(
 		Origin:          origin,
 		Confidence:      confidence,
 		Explicit:        explicit,
+		Order:           order,
 		PreserveKey:     preserveKey,
+		Required:        required,
 		CreatedAt:       now,
 		UpdatedAt:       now,
 		LastOperationID: opID,
@@ -322,15 +367,7 @@ func dotenvFieldRef(key string) (model.FieldRef, model.BindingConfidence, *model
 		}
 	}
 
-	ref := model.FieldRef{TypeID: model.TypeCoreOpaque, Instance: "default", Field: opaqueFieldName(key)}
-	diagnostic := &model.Diagnostic{
-		Severity: model.DiagnosticInfo,
-		Code:     "dotenv.opaque",
-		Message:  "dotenv key has no explicit type declaration and remains core/opaque",
-		Key:      key,
-		FieldRef: ref,
-	}
-	return ref, model.BindingConfidenceOpaque, diagnostic
+	return model.FieldRef{TypeID: model.TypeCoreOpaque, Instance: "default", Field: opaqueFieldName(key)}, model.BindingConfidenceOpaque, nil
 }
 
 func redisField(suffix string) (string, bool) {

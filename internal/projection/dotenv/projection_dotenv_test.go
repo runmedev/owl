@@ -57,9 +57,7 @@ func TestIngestDotenv_RedisAndOpaque(t *testing.T) {
 	token := model.FieldRef{TypeID: model.TypeCoreOpaque, Instance: "default", Field: "custom.service.token"}
 	require.Contains(t, state.Values, token)
 	assert.Equal(t, model.SensitivitySensitive, state.Values[token].Sensitivity)
-
-	require.NotEmpty(t, state.Diagnostics)
-	assert.Contains(t, diagnosticCodes(state.Diagnostics), "dotenv.opaque")
+	assert.Empty(t, state.Diagnostics)
 }
 
 func TestRenderDotenv_SafeAndInsecure(t *testing.T) {
@@ -115,8 +113,11 @@ func TestIngestDotenv_MaterializesDeclaredMissingField(t *testing.T) {
 	require.Contains(t, state.Values, missingPassword)
 	assert.Equal(t, model.VisibilityUnresolved, state.Values[missingPassword].Visibility)
 	assert.Equal(t, model.SensitivitySensitive, state.Values[missingPassword].Sensitivity)
+	assert.Empty(t, state.Values[missingPassword].Source)
+	assert.Equal(t, model.Source{Name: ".env.example", Kind: "dotenv-spec"}, state.Values[missingPassword].Origin)
 	assert.Equal(t, model.OperationID("mat-op-000002"), state.Values[missingPassword].LastOperationID)
-	assert.Contains(t, diagnosticCodes(state.Diagnostics), "dotenv.unresolved-required")
+	assert.Empty(t, state.Diagnostics)
+	assert.True(t, state.Bindings[1].Required)
 	require.Len(t, state.Operations, 2)
 	assert.Equal(t, model.OperationKindNormalize, state.Operations[1].Kind)
 

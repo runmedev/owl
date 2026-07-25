@@ -32,6 +32,7 @@ const (
 	BindingConfidenceTypeDerived BindingConfidence = "type-derived"
 	BindingConfidenceHeuristic   BindingConfidence = "heuristic"
 	BindingConfidenceOpaque      BindingConfidence = "opaque"
+	BindingConfidenceNone        BindingConfidence = "none"
 )
 
 type Binding struct {
@@ -44,7 +45,9 @@ type Binding struct {
 	Origin          Source
 	Confidence      BindingConfidence
 	Explicit        bool
+	Order           uint
 	PreserveKey     bool
+	Required        bool
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 	LastOperationID OperationID

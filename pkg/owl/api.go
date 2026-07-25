@@ -14,8 +14,11 @@ import (
 type (
 	SnapshotPolicy = store.SnapshotPolicy
 	DotenvPolicy   = store.DotenvPolicy
+	TypePolicy     = store.TypePolicy
 	GetPolicy      = store.GetPolicy
 	SnapshotItem   = store.SnapshotItem
+	TypeResult     = store.TypeResult
+	TypeProposal   = store.TypeProposal
 	GetResult      = store.GetResult
 	CheckResult    = store.CheckResult
 
@@ -31,6 +34,7 @@ type (
 	Exposure           = model.Exposure
 	Diagnostic         = model.Diagnostic
 	DiagnosticSeverity = model.DiagnosticSeverity
+	OperationMetadata  = model.OperationMetadata
 )
 
 const (
@@ -60,6 +64,7 @@ type Store struct {
 	types      registry.TypeProvider
 	state      model.EffectiveState
 	operations []store.OperationRecord
+	clock      model.Clock
 }
 
 type StoreOption func(*config) error
@@ -70,6 +75,31 @@ type config struct {
 	contracts []store.EnvContract
 	envelope  *store.StateEnvelope
 	types     registry.TypeProvider
+	clock     model.Clock
+}
+
+type executionInfoKey struct{}
+
+// ExecutionInfo describes the execution context that produced an env update.
+type ExecutionInfo struct {
+	KnownID     string
+	KnownName   string
+	ExecContext string
+}
+
+func ContextWithExecutionInfo(ctx context.Context, info ExecutionInfo) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, executionInfoKey{}, info)
+}
+
+func ExecutionInfoFromContext(ctx context.Context) (ExecutionInfo, bool) {
+	if ctx == nil {
+		return ExecutionInfo{}, false
+	}
+	info, ok := ctx.Value(executionInfoKey{}).(ExecutionInfo)
+	return info, ok
 }
 
 func NewStore(opts ...StoreOption) (*Store, error) {
@@ -89,11 +119,17 @@ func NewStore(opts ...StoreOption) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	clock := cfg.clock
+	if clock == nil {
+		clock = model.RealClock
+	}
+	loadTimestamp := clock()
 	s := &Store{
 		runtime: runtime,
 		types:   cfg.types,
+		clock:   clock,
 		operations: []store.OperationRecord{
-			{Kind: store.OperationRecordLoad, Load: load},
+			{Kind: store.OperationRecordLoad, Timestamp: loadTimestamp, Load: load},
 		},
 	}
 	if err := s.materialize(context.Background()); err != nil {
@@ -152,12 +188,23 @@ func WithTypeProvider(types registry.TypeProvider) StoreOption {
 	}
 }
 
+func withClock(clock model.Clock) StoreOption {
+	return func(cfg *config) error {
+		cfg.clock = clock
+		return nil
+	}
+}
+
 func (s *Store) Snapshot(policy SnapshotPolicy) ([]SnapshotItem, error) {
 	return store.NewState(s.state, s.types).Snapshot(policy)
 }
 
 func (s *Store) Dotenv(policy DotenvPolicy) ([]string, error) {
 	return store.NewState(s.state, s.types).Dotenv(policy)
+}
+
+func (s *Store) Type(policy TypePolicy) (TypeResult, error) {
+	return store.NewState(s.state, s.types).Type(policy)
 }
 
 func (s *Store) Get(key string, policy GetPolicy) (GetResult, bool, error) {
@@ -200,14 +247,14 @@ func (s *Store) Update(ctx context.Context, newOrUpdated, deleted []string) erro
 	if err != nil {
 		return err
 	}
-	return s.applyDotenvWithContext(ctx, input.DotenvSource, input.Dotenv, deleted)
+	return s.applyDotenvWithContext(ctx, sourceFromContext(ctx, input.DotenvSource), input.Dotenv, deleted)
 }
 
 func (s *Store) Delete(ctx context.Context, keys ...string) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return s.applyDotenvWithContext(ctx, Source{}, nil, keys)
+	return s.applyDotenvWithContext(ctx, sourceFromContext(ctx, Source{}), nil, keys)
 }
 
 func (s *Store) StateEnvelope(ctx context.Context) (StateEnvelope, error) {
@@ -242,20 +289,26 @@ func (s *Store) applyDotenvWithContext(ctx context.Context, source Source, vars 
 		return nil
 	}
 	if len(vars) > 0 {
+		timestamp := s.clock()
 		s.operations = append(s.operations, store.OperationRecord{
-			Kind: store.OperationRecordUpdate,
+			Kind:      store.OperationRecordUpdate,
+			Timestamp: timestamp,
 			Update: store.UpdateOperation{
-				Source: source,
-				Dotenv: vars,
+				Source:    source,
+				Dotenv:    vars,
+				Timestamp: timestamp,
 			},
 		})
 	}
 	if len(deleted) > 0 {
+		timestamp := s.clock()
 		s.operations = append(s.operations, store.OperationRecord{
-			Kind: store.OperationRecordDelete,
+			Kind:      store.OperationRecordDelete,
+			Timestamp: timestamp,
 			Delete: store.DeleteOperation{
-				Keys:   append([]string{}, deleted...),
-				Source: source,
+				Keys:      append([]string{}, deleted...),
+				Source:    source,
+				Timestamp: timestamp,
 			},
 		})
 	}
@@ -268,5 +321,27 @@ func (s *Store) materialize(ctx context.Context) error {
 		return err
 	}
 	s.state = envelope.State
+	if len(s.state.Operations) == 0 {
+		s.state.Operations = append([]model.OperationMetadata{}, envelope.Provenance.Operations...)
+	}
 	return nil
+}
+
+func sourceFromContext(ctx context.Context, fallback Source) Source {
+	info, ok := ExecutionInfoFromContext(ctx)
+	if !ok {
+		return fallback
+	}
+
+	name := "[execution]"
+	if info.KnownID != "" {
+		name = "#" + info.KnownID
+	}
+	if info.KnownName != "" {
+		name = "#" + info.KnownName
+	}
+	if info.ExecContext != "" {
+		name = "[" + info.ExecContext + "]"
+	}
+	return Source{Name: name, Kind: "execution"}
 }
