@@ -85,6 +85,7 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 			description = declaration.Description
 		}
 		if diagnostic != nil {
+			diagnostic.Owner = model.DiagnosticOwnerProjection
 			state.Diagnostics = append(state.Diagnostics, *diagnostic)
 		}
 		if _, ok := seenFields[fieldRef]; ok {
@@ -94,8 +95,9 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 				Message:  "dotenv keys project to the same semantic field; keeping the first value",
 				Key:      key,
 				FieldRef: fieldRef,
+				Owner:    model.DiagnosticOwnerProjection,
 			})
-			state.Bindings = append(state.Bindings, newBinding(opID, key, fieldRef, description, source, origin, confidence, explicit, preserveKey, now))
+			state.Bindings = append(state.Bindings, newBinding(opID, key, fieldRef, description, source, origin, confidence, explicit, preserveKey, false, now))
 			seenKeys[key] = struct{}{}
 			continue
 		}
@@ -121,7 +123,11 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 			UpdatedAt:       now,
 			LastOperationID: opID,
 		}
-		state.Bindings = append(state.Bindings, newBinding(opID, key, fieldRef, description, source, origin, confidence, explicit, preserveKey, now))
+		required := false
+		if declaration, ok := declarationsByKey[key]; ok {
+			required = declaration.Required
+		}
+		state.Bindings = append(state.Bindings, newBinding(opID, key, fieldRef, description, source, origin, confidence, explicit, preserveKey, required, now))
 		state.Operations = append(state.Operations, model.OperationMetadata{
 			ID:           opID,
 			Kind:         model.OperationKindLoad,
@@ -147,6 +153,7 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 				Message:  "dotenv declarations project to the same semantic field; keeping the first field value",
 				Key:      key,
 				FieldRef: fieldRef,
+				Owner:    model.DiagnosticOwnerProjection,
 			})
 			continue
 		}
@@ -173,6 +180,7 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 			model.BindingConfidenceExplicit,
 			true,
 			false,
+			declaration.Required,
 			now,
 		))
 		state.Operations = append(state.Operations, model.OperationMetadata{
@@ -183,15 +191,6 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 			Source:       declaration.Source,
 			ProjectionID: model.ProjectionDotenv,
 		})
-		if declaration.Required {
-			state.Diagnostics = append(state.Diagnostics, model.Diagnostic{
-				Severity: model.DiagnosticError,
-				Code:     "dotenv.unresolved-required",
-				Message:  "required declared dotenv field has no observed value",
-				Key:      key,
-				FieldRef: fieldRef,
-			})
-		}
 	}
 
 	return state
@@ -215,6 +214,7 @@ func RenderDotenvProjection(state model.EffectiveState, policy model.RenderPolic
 				Message:  "unresolved semantic field has no dotenv value to render",
 				Key:      key,
 				FieldRef: binding.FieldRef,
+				Owner:    model.DiagnosticOwnerProjection,
 			})
 			continue
 		}
@@ -225,6 +225,7 @@ func RenderDotenvProjection(state model.EffectiveState, policy model.RenderPolic
 				Message:  "multiple semantic fields render to the same dotenv key; skipping later value",
 				Key:      key,
 				FieldRef: binding.FieldRef,
+				Owner:    model.DiagnosticOwnerProjection,
 			})
 			continue
 		}
@@ -264,6 +265,7 @@ func newBinding(
 	confidence model.BindingConfidence,
 	explicit bool,
 	preserveKey bool,
+	required bool,
 	now time.Time,
 ) model.Binding {
 	return model.Binding{
@@ -277,6 +279,7 @@ func newBinding(
 		Confidence:      confidence,
 		Explicit:        explicit,
 		PreserveKey:     preserveKey,
+		Required:        required,
 		CreatedAt:       now,
 		UpdatedAt:       now,
 		LastOperationID: opID,

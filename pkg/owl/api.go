@@ -34,6 +34,7 @@ type (
 	Exposure           = model.Exposure
 	Diagnostic         = model.Diagnostic
 	DiagnosticSeverity = model.DiagnosticSeverity
+	OperationMetadata  = model.OperationMetadata
 )
 
 const (
@@ -63,6 +64,7 @@ type Store struct {
 	types      registry.TypeProvider
 	state      model.EffectiveState
 	operations []store.OperationRecord
+	clock      model.Clock
 }
 
 type StoreOption func(*config) error
@@ -73,6 +75,7 @@ type config struct {
 	contracts []store.EnvContract
 	envelope  *store.StateEnvelope
 	types     registry.TypeProvider
+	clock     model.Clock
 }
 
 type executionInfoKey struct{}
@@ -116,11 +119,17 @@ func NewStore(opts ...StoreOption) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	clock := cfg.clock
+	if clock == nil {
+		clock = model.RealClock
+	}
+	loadTimestamp := clock()
 	s := &Store{
 		runtime: runtime,
 		types:   cfg.types,
+		clock:   clock,
 		operations: []store.OperationRecord{
-			{Kind: store.OperationRecordLoad, Load: load},
+			{Kind: store.OperationRecordLoad, Timestamp: loadTimestamp, Load: load},
 		},
 	}
 	if err := s.materialize(context.Background()); err != nil {
@@ -175,6 +184,13 @@ func WithStateEnvelope(envelope StateEnvelope) StoreOption {
 func WithTypeProvider(types registry.TypeProvider) StoreOption {
 	return func(cfg *config) error {
 		cfg.types = types
+		return nil
+	}
+}
+
+func withClock(clock model.Clock) StoreOption {
+	return func(cfg *config) error {
+		cfg.clock = clock
 		return nil
 	}
 }
@@ -273,20 +289,26 @@ func (s *Store) applyDotenvWithContext(ctx context.Context, source Source, vars 
 		return nil
 	}
 	if len(vars) > 0 {
+		timestamp := s.clock()
 		s.operations = append(s.operations, store.OperationRecord{
-			Kind: store.OperationRecordUpdate,
+			Kind:      store.OperationRecordUpdate,
+			Timestamp: timestamp,
 			Update: store.UpdateOperation{
-				Source: source,
-				Dotenv: vars,
+				Source:    source,
+				Dotenv:    vars,
+				Timestamp: timestamp,
 			},
 		})
 	}
 	if len(deleted) > 0 {
+		timestamp := s.clock()
 		s.operations = append(s.operations, store.OperationRecord{
-			Kind: store.OperationRecordDelete,
+			Kind:      store.OperationRecordDelete,
+			Timestamp: timestamp,
 			Delete: store.DeleteOperation{
-				Keys:   append([]string{}, deleted...),
-				Source: source,
+				Keys:      append([]string{}, deleted...),
+				Source:    source,
+				Timestamp: timestamp,
 			},
 		})
 	}
@@ -299,6 +321,9 @@ func (s *Store) materialize(ctx context.Context) error {
 		return err
 	}
 	s.state = envelope.State
+	if len(s.state.Operations) == 0 {
+		s.state.Operations = append([]model.OperationMetadata{}, envelope.Provenance.Operations...)
+	}
 	return nil
 }
 

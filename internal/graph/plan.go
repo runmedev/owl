@@ -33,7 +33,9 @@ func planStateEnvelopeQuery(records []store.OperationRecord) (plannedQuery, erro
 		case store.OperationRecordLoad:
 			name := fmt.Sprintf("load_%d", index)
 			varDefs = append(varDefs, variableDefinition(name, nonNull(namedType("LoadInput"))))
-			vars[name] = marshalInput(record.Load)
+			input := record.Load
+			input.Timestamp = record.Timestamp
+			vars[name] = marshalInput(input)
 			current.Selections = append(current.Selections, field("load", []*ast.Argument{
 				argument("input", variable(name)),
 			}, next))
@@ -44,6 +46,7 @@ func planStateEnvelopeQuery(records []store.OperationRecord) (plannedQuery, erro
 			vars[name] = marshalDotenvInput(store.LoadInput{
 				DotenvSource: record.Update.Source,
 				Dotenv:       record.Update.Dotenv,
+				Timestamp:    record.Timestamp,
 			})
 			current.Selections = append(current.Selections, field("update", []*ast.Argument{
 				argument("dotenv", variable(name)),
@@ -115,11 +118,13 @@ func stateEnvelopeTerminal() *ast.Field {
 							field("confidence", nil, nil),
 							field("explicit", nil, nil),
 							field("preserveKey", nil, nil),
+							field("required", nil, nil),
 						}})),
 						field("diagnostics", nil, diagnosticSelection()),
 					}})),
 					field("provenance", nil, ast.NewSelectionSet(&ast.SelectionSet{Selections: []ast.Selection{
 						field("sources", nil, sourceSelection()),
+						field("operations", nil, operationMetadataSelection()),
 					}})),
 				}})),
 			}})),
@@ -149,6 +154,18 @@ func diagnosticSelection() *ast.SelectionSet {
 		field("message", nil, nil),
 		field("key", nil, nil),
 		field("field", nil, nil),
+		field("owner", nil, nil),
+	}})
+}
+
+func operationMetadataSelection() *ast.SelectionSet {
+	return ast.NewSelectionSet(&ast.SelectionSet{Selections: []ast.Selection{
+		field("id", nil, nil),
+		field("kind", nil, nil),
+		field("timestamp", nil, nil),
+		field("actor", nil, nil),
+		field("source", nil, sourceSelection()),
+		field("projection", nil, nil),
 	}})
 }
 

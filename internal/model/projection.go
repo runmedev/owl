@@ -46,6 +46,7 @@ type Binding struct {
 	Confidence      BindingConfidence
 	Explicit        bool
 	PreserveKey     bool
+	Required        bool
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 	LastOperationID OperationID

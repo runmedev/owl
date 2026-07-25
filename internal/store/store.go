@@ -138,32 +138,36 @@ type LoadInput struct {
 	Dotenv       []DotenvVariable
 	Contracts    []EnvContract
 	Envelope     *StateEnvelope
+	Timestamp    time.Time
 }
 
 type LoadOperation struct {
-	Input LoadInput
+	Input     LoadInput
+	Timestamp time.Time
 }
 
 func (op LoadOperation) Record() OperationRecord {
-	return OperationRecord{Kind: OperationRecordLoad, Load: op.Input}
+	return OperationRecord{Kind: OperationRecordLoad, Timestamp: op.Timestamp, Load: op.Input}
 }
 
 type UpdateOperation struct {
-	Source model.Source
-	Dotenv []DotenvVariable
+	Source    model.Source
+	Dotenv    []DotenvVariable
+	Timestamp time.Time
 }
 
 func (op UpdateOperation) Record() OperationRecord {
-	return OperationRecord{Kind: OperationRecordUpdate, Update: op}
+	return OperationRecord{Kind: OperationRecordUpdate, Timestamp: op.Timestamp, Update: op}
 }
 
 type DeleteOperation struct {
-	Keys   []string
-	Source model.Source
+	Keys      []string
+	Source    model.Source
+	Timestamp time.Time
 }
 
 func (op DeleteOperation) Record() OperationRecord {
-	return OperationRecord{Kind: OperationRecordDelete, Delete: op}
+	return OperationRecord{Kind: OperationRecordDelete, Timestamp: op.Timestamp, Delete: op}
 }
 
 type OperationRecordKind string
@@ -175,10 +179,11 @@ const (
 )
 
 type OperationRecord struct {
-	Kind   OperationRecordKind
-	Load   LoadInput
-	Update UpdateOperation
-	Delete DeleteOperation
+	Kind      OperationRecordKind
+	Timestamp time.Time
+	Load      LoadInput
+	Update    UpdateOperation
+	Delete    DeleteOperation
 }
 
 type NormalizeOperation struct{}
@@ -221,7 +226,53 @@ func Diagnostics(err error) []model.Diagnostic {
 		Severity: model.DiagnosticError,
 		Code:     "owl.error",
 		Message:  err.Error(),
+		Owner:    model.DiagnosticOwnerParse,
 	}}
+}
+
+func operationTimestamp(timestamp time.Time) time.Time {
+	if timestamp.IsZero() {
+		return model.RealClock()
+	}
+	return timestamp
+}
+
+func firstTime(values ...time.Time) time.Time {
+	for _, value := range values {
+		if !value.IsZero() {
+			return value
+		}
+	}
+	return time.Time{}
+}
+
+func timestampRecordedOperation(record OperationRecord) (OperationRecord, Operation) {
+	if record.Timestamp.IsZero() {
+		record.Timestamp = model.RealClock()
+	}
+	switch record.Kind {
+	case OperationRecordLoad:
+		return record, LoadOperation{Input: record.Load, Timestamp: record.Timestamp}
+	case OperationRecordUpdate:
+		record.Update.Timestamp = record.Timestamp
+		return record, record.Update
+	case OperationRecordDelete:
+		record.Delete.Timestamp = record.Timestamp
+		return record, record.Delete
+	default:
+		return record, NormalizeOperation{}
+	}
+}
+
+func withoutDiagnosticOwner(diagnostics []model.Diagnostic, owner model.DiagnosticOwner) []model.Diagnostic {
+	filtered := diagnostics[:0]
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Owner == owner {
+			continue
+		}
+		filtered = append(filtered, diagnostic)
+	}
+	return filtered
 }
 
 func NewStore(opts ...StoreOption) (*Store, error) {
@@ -287,7 +338,9 @@ func WithTypeProvider(types registry.TypeProvider) StoreOption {
 
 func (s *Store) Apply(ctx context.Context, op Operation) (model.EffectiveState, error) {
 	if recorded, ok := op.(RecordedOperation); ok {
-		s.operations = append(s.operations, recorded.Record())
+		record, timestamped := timestampRecordedOperation(recorded.Record())
+		s.operations = append(s.operations, record)
+		op = timestamped
 	}
 	state, err := op.Apply(ctx, s.state)
 	if err != nil {
@@ -299,8 +352,13 @@ func (s *Store) Apply(ctx context.Context, op Operation) (model.EffectiveState, 
 
 func (op LoadOperation) Apply(context.Context, model.EffectiveState) (model.EffectiveState, error) {
 	if op.Input.Envelope != nil {
-		return op.Input.Envelope.State, nil
+		state := op.Input.Envelope.State
+		if len(state.Operations) == 0 {
+			state.Operations = append([]model.OperationMetadata{}, op.Input.Envelope.Provenance.Operations...)
+		}
+		return state, nil
 	}
+	timestamp := operationTimestamp(firstTime(op.Timestamp, op.Input.Timestamp))
 	values := make(map[string]string, len(op.Input.Dotenv))
 	for _, variable := range op.Input.Dotenv {
 		values[variable.Key] = variable.Value
@@ -313,6 +371,7 @@ func (op LoadOperation) Apply(context.Context, model.EffectiveState) (model.Effe
 	return dotenv.IngestDotenv(values, dotenv.DotenvIngestOptions{
 		Source:       source,
 		Declarations: declarations,
+		Clock:        func() time.Time { return timestamp },
 	}), nil
 }
 
@@ -320,6 +379,7 @@ func (op UpdateOperation) Apply(_ context.Context, state model.EffectiveState) (
 	if state.Values == nil {
 		state = model.NewEffectiveState()
 	}
+	timestamp := operationTimestamp(op.Timestamp)
 	source := op.Source
 	if source.Name == "" {
 		source = model.Source{Name: ".env", Kind: "dotenv"}
@@ -341,10 +401,16 @@ func (op UpdateOperation) Apply(_ context.Context, state model.EffectiveState) (
 				Origin:       source,
 				Confidence:   model.BindingConfidenceOpaque,
 				PreserveKey:  true,
+				CreatedAt:    timestamp,
+				UpdatedAt:    timestamp,
 			}
 			state.Bindings = append(state.Bindings, binding)
 		}
 		value := state.Values[ref]
+		changed := value.Original != variable.Value ||
+			value.Resolved != variable.Value ||
+			value.Visibility != model.VisibilityLiteral ||
+			value.Source != source
 		value.FieldRef = ref
 		value.Original = variable.Value
 		value.Resolved = variable.Value
@@ -359,11 +425,20 @@ func (op UpdateOperation) Apply(_ context.Context, state model.EffectiveState) (
 			value.Origin = binding.Origin
 		}
 		value.Source = source
-		value.UpdatedAt = model.RealClock()
+		if changed || value.UpdatedAt.IsZero() {
+			value.UpdatedAt = timestamp
+		}
 		if value.CreatedAt.IsZero() {
 			value.CreatedAt = value.UpdatedAt
 		}
 		state.Values[ref] = value
+		state.Operations = append(state.Operations, model.OperationMetadata{
+			ID:           model.OperationID("update:" + variable.Key),
+			Kind:         model.OperationKindSet,
+			Timestamp:    timestamp,
+			Source:       source,
+			ProjectionID: model.ProjectionDotenv,
+		})
 	}
 	return state, nil
 }
@@ -404,6 +479,7 @@ func (op ValidateOperation) Apply(_ context.Context, state model.EffectiveState)
 	if types == nil {
 		types = registry.NewBuiltInRegistry()
 	}
+	state.Diagnostics = withoutDiagnosticOwner(state.Diagnostics, model.DiagnosticOwnerValidation)
 	state.Diagnostics = append(state.Diagnostics, ValidateState(state, types)...)
 	return state, nil
 }
@@ -616,6 +692,7 @@ func LoadInputFromSourceBytes(envs, specs []SourceBytes) (LoadInput, error) {
 				Message:  fmt.Sprintf("unknown env spec type %q", declaration.UnknownType),
 				Key:      string(declaration.Key),
 				FieldRef: declaration.FieldRef,
+				Owner:    model.DiagnosticOwnerParse,
 			}}}
 		}
 		contract := EnvContract{

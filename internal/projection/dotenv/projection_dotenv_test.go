@@ -114,7 +114,8 @@ func TestIngestDotenv_MaterializesDeclaredMissingField(t *testing.T) {
 	assert.Equal(t, model.VisibilityUnresolved, state.Values[missingPassword].Visibility)
 	assert.Equal(t, model.SensitivitySensitive, state.Values[missingPassword].Sensitivity)
 	assert.Equal(t, model.OperationID("mat-op-000002"), state.Values[missingPassword].LastOperationID)
-	assert.Contains(t, diagnosticCodes(state.Diagnostics), "dotenv.unresolved-required")
+	assert.Empty(t, state.Diagnostics)
+	assert.True(t, state.Bindings[1].Required)
 	require.Len(t, state.Operations, 2)
 	assert.Equal(t, model.OperationKindNormalize, state.Operations[1].Kind)
 

@@ -126,12 +126,21 @@ const (
 	DiagnosticError   DiagnosticSeverity = "error"
 )
 
+type DiagnosticOwner string
+
+const (
+	DiagnosticOwnerParse      DiagnosticOwner = "parse"
+	DiagnosticOwnerProjection DiagnosticOwner = "projection"
+	DiagnosticOwnerValidation DiagnosticOwner = "validation"
+)
+
 type Diagnostic struct {
 	Severity DiagnosticSeverity
 	Code     string
 	Message  string
 	Key      string
 	FieldRef FieldRef
+	Owner    DiagnosticOwner
 }
 
 type EffectiveState struct {
