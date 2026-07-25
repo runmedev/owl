@@ -107,6 +107,8 @@ func TestPublicAPIVisibilityAndExposure(t *testing.T) {
 	assert.Equal(t, owl.ExposureOpaque, byName["DATABASE_URL"].Exposure)
 
 	assert.Equal(t, "[unset]", byName["MISSING_TOKEN"].Value)
+	assert.Empty(t, byName["MISSING_TOKEN"].OriginalValue)
+	assert.Equal(t, "Missing token", byName["MISSING_TOKEN"].Description)
 	assert.Equal(t, owl.VisibilityUnresolved, byName["MISSING_TOKEN"].Visibility)
 	assert.Equal(t, owl.ExposureClear, byName["MISSING_TOKEN"].Exposure)
 	assert.Empty(t, byName["MISSING_TOKEN"].Source)
