@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestStoreSnapshotRendersVisibilityColumn(t *testing.T) {
+func TestStoreSnapshotRendersStatusColumn(t *testing.T) {
 	t.Parallel()
 
 	client := &fakeStoreClient{
@@ -38,8 +38,8 @@ func TestStoreSnapshotRendersVisibilityColumn(t *testing.T) {
 	cmd.SetArgs([]string{"snapshot", "--all"})
 
 	require.NoError(t, cmd.Execute())
-	assert.Contains(t, out.String(), "VISIBILITY")
-	assert.NotContains(t, out.String(), "STATUS")
+	assert.Contains(t, out.String(), "STATUS")
+	assert.NotContains(t, out.String(), "VISIBILITY")
 	assert.NotContains(t, out.String(), "EXPOSURE")
 	assert.Contains(t, out.String(), "masked")
 }
