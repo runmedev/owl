@@ -38,6 +38,8 @@ type = "github.com/runmedev/owl/types/universe/redis"
 password = "REDIS_AUTH_TOKEN"
 ```
 
+See `examples/redis/owl.toml` for a runnable minimal example.
+
 This says the project needs a Redis connection named `queues`.
 
 Required Redis fields not listed under `dotenv` are inferred:

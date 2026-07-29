@@ -1,0 +1,5 @@
+[needs.redis.queues]
+type = "github.com/runmedev/owl/types/universe/redis"
+
+[needs.redis.queues.dotenv]
+password = "REDIS_AUTH_TOKEN"
