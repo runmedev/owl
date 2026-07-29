@@ -44,6 +44,37 @@ func TestStoreSnapshotRendersStatusColumn(t *testing.T) {
 	assert.Contains(t, out.String(), "masked")
 }
 
+func TestStoreSnapshotRendersDiagnosticStatus(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeStoreClient{
+		snapshot: &SnapshotResult{Envs: []SnapshotEnv{
+			{
+				Name:        "REDIS_HOST",
+				Value:       "not a host",
+				Type:        "universe/redis",
+				Source:      ".env",
+				Visibility:  "type.invalid-host: host value must be a hostname or IP address",
+				Description: "Redis host",
+			},
+		}},
+	}
+	cmd := NewStoreCommand(StoreCommandOptions{
+		ClientFactory: func(*cobra.Command) (StoreClient, error) {
+			return client, nil
+		},
+	})
+
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"snapshot", "--all"})
+
+	require.NoError(t, cmd.Execute())
+	assert.Contains(t, out.String(), "type.invalid-host")
+	assert.NotContains(t, out.String(), "\tliteral\t")
+}
+
 func TestStoreSnapshotRendersExplicitItemsByDefault(t *testing.T) {
 	t.Parallel()
 

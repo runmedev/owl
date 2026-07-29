@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/graphql-go/graphql"
@@ -731,6 +732,9 @@ func decodeSource(raw interface{}) model.Source {
 }
 
 func decodeFieldRef(raw interface{}) model.FieldRef {
+	if ref, ok := raw.(string); ok {
+		return decodeFieldRefString(ref)
+	}
 	field, ok := raw.(map[string]interface{})
 	if !ok {
 		return model.FieldRef{}
@@ -740,6 +744,23 @@ func decodeFieldRef(raw interface{}) model.FieldRef {
 		Instance: stringValue(field["instance"]),
 		Field:    stringValue(field["field"]),
 	}
+}
+
+func decodeFieldRefString(raw string) model.FieldRef {
+	typeRef, field, ok := strings.Cut(raw, ".")
+	if !ok {
+		return model.FieldRef{}
+	}
+	instance := ""
+	if before, after, ok := strings.Cut(typeRef, "("); ok {
+		typeRef = before
+		instance = strings.Trim(after, ")\"")
+	}
+	typeID, err := model.ParseTypeID(typeRef)
+	if err != nil {
+		return model.FieldRef{}
+	}
+	return model.FieldRef{TypeID: typeID, Instance: instance, Field: field}
 }
 
 func decodeStringList(raw interface{}) []string {

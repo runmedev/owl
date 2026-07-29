@@ -40,7 +40,7 @@ func TestLocalStoreClientUsesV2StoreSemantics(t *testing.T) {
 	assert.Equal(t, "core/opaque", byName["DATABASE_URL"].Type)
 	assert.Equal(t, "hidden", byName["DATABASE_URL"].Visibility)
 	assert.Equal(t, "[unset]", byName["MISSING_TOKEN"].Value)
-	assert.Equal(t, "unresolved", byName["MISSING_TOKEN"].Visibility)
+	assert.Contains(t, byName["MISSING_TOKEN"].Visibility, "dotenv.unresolved-required")
 
 	source, err := client.Source(context.Background(), SourceRequest{Insecure: true})
 	require.NoError(t, err)

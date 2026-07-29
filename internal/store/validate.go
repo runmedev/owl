@@ -2,6 +2,7 @@ package store
 
 import (
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 
@@ -133,6 +134,16 @@ func validatePrimitiveValue(typeID model.TypeID, value model.Value) []model.Diag
 				Owner:    model.DiagnosticOwnerValidation,
 			}}
 		}
+		if !isValidHost(value.Resolved) {
+			return []model.Diagnostic{{
+				Severity: model.DiagnosticError,
+				Code:     "type.invalid-host",
+				Message:  "host value must be a hostname or IP address",
+				Key:      "",
+				FieldRef: value.FieldRef,
+				Owner:    model.DiagnosticOwnerValidation,
+			}}
+		}
 	case model.TypeCorePort:
 		port, err := strconv.Atoi(value.Resolved)
 		if err != nil || port < 1 || port > 65535 {
@@ -157,4 +168,46 @@ func validatePrimitiveValue(typeID model.TypeID, value model.Value) []model.Diag
 		}
 	}
 	return nil
+}
+
+func isValidHost(value string) bool {
+	host := strings.TrimSpace(value)
+	if host == "" || host != value {
+		return false
+	}
+
+	if strings.HasPrefix(host, "[") || strings.HasSuffix(host, "]") {
+		if !strings.HasPrefix(host, "[") || !strings.HasSuffix(host, "]") {
+			return false
+		}
+		host = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
+	}
+	if net.ParseIP(host) != nil {
+		return true
+	}
+
+	if strings.ContainsAny(host, "/:@") {
+		return false
+	}
+	host = strings.TrimSuffix(host, ".")
+	if host == "" || len(host) > 253 {
+		return false
+	}
+
+	hasLetter := false
+	for _, label := range strings.Split(host, ".") {
+		if label == "" || len(label) > 63 || strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
+			return false
+		}
+		for _, r := range label {
+			switch {
+			case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z':
+				hasLetter = true
+			case r >= '0' && r <= '9', r == '-':
+			default:
+				return false
+			}
+		}
+	}
+	return hasLetter
 }

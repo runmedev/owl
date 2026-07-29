@@ -434,6 +434,51 @@ func TestPublicAPIWithConfigValidatesRedisPort(t *testing.T) {
 	assert.Equal(t, `universe/redis("queues").port`, port.Field.String())
 }
 
+func TestPublicAPIWithConfigValidatesRedisHost(t *testing.T) {
+	t.Parallel()
+
+	store, err := owl.NewStore(
+		owl.WithConfig(owl.ConfigInput{
+			Needs: []owl.NeedInput{
+				{
+					ID:       "redis.queues",
+					Type:     owl.TypeUniverseRedis,
+					Instance: "queues",
+				},
+			},
+		}),
+		owl.WithDotenv(".env", strings.NewReader("QUEUES_REDIS_HOST=not a host\nQUEUES_REDIS_PORT=6379\nQUEUES_REDIS_PASSWORD=secret\n")),
+	)
+	require.NoError(t, err)
+
+	check := store.Check()
+	assert.False(t, check.OK)
+	assert.Contains(t, diagnosticCodes(check.Diagnostics), "type.invalid-host")
+}
+
+func TestPublicAPIWithConfigIncludesRedisHostDiagnosticsInSnapshot(t *testing.T) {
+	t.Parallel()
+
+	store, err := owl.NewStore(
+		owl.WithConfig(owl.ConfigInput{
+			Needs: []owl.NeedInput{
+				{
+					ID:       "redis.queues",
+					Type:     owl.TypeUniverseRedis,
+					Instance: "queues",
+				},
+			},
+		}),
+		owl.WithDotenv(".env", strings.NewReader("QUEUES_REDIS_HOST=not a host\nQUEUES_REDIS_PORT=6379\nQUEUES_REDIS_PASSWORD=secret\n")),
+	)
+	require.NoError(t, err)
+
+	snapshot, err := store.Snapshot(owl.SnapshotPolicy{})
+	require.NoError(t, err)
+	byName := snapshotByName(snapshot)
+	assert.Contains(t, diagnosticCodes(byName["QUEUES_REDIS_HOST"].Diagnostics), "type.invalid-host")
+}
+
 func TestV2PublicAPIDiagnostics(t *testing.T) {
 	t.Parallel()
 

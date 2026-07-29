@@ -107,6 +107,34 @@ func TestStoreTypeSkipsDefaultPlainProposalsByDefault(t *testing.T) {
 	assert.Equal(t, model.TypeCoreSecret, result.Proposals[0].SuggestedType)
 }
 
+func TestValidateCoreHost(t *testing.T) {
+	t.Parallel()
+
+	valid := []string{"localhost", "redis.internal", "redis-1", "127.0.0.1", "::1", "[::1]"}
+	for _, host := range valid {
+		t.Run(host, func(t *testing.T) {
+			t.Parallel()
+			assert.Empty(t, validatePrimitiveValue(model.TypeCoreHost, model.Value{
+				Resolved:   host,
+				Visibility: model.VisibilityLiteral,
+			}))
+		})
+	}
+
+	invalid := []string{"not a host", "http://localhost", "redis:6379", "-redis", "redis-", "123"}
+	for _, host := range invalid {
+		t.Run(host, func(t *testing.T) {
+			t.Parallel()
+			diagnostics := validatePrimitiveValue(model.TypeCoreHost, model.Value{
+				Resolved:   host,
+				Visibility: model.VisibilityLiteral,
+			})
+			require.NotEmpty(t, diagnostics)
+			assert.Equal(t, "type.invalid-host", diagnostics[0].Code)
+		})
+	}
+}
+
 func TestStoreWithDotenv(t *testing.T) {
 	t.Parallel()
 
