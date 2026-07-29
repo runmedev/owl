@@ -56,6 +56,7 @@ func TestStoreSnapshotRendersDiagnosticStatus(t *testing.T) {
 				Source:      ".env",
 				Visibility:  "type.invalid-host: host value must be a hostname or IP address",
 				Description: "Redis host",
+				Invalid:     true,
 			},
 		}},
 	}
@@ -65,14 +66,16 @@ func TestStoreSnapshotRendersDiagnosticStatus(t *testing.T) {
 		},
 	})
 
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
 	cmd.SetArgs([]string{"snapshot", "--all"})
 
 	require.NoError(t, cmd.Execute())
-	assert.Contains(t, out.String(), "type.invalid-host")
-	assert.NotContains(t, out.String(), "\tliteral\t")
+	assert.Contains(t, stdout.String(), "type.invalid-host")
+	assert.NotContains(t, stdout.String(), "\tliteral\t")
+	assert.Contains(t, stderr.String(), "run `owl check`")
 }
 
 func TestStoreSnapshotRendersExplicitItemsByDefault(t *testing.T) {

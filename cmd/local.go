@@ -519,6 +519,13 @@ func snapshotEnvsFromItems(items []owl.SnapshotItem) []SnapshotEnv {
 		if len(item.Diagnostics) > 0 {
 			status = item.Diagnostics[0].Code
 		}
+		invalid := false
+		for _, diagnostic := range item.Diagnostics {
+			if diagnostic.Severity == owl.DiagnosticError {
+				invalid = true
+				break
+			}
+		}
 		envs = append(envs, SnapshotEnv{
 			Name:        item.Name,
 			Value:       item.Value,
@@ -529,6 +536,7 @@ func snapshotEnvsFromItems(items []owl.SnapshotItem) []SnapshotEnv {
 			Explicit:    item.Explicit,
 			Visibility:  status,
 			Diagnostics: diagnostics,
+			Invalid:     invalid,
 		})
 	}
 	return envs

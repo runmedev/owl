@@ -51,6 +51,7 @@ type SnapshotEnv struct {
 	Explicit    bool
 	Visibility  string
 	Diagnostics []string
+	Invalid     bool
 }
 
 type SourceRequest struct {
@@ -155,7 +156,13 @@ func newSnapshotCommand(opts StoreCommandOptions) *cobra.Command {
 				return err
 			}
 
-			return errors.Wrap(renderSnapshot(cmd.OutOrStdout(), result, req), "failed to render")
+			if err := renderSnapshot(cmd.OutOrStdout(), result, req); err != nil {
+				return errors.Wrap(err, "failed to render")
+			}
+			if snapshotHasInvalidRows(result.Envs, req) {
+				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "warning: snapshot contains invalid state; run `owl check` for details")
+			}
+			return nil
 		},
 	}
 
@@ -320,6 +327,18 @@ func renderSnapshot(w io.Writer, result *SnapshotResult, req SnapshotRequest) er
 	}
 
 	return tw.Flush()
+}
+
+func snapshotHasInvalidRows(envs []SnapshotEnv, req SnapshotRequest) bool {
+	for i, env := range snapshotEnvsForRender(envs, req) {
+		if i >= req.Limit && !req.All {
+			break
+		}
+		if env.Invalid {
+			return true
+		}
+	}
+	return false
 }
 
 func snapshotEnvsForRender(envs []SnapshotEnv, req SnapshotRequest) []SnapshotEnv {
