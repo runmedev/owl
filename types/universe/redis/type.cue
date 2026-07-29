@@ -1,6 +1,11 @@
 package redis
 
-import owl "github.com/runmedev/owl/schema"
+import (
+	corehost "github.com/runmedev/owl/types/core/host"
+	coreport "github.com/runmedev/owl/types/core/port"
+	coresecret "github.com/runmedev/owl/types/core/secret"
+	owl "github.com/runmedev/owl/schema"
+)
 
 #Redis: owl.#Type & {
 	id:          "github.com/runmedev/owl/types/universe/redis"
@@ -27,7 +32,7 @@ import owl "github.com/runmedev/owl/schema"
 }
 
 #RedisValue: {
-	host:     string & !=""
-	port:     int & >=1 & <=65535
-	password: string & !=""
+	host:     corehost.HostValue
+	port:     coreport.PortValue
+	password: coresecret.SecretValue
 }

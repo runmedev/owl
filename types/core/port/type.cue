@@ -9,3 +9,5 @@ import owl "github.com/runmedev/owl/schema"
 }
 
 #PortValue: int & >=1 & <=65535
+
+PortValue: #PortValue

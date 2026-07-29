@@ -1,7 +1,10 @@
 package host
 
-import owl "github.com/runmedev/owl/schema"
-import "net"
+import (
+	"net"
+
+	owl "github.com/runmedev/owl/schema"
+)
 
 #Host: owl.#Type & {
 	id:          "github.com/runmedev/owl/types/core/host"
@@ -12,3 +15,5 @@ import "net"
 #HostnameValue: string & =~"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\\.?$" & =~"[A-Za-z]"
 
 #HostValue: net.IP | #HostnameValue
+
+HostValue: #HostValue

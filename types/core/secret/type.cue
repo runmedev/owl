@@ -9,3 +9,5 @@ import owl "github.com/runmedev/owl/schema"
 }
 
 #SecretValue: string & !=""
+
+SecretValue: #SecretValue
