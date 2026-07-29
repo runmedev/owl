@@ -8,6 +8,7 @@ import (
 	"github.com/runmedev/owl/internal/graph"
 	"github.com/runmedev/owl/internal/model"
 	"github.com/runmedev/owl/internal/registry"
+	"github.com/runmedev/owl/internal/requirements"
 	"github.com/runmedev/owl/internal/store"
 )
 
@@ -72,6 +73,7 @@ type StoreOption func(*config) error
 type config struct {
 	envs      []store.SourceBytes
 	specs     []store.SourceBytes
+	requires  []store.SourceBytes
 	contracts []store.EnvContract
 	envelope  *store.StateEnvelope
 	types     registry.TypeProvider
@@ -112,6 +114,13 @@ func NewStore(opts ...StoreOption) (*Store, error) {
 	load, err := store.LoadInputFromSourceBytes(cfg.envs, cfg.specs)
 	if err != nil {
 		return nil, err
+	}
+	for _, source := range cfg.requires {
+		contracts, err := requirements.ParseCUEContracts(source.Raw, Source{Name: source.Name, Kind: "owl-cue"}, cfg.types)
+		if err != nil {
+			return nil, err
+		}
+		load.Contracts = append(load.Contracts, contracts...)
 	}
 	load.Contracts = append(load.Contracts, cfg.contracts...)
 	load.Envelope = cfg.envelope
@@ -160,6 +169,17 @@ func WithEnvSpec(source string, r io.Reader) StoreOption {
 	}
 }
 
+func WithOwlCue(source string, r io.Reader) StoreOption {
+	return func(cfg *config) error {
+		raw, err := io.ReadAll(r)
+		if err != nil {
+			return err
+		}
+		cfg.requires = append(cfg.requires, store.SourceBytes{Name: source, Raw: raw})
+		return nil
+	}
+}
+
 func WithEnvContract(contract EnvContract) StoreOption {
 	return func(cfg *config) error {
 		cfg.contracts = append(cfg.contracts, contract)
@@ -201,6 +221,13 @@ func (s *Store) Snapshot(policy SnapshotPolicy) ([]SnapshotItem, error) {
 
 func (s *Store) Dotenv(policy DotenvPolicy) ([]string, error) {
 	return store.NewState(s.state, s.types).Dotenv(policy)
+}
+
+func (s *Store) DotenvSpec() (string, error) {
+	if len(s.operations) == 0 || s.operations[0].Kind != store.OperationRecordLoad {
+		return requirements.RenderDotenvSpec(nil, s.types)
+	}
+	return requirements.RenderDotenvSpec(s.operations[0].Load.Contracts, s.types)
 }
 
 func (s *Store) Type(policy TypePolicy) (TypeResult, error) {
