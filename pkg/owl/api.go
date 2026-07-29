@@ -189,6 +189,16 @@ func WithConfig(input ConfigInput) StoreOption {
 	}
 }
 
+func WithConfigSource(source string, input ConfigInput) StoreOption {
+	return func(cfg *config) error {
+		cfg.configs = append(cfg.configs, configInputSource{
+			source: model.Source{Name: source, Kind: "owl-config"},
+			input:  input,
+		})
+		return nil
+	}
+}
+
 func WithEnvContract(contract EnvContract) StoreOption {
 	return func(cfg *config) error {
 		cfg.contracts = append(cfg.contracts, contract)

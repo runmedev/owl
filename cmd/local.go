@@ -238,7 +238,7 @@ func (c *LocalStoreClient) ProjectSpec(_ context.Context, req ProjectSpecRequest
 	if err != nil {
 		return nil, err
 	}
-	store, err := owl.NewStore(owl.WithConfig(input))
+	store, err := owl.NewStore(owl.WithConfigSource(configPath, input))
 	if err != nil {
 		return nil, err
 	}
@@ -376,7 +376,7 @@ func writeGeneratedDotenvSpec(path string, rendered string) error {
 }
 
 func isGeneratedDotenvSpec(raw []byte) bool {
-	return strings.HasPrefix(string(raw), requirements.GeneratedDotenvSpecHeader)
+	return strings.HasPrefix(string(raw), requirements.GeneratedDotenvSpecHeaderPrefix)
 }
 
 func renderDotenvSpecTypeProposals(proposals []owl.TypeProposal) string {

@@ -456,6 +456,7 @@ func TestV2PublicAPICompileSurface(t *testing.T) {
 	var _ owl.StoreOption = owl.WithEnvContract(owl.EnvContract{})
 	var _ owl.StoreOption = owl.WithEnvContracts(owl.EnvContract{})
 	var _ owl.StoreOption = owl.WithConfig(owl.ConfigInput{})
+	var _ owl.StoreOption = owl.WithConfigSource("owl.toml", owl.ConfigInput{})
 	var _ owl.StoreOption = owl.WithStateEnvelope(owl.StateEnvelope{})
 	var _ owl.Visibility = owl.VisibilityLiteral
 	var _ owl.Exposure = owl.ExposureClear
