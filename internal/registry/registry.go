@@ -1,14 +1,24 @@
 package registry
 
-import "github.com/runmedev/owl/internal/model"
+import (
+	"path/filepath"
+	"runtime"
+
+	"github.com/runmedev/owl/internal/model"
+)
 
 type TypeProvider interface {
 	ResolveType(model.TypeID) (model.TypeDef, bool)
 	ResolveTypeRef(string) (model.TypeDef, bool, error)
 }
 
+type ValueValidator interface {
+	ValidateValue(model.TypeID, string) error
+}
+
 type BuiltInRegistry struct {
-	types map[model.TypeID]model.TypeDef
+	types   map[model.TypeID]model.TypeDef
+	cueRoot string
 }
 
 func NewBuiltInRegistry() BuiltInRegistry {
@@ -101,7 +111,7 @@ func NewBuiltInRegistry() BuiltInRegistry {
 			},
 		},
 	}
-	return BuiltInRegistry{types: types}
+	return BuiltInRegistry{types: types, cueRoot: sourceRepoRoot()}
 }
 
 func (r BuiltInRegistry) ResolveType(id model.TypeID) (model.TypeDef, bool) {
@@ -116,4 +126,16 @@ func (r BuiltInRegistry) ResolveTypeRef(ref string) (model.TypeDef, bool, error)
 	}
 	def, ok := r.ResolveType(id)
 	return def, ok, nil
+}
+
+func (r BuiltInRegistry) ValidateValue(typeID model.TypeID, value string) error {
+	return ValidateCUEValue(r.cueRoot, typeID, value)
+}
+
+func sourceRepoRoot() string {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		return ""
+	}
+	return filepath.Clean(filepath.Join(filepath.Dir(file), "../.."))
 }

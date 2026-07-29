@@ -53,6 +53,21 @@ func TestNewBuiltInCUERegistry(t *testing.T) {
 	assert.Equal(t, model.TypeUniverseRedis, def.ID)
 }
 
+func TestBuiltInCUERegistryValidatesValues(t *testing.T) {
+	t.Parallel()
+
+	registry, err := NewBuiltInCUERegistry(repoRoot(t))
+	require.NoError(t, err)
+
+	assert.NoError(t, registry.ValidateValue(model.TypeCoreHost, "localhost"))
+	assert.NoError(t, registry.ValidateValue(model.TypeCoreHost, "127.0.0.1"))
+	assert.Error(t, registry.ValidateValue(model.TypeCoreHost, "not a host"))
+
+	assert.NoError(t, registry.ValidateValue(model.TypeCorePort, "6379"))
+	assert.Error(t, registry.ValidateValue(model.TypeCorePort, "abc"))
+	assert.Error(t, registry.ValidateValue(model.TypeCorePort, "70000"))
+}
+
 func repoRoot(t *testing.T) string {
 	t.Helper()
 

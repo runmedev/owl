@@ -2,8 +2,6 @@ package store
 
 import (
 	"fmt"
-	"net"
-	"strconv"
 	"strings"
 
 	"github.com/runmedev/owl/internal/model"
@@ -60,11 +58,11 @@ func ValidateState(state model.EffectiveState, types registry.TypeProvider) []mo
 					Owner:    model.DiagnosticOwnerValidation,
 				})
 			}
-			diagnostics = append(diagnostics, validatePrimitiveValue(field.TypeID, value)...)
+			diagnostics = append(diagnostics, validateValue(types, field.TypeID, value)...)
 			continue
 		}
 
-		diagnostics = append(diagnostics, validatePrimitiveValue(def.ID, value)...)
+		diagnostics = append(diagnostics, validateValue(types, def.ID, value)...)
 	}
 
 	seenBindings := make(map[string]model.FieldRef)
@@ -117,97 +115,31 @@ func ValidateState(state model.EffectiveState, types registry.TypeProvider) []mo
 	return diagnostics
 }
 
-func validatePrimitiveValue(typeID model.TypeID, value model.Value) []model.Diagnostic {
+func validateValue(types registry.TypeProvider, typeID model.TypeID, value model.Value) []model.Diagnostic {
 	if value.Visibility == model.VisibilityUnresolved {
 		return nil
 	}
-
-	switch typeID {
-	case model.TypeCoreHost:
-		if strings.TrimSpace(value.Resolved) == "" {
-			return []model.Diagnostic{{
-				Severity: model.DiagnosticError,
-				Code:     "type.empty-host",
-				Message:  "host value must not be empty",
-				Key:      "",
-				FieldRef: value.FieldRef,
-				Owner:    model.DiagnosticOwnerValidation,
-			}}
-		}
-		if !isValidHost(value.Resolved) {
-			return []model.Diagnostic{{
-				Severity: model.DiagnosticError,
-				Code:     "type.invalid-host",
-				Message:  "host value must be a hostname or IP address",
-				Key:      "",
-				FieldRef: value.FieldRef,
-				Owner:    model.DiagnosticOwnerValidation,
-			}}
-		}
-	case model.TypeCorePort:
-		port, err := strconv.Atoi(value.Resolved)
-		if err != nil || port < 1 || port > 65535 {
-			return []model.Diagnostic{{
-				Severity: model.DiagnosticError,
-				Code:     "type.invalid-port",
-				Message:  "port value must be an integer between 1 and 65535",
-				Key:      "",
-				FieldRef: value.FieldRef,
-				Owner:    model.DiagnosticOwnerValidation,
-			}}
-		}
-	case model.TypeCoreSecret:
-		if strings.TrimSpace(value.Resolved) == "" {
-			return []model.Diagnostic{{
-				Severity: model.DiagnosticError,
-				Code:     "type.empty-secret",
-				Message:  "secret value must not be empty",
-				FieldRef: value.FieldRef,
-				Owner:    model.DiagnosticOwnerValidation,
-			}}
-		}
+	validator, ok := types.(registry.ValueValidator)
+	if !ok {
+		return nil
 	}
-	return nil
+	if err := validator.ValidateValue(typeID, value.Resolved); err == nil {
+		return nil
+	}
+	return []model.Diagnostic{{
+		Severity: model.DiagnosticError,
+		Code:     "type.invalid-" + typeNameForDiagnostic(typeID),
+		Message:  fmt.Sprintf("%s value does not satisfy CUE schema", typeID.Alias()),
+		Key:      "",
+		FieldRef: value.FieldRef,
+		Owner:    model.DiagnosticOwnerValidation,
+	}}
 }
 
-func isValidHost(value string) bool {
-	host := strings.TrimSpace(value)
-	if host == "" || host != value {
-		return false
+func typeNameForDiagnostic(typeID model.TypeID) string {
+	alias := typeID.Alias()
+	if _, name, ok := strings.Cut(alias, "/"); ok {
+		return name
 	}
-
-	if strings.HasPrefix(host, "[") || strings.HasSuffix(host, "]") {
-		if !strings.HasPrefix(host, "[") || !strings.HasSuffix(host, "]") {
-			return false
-		}
-		host = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
-	}
-	if net.ParseIP(host) != nil {
-		return true
-	}
-
-	if strings.ContainsAny(host, "/:@") {
-		return false
-	}
-	host = strings.TrimSuffix(host, ".")
-	if host == "" || len(host) > 253 {
-		return false
-	}
-
-	hasLetter := false
-	for _, label := range strings.Split(host, ".") {
-		if label == "" || len(label) > 63 || strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
-			return false
-		}
-		for _, r := range label {
-			switch {
-			case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z':
-				hasLetter = true
-			case r >= '0' && r <= '9', r == '-':
-			default:
-				return false
-			}
-		}
-	}
-	return hasLetter
+	return alias
 }

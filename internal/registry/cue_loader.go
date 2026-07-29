@@ -12,19 +12,20 @@ import (
 )
 
 type cueBuiltInType struct {
-	importPath string
-	definition string
-	name       string
+	importPath      string
+	definition      string
+	valueDefinition string
+	name            string
 }
 
 var cueBuiltInTypes = []cueBuiltInType{
-	{importPath: "./types/core/opaque", definition: "#Opaque", name: "opaque"},
-	{importPath: "./types/core/plain", definition: "#Plain", name: "plain"},
-	{importPath: "./types/core/secret", definition: "#Secret", name: "secret"},
-	{importPath: "./types/core/url", definition: "#URL", name: "url"},
-	{importPath: "./types/core/host", definition: "#Host", name: "host"},
-	{importPath: "./types/core/port", definition: "#Port", name: "port"},
-	{importPath: "./types/universe/redis", definition: "#Redis", name: "redis"},
+	{importPath: "./types/core/opaque", definition: "#Opaque", valueDefinition: "#OpaqueValue", name: "opaque"},
+	{importPath: "./types/core/plain", definition: "#Plain", valueDefinition: "#PlainValue", name: "plain"},
+	{importPath: "./types/core/secret", definition: "#Secret", valueDefinition: "#SecretValue", name: "secret"},
+	{importPath: "./types/core/url", definition: "#URL", valueDefinition: "#URLValue", name: "url"},
+	{importPath: "./types/core/host", definition: "#Host", valueDefinition: "#HostValue", name: "host"},
+	{importPath: "./types/core/port", definition: "#Port", valueDefinition: "#PortValue", name: "port"},
+	{importPath: "./types/universe/redis", definition: "#Redis", valueDefinition: "#RedisValue", name: "redis"},
 }
 
 func LoadBuiltInCUETypeDefs(root string) (map[model.TypeID]model.TypeDef, error) {
@@ -44,7 +45,7 @@ func NewBuiltInCUERegistry(root string) (BuiltInRegistry, error) {
 	if err != nil {
 		return BuiltInRegistry{}, err
 	}
-	return BuiltInRegistry{types: types}, nil
+	return BuiltInRegistry{types: types, cueRoot: root}, nil
 }
 
 func loadCUETypeDef(root string, spec cueBuiltInType) (model.TypeDef, error) {

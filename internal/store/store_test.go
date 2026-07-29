@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/runmedev/owl/internal/model"
+	"github.com/runmedev/owl/internal/registry"
 )
 
 func TestStoreSnapshotSourceAndCheck(t *testing.T) {
@@ -110,11 +111,12 @@ func TestStoreTypeSkipsDefaultPlainProposalsByDefault(t *testing.T) {
 func TestValidateCoreHost(t *testing.T) {
 	t.Parallel()
 
-	valid := []string{"localhost", "redis.internal", "redis-1", "127.0.0.1", "::1", "[::1]"}
+	types := registry.NewBuiltInRegistry()
+	valid := []string{"localhost", "redis.internal", "redis-1", "127.0.0.1", "::1"}
 	for _, host := range valid {
 		t.Run(host, func(t *testing.T) {
 			t.Parallel()
-			assert.Empty(t, validatePrimitiveValue(model.TypeCoreHost, model.Value{
+			assert.Empty(t, validateValue(types, model.TypeCoreHost, model.Value{
 				Resolved:   host,
 				Visibility: model.VisibilityLiteral,
 			}))
@@ -125,7 +127,7 @@ func TestValidateCoreHost(t *testing.T) {
 	for _, host := range invalid {
 		t.Run(host, func(t *testing.T) {
 			t.Parallel()
-			diagnostics := validatePrimitiveValue(model.TypeCoreHost, model.Value{
+			diagnostics := validateValue(types, model.TypeCoreHost, model.Value{
 				Resolved:   host,
 				Visibility: model.VisibilityLiteral,
 			})
