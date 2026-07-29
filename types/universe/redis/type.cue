@@ -1,7 +1,6 @@
 package redis
 
 import (
-	corehost "github.com/runmedev/owl/types/core/host"
 	coreport "github.com/runmedev/owl/types/core/port"
 	coresecret "github.com/runmedev/owl/types/core/secret"
 	owl "github.com/runmedev/owl/schema"
@@ -14,7 +13,7 @@ import (
 
 	fields: {
 		host: owl.#Field & {
-			type:        "github.com/runmedev/owl/types/core/host"
+			type:        "github.com/runmedev/owl/types/core/plain"
 			description: "Redis server hostname."
 			visibility:  "literal"
 		}
@@ -32,7 +31,7 @@ import (
 }
 
 #RedisValue: {
-	host:     corehost.HostValue
+	host:     string & !=""
 	port:     coreport.PortValue
 	password: coresecret.SecretValue
 }

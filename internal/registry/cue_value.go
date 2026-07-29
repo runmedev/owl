@@ -16,31 +16,36 @@ func ValidateCUEValue(root string, typeID model.TypeID, raw string) error {
 	if !ok || spec.valueDefinition == "" {
 		return nil
 	}
-	if root == "" {
-		return fmt.Errorf("cue root is not configured")
+	schema, ctx, err := loadCUEValueSchema(root, spec, spec.valueDefinition)
+	if err != nil {
+		return err
 	}
-
-	cfg := &load.Config{Dir: filepath.Clean(root)}
-	instances := load.Instances([]string{spec.importPath}, cfg)
-	if len(instances) == 0 {
-		return fmt.Errorf("cue type %s: no instances loaded", spec.importPath)
-	}
-	if err := instances[0].Err; err != nil {
-		return fmt.Errorf("cue type %s: %w", spec.importPath, err)
-	}
-
-	ctx := cuecontext.New()
-	value := ctx.BuildInstance(instances[0])
-	if err := value.Err(); err != nil {
-		return fmt.Errorf("cue type %s: %w", spec.importPath, err)
-	}
-
-	schema := value.LookupPath(cue.ParsePath(spec.valueDefinition))
-	if err := schema.Err(); err != nil {
-		return fmt.Errorf("cue type %s %s: %w", spec.importPath, spec.valueDefinition, err)
-	}
-
 	candidate := cueCandidateValue(ctx, typeID, raw)
+	if err := candidate.Err(); err != nil {
+		return err
+	}
+	return schema.Unify(candidate).Validate(cue.Concrete(true))
+}
+
+func ValidateCUEFieldValue(root string, types map[model.TypeID]model.TypeDef, ref model.FieldRef, raw string) error {
+	spec, ok := cueBuiltInTypeForID(ref.TypeID)
+	if !ok || spec.valueDefinition == "" || ref.Field == "" {
+		return nil
+	}
+	def, ok := types[ref.TypeID]
+	if !ok || def.Kind != model.FieldKindObject {
+		return nil
+	}
+	field, ok := def.Fields[ref.Field]
+	if !ok {
+		return nil
+	}
+
+	schema, ctx, err := loadCUEValueSchema(root, spec, spec.valueDefinition+"."+ref.Field)
+	if err != nil {
+		return err
+	}
+	candidate := cueCandidateValue(ctx, field.TypeID, raw)
 	if err := candidate.Err(); err != nil {
 		return err
 	}
@@ -77,12 +82,6 @@ var cueBuiltInTypesByID = map[model.TypeID]cueBuiltInType{
 		valueDefinition: "#URLValue",
 		name:            "url",
 	},
-	model.TypeCoreHost: {
-		importPath:      "./types/core/host",
-		definition:      "#Host",
-		valueDefinition: "#HostValue",
-		name:            "host",
-	},
 	model.TypeCorePort: {
 		importPath:      "./types/core/port",
 		definition:      "#Port",
@@ -102,4 +101,31 @@ func cueCandidateValue(ctx *cue.Context, typeID model.TypeID, raw string) cue.Va
 		return ctx.CompileString(raw)
 	}
 	return ctx.Encode(raw)
+}
+
+func loadCUEValueSchema(root string, spec cueBuiltInType, path string) (cue.Value, *cue.Context, error) {
+	if root == "" {
+		return cue.Value{}, nil, fmt.Errorf("cue root is not configured")
+	}
+
+	cfg := &load.Config{Dir: filepath.Clean(root)}
+	instances := load.Instances([]string{spec.importPath}, cfg)
+	if len(instances) == 0 {
+		return cue.Value{}, nil, fmt.Errorf("cue type %s: no instances loaded", spec.importPath)
+	}
+	if err := instances[0].Err; err != nil {
+		return cue.Value{}, nil, fmt.Errorf("cue type %s: %w", spec.importPath, err)
+	}
+
+	ctx := cuecontext.New()
+	value := ctx.BuildInstance(instances[0])
+	if err := value.Err(); err != nil {
+		return cue.Value{}, nil, fmt.Errorf("cue type %s: %w", spec.importPath, err)
+	}
+
+	schema := value.LookupPath(cue.ParsePath(path))
+	if err := schema.Err(); err != nil {
+		return cue.Value{}, nil, fmt.Errorf("cue type %s %s: %w", spec.importPath, path, err)
+	}
+	return schema, ctx, nil
 }

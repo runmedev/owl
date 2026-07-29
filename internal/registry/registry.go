@@ -16,6 +16,10 @@ type ValueValidator interface {
 	ValidateValue(model.TypeID, string) error
 }
 
+type FieldValueValidator interface {
+	ValidateFieldValue(model.FieldRef, string) error
+}
+
 type BuiltInRegistry struct {
 	types   map[model.TypeID]model.TypeDef
 	cueRoot string
@@ -55,14 +59,6 @@ func NewBuiltInRegistry() BuiltInRegistry {
 			Source:      "builtin-go",
 			Description: "URL-shaped string-carried ENV value.",
 		},
-		model.TypeCoreHost: {
-			ID:          model.TypeCoreHost,
-			Version:     "0.1.0",
-			Name:        "host",
-			Kind:        model.FieldKindScalar,
-			Source:      "builtin-go",
-			Description: "Host-shaped string-carried ENV value.",
-		},
 		model.TypeCorePort: {
 			ID:          model.TypeCorePort,
 			Version:     "0.1.0",
@@ -80,7 +76,7 @@ func NewBuiltInRegistry() BuiltInRegistry {
 			Fields: map[string]model.FieldDef{
 				"host": {
 					Name:                 "host",
-					TypeID:               model.TypeCoreHost,
+					TypeID:               model.TypeCorePlain,
 					Required:             true,
 					Sensitivity:          model.SensitivityNonSensitive,
 					Exposure:             model.ExposureClear,
@@ -130,6 +126,10 @@ func (r BuiltInRegistry) ResolveTypeRef(ref string) (model.TypeDef, bool, error)
 
 func (r BuiltInRegistry) ValidateValue(typeID model.TypeID, value string) error {
 	return ValidateCUEValue(r.cueRoot, typeID, value)
+}
+
+func (r BuiltInRegistry) ValidateFieldValue(ref model.FieldRef, value string) error {
+	return ValidateCUEFieldValue(r.cueRoot, r.types, ref, value)
 }
 
 func sourceRepoRoot() string {

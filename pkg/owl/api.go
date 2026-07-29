@@ -47,7 +47,6 @@ const (
 	TypeCorePlain     = model.TypeCorePlain
 	TypeCoreSecret    = model.TypeCoreSecret
 	TypeCoreURL       = model.TypeCoreURL
-	TypeCoreHost      = model.TypeCoreHost
 	TypeCorePort      = model.TypeCorePort
 	TypeUniverseRedis = model.TypeUniverseRedis
 

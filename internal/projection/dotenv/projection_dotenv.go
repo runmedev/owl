@@ -407,7 +407,7 @@ func sensitivityForField(ref model.FieldRef) model.Sensitivity {
 	if ref.TypeID == model.TypeCoreSecret {
 		return model.SensitivitySensitive
 	}
-	if ref.TypeID == model.TypeCorePlain || ref.TypeID == model.TypeCoreURL || ref.TypeID == model.TypeCoreHost || ref.TypeID == model.TypeCorePort {
+	if ref.TypeID == model.TypeCorePlain || ref.TypeID == model.TypeCoreURL || ref.TypeID == model.TypeCorePort {
 		return model.SensitivityNonSensitive
 	}
 	if ref.TypeID == model.TypeCoreOpaque {

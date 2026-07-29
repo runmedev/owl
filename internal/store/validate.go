@@ -58,7 +58,7 @@ func ValidateState(state model.EffectiveState, types registry.TypeProvider) []mo
 					Owner:    model.DiagnosticOwnerValidation,
 				})
 			}
-			diagnostics = append(diagnostics, validateValue(types, field.TypeID, value)...)
+			diagnostics = append(diagnostics, validateFieldValue(types, field.TypeID, value)...)
 			continue
 		}
 
@@ -115,6 +115,20 @@ func ValidateState(state model.EffectiveState, types registry.TypeProvider) []mo
 	return diagnostics
 }
 
+func validateFieldValue(types registry.TypeProvider, fieldTypeID model.TypeID, value model.Value) []model.Diagnostic {
+	if value.Visibility == model.VisibilityUnresolved {
+		return nil
+	}
+	validator, ok := types.(registry.FieldValueValidator)
+	if !ok {
+		return validateValue(types, fieldTypeID, value)
+	}
+	if err := validator.ValidateFieldValue(value.FieldRef, value.Resolved); err == nil {
+		return nil
+	}
+	return invalidValueDiagnostic("type.invalid-"+value.FieldRef.Field, value.FieldRef.TypeID.Alias()+"."+value.FieldRef.Field, value)
+}
+
 func validateValue(types registry.TypeProvider, typeID model.TypeID, value model.Value) []model.Diagnostic {
 	if value.Visibility == model.VisibilityUnresolved {
 		return nil
@@ -126,10 +140,14 @@ func validateValue(types registry.TypeProvider, typeID model.TypeID, value model
 	if err := validator.ValidateValue(typeID, value.Resolved); err == nil {
 		return nil
 	}
+	return invalidValueDiagnostic("type.invalid-"+typeNameForDiagnostic(typeID), typeID.Alias(), value)
+}
+
+func invalidValueDiagnostic(code string, name string, value model.Value) []model.Diagnostic {
 	return []model.Diagnostic{{
 		Severity: model.DiagnosticError,
-		Code:     "type.invalid-" + typeNameForDiagnostic(typeID),
-		Message:  fmt.Sprintf("%s value does not satisfy CUE schema", typeID.Alias()),
+		Code:     code,
+		Message:  fmt.Sprintf("%s value does not satisfy CUE schema", name),
 		Key:      "",
 		FieldRef: value.FieldRef,
 		Owner:    model.DiagnosticOwnerValidation,

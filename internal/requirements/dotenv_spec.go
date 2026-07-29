@@ -94,8 +94,6 @@ func dotenvSpecName(typeID model.TypeID) string {
 		return "Secret"
 	case model.TypeCoreURL:
 		return "Url"
-	case model.TypeCoreHost:
-		return "Host"
 	case model.TypeCorePort:
 		return "Port"
 	case model.TypeCorePlain:

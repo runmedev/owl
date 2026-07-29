@@ -12,7 +12,6 @@ const (
 	AtomicNameSecret   string = "Secret"
 	AtomicNamePassword string = "Password"
 	AtomicNameURL      string = "Url"
-	AtomicNameHost     string = "Host"
 	AtomicNamePort     string = "Port"
 	AtomicNameDefault         = AtomicNameOpaque
 )
@@ -35,7 +34,6 @@ var allowedSpecs = map[string]func(*Spec, string, map[string]interface{}){
 	AtomicNamePassword: handleParams,
 	AtomicNameURL:      handleParams,
 	"URL":              handleParams,
-	AtomicNameHost:     handleParams,
 	AtomicNamePort:     handleParams,
 }
 

@@ -84,7 +84,8 @@ func TestStoreTypeProposesMissingPrimitiveTypes(t *testing.T) {
 	byKey := typeProposalsByKey(result.Proposals)
 	assert.Equal(t, model.TypeCoreSecret, byKey["API_KEY"].SuggestedType)
 	assert.Equal(t, "key name suggests sensitive value", byKey["API_KEY"].Reason)
-	assert.Equal(t, model.TypeCoreHost, byKey["SERVICE_HOST"].SuggestedType)
+	assert.Empty(t, byKey["SERVICE_HOST"].SuggestedType)
+	assert.Equal(t, model.BindingConfidenceNone, byKey["SERVICE_HOST"].Confidence)
 	assert.Equal(t, model.TypeCorePort, byKey["SERVICE_PORT"].SuggestedType)
 	assert.Empty(t, byKey["TARGET_PLATFORM"].SuggestedType)
 	assert.Equal(t, model.BindingConfidenceNone, byKey["TARGET_PLATFORM"].Confidence)
@@ -108,33 +109,26 @@ func TestStoreTypeSkipsDefaultPlainProposalsByDefault(t *testing.T) {
 	assert.Equal(t, model.TypeCoreSecret, result.Proposals[0].SuggestedType)
 }
 
-func TestValidateCoreHost(t *testing.T) {
+func TestValidateRedisHost(t *testing.T) {
 	t.Parallel()
 
 	types := registry.NewBuiltInRegistry()
-	valid := []string{"localhost", "redis.internal", "redis-1", "127.0.0.1", "::1"}
-	for _, host := range valid {
-		t.Run(host, func(t *testing.T) {
-			t.Parallel()
-			assert.Empty(t, validateValue(types, model.TypeCoreHost, model.Value{
-				Resolved:   host,
-				Visibility: model.VisibilityLiteral,
-			}))
-		})
-	}
+	ref := model.FieldRef{TypeID: model.TypeUniverseRedis, Instance: "queues", Field: "host"}
+	assert.Empty(t, validateFieldValue(types, model.TypeCorePlain, model.Value{
+		FieldRef:    ref,
+		Resolved:    "not a host",
+		Visibility:  model.VisibilityLiteral,
+		Sensitivity: model.SensitivityNonSensitive,
+	}))
 
-	invalid := []string{"not a host", "http://localhost", "redis:6379", "-redis", "redis-", "123"}
-	for _, host := range invalid {
-		t.Run(host, func(t *testing.T) {
-			t.Parallel()
-			diagnostics := validateValue(types, model.TypeCoreHost, model.Value{
-				Resolved:   host,
-				Visibility: model.VisibilityLiteral,
-			})
-			require.NotEmpty(t, diagnostics)
-			assert.Equal(t, "type.invalid-host", diagnostics[0].Code)
-		})
-	}
+	diagnostics := validateFieldValue(types, model.TypeCorePlain, model.Value{
+		FieldRef:    ref,
+		Resolved:    "",
+		Visibility:  model.VisibilityLiteral,
+		Sensitivity: model.SensitivityNonSensitive,
+	})
+	require.NotEmpty(t, diagnostics)
+	assert.Equal(t, "type.invalid-host", diagnostics[0].Code)
 }
 
 func TestStoreWithDotenv(t *testing.T) {
