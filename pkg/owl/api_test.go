@@ -399,6 +399,40 @@ needs: redis: queues: {
 		`REDIS_PASSWORD="Redis password"    # Secret!`,
 		"",
 	}, "\n"), dotenvSpec)
+
+	check := store.Check()
+	assert.False(t, check.OK)
+	assert.Contains(t, diagnosticCodes(check.Diagnostics), "dotenv.unresolved-required")
+}
+
+func TestPublicAPIWithOwlCueValidatesRedisPort(t *testing.T) {
+	t.Parallel()
+
+	store, err := owl.NewStore(
+		owl.WithOwlCue("owl.cue", strings.NewReader(`
+package owl
+
+needs: redis: queues: {
+	type: "github.com/runmedev/owl/types/universe/redis"
+	env: {
+		host:     "REDIS_HOST"
+		port:     "REDIS_PORT"
+		password: "REDIS_PASSWORD"
+	}
+}
+`)),
+		owl.WithDotenv(".env", strings.NewReader("REDIS_HOST=localhost\nREDIS_PORT=not-a-port\nREDIS_PASSWORD=secret\n")),
+	)
+	require.NoError(t, err)
+
+	check := store.Check()
+	assert.False(t, check.OK)
+	assert.Contains(t, diagnosticCodes(check.Diagnostics), "type.invalid-port")
+
+	port, ok, err := store.Get("REDIS_PORT", owl.GetPolicy{Reveal: true})
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, `universe/redis("queues").port`, port.Field.String())
 }
 
 func TestV2PublicAPIDiagnostics(t *testing.T) {

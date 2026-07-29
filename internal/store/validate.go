@@ -2,6 +2,8 @@ package store
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/runmedev/owl/internal/model"
 	"github.com/runmedev/owl/internal/registry"
@@ -57,7 +59,11 @@ func ValidateState(state model.EffectiveState, types registry.TypeProvider) []mo
 					Owner:    model.DiagnosticOwnerValidation,
 				})
 			}
+			diagnostics = append(diagnostics, validatePrimitiveValue(field.TypeID, value)...)
+			continue
 		}
+
+		diagnostics = append(diagnostics, validatePrimitiveValue(def.ID, value)...)
 	}
 
 	seenBindings := make(map[string]model.FieldRef)
@@ -108,4 +114,47 @@ func ValidateState(state model.EffectiveState, types registry.TypeProvider) []mo
 	}
 
 	return diagnostics
+}
+
+func validatePrimitiveValue(typeID model.TypeID, value model.Value) []model.Diagnostic {
+	if value.Visibility == model.VisibilityUnresolved {
+		return nil
+	}
+
+	switch typeID {
+	case model.TypeCoreHost:
+		if strings.TrimSpace(value.Resolved) == "" {
+			return []model.Diagnostic{{
+				Severity: model.DiagnosticError,
+				Code:     "type.empty-host",
+				Message:  "host value must not be empty",
+				Key:      "",
+				FieldRef: value.FieldRef,
+				Owner:    model.DiagnosticOwnerValidation,
+			}}
+		}
+	case model.TypeCorePort:
+		port, err := strconv.Atoi(value.Resolved)
+		if err != nil || port < 1 || port > 65535 {
+			return []model.Diagnostic{{
+				Severity: model.DiagnosticError,
+				Code:     "type.invalid-port",
+				Message:  "port value must be an integer between 1 and 65535",
+				Key:      "",
+				FieldRef: value.FieldRef,
+				Owner:    model.DiagnosticOwnerValidation,
+			}}
+		}
+	case model.TypeCoreSecret:
+		if strings.TrimSpace(value.Resolved) == "" {
+			return []model.Diagnostic{{
+				Severity: model.DiagnosticError,
+				Code:     "type.empty-secret",
+				Message:  "secret value must not be empty",
+				FieldRef: value.FieldRef,
+				Owner:    model.DiagnosticOwnerValidation,
+			}}
+		}
+	}
+	return nil
 }
