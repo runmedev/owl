@@ -2,65 +2,33 @@ package registry
 
 import (
 	"fmt"
-	"path/filepath"
 
 	"cuelang.org/go/cue"
-	"cuelang.org/go/cue/cuecontext"
-	"cuelang.org/go/cue/load"
 
 	"github.com/runmedev/owl/internal/model"
 )
 
-type cueBuiltInType struct {
-	importPath string
-	definition string
-	name       string
-}
-
-var cueBuiltInTypes = []cueBuiltInType{
-	{importPath: "./types/core/opaque", definition: "#Opaque", name: "opaque"},
-	{importPath: "./types/core/plain", definition: "#Plain", name: "plain"},
-	{importPath: "./types/core/secret", definition: "#Secret", name: "secret"},
-	{importPath: "./types/core/url", definition: "#URL", name: "url"},
-	{importPath: "./types/universe/redis", definition: "#Redis", name: "redis"},
-}
-
 func LoadBuiltInCUETypeDefs(root string) (map[model.TypeID]model.TypeDef, error) {
-	result := make(map[model.TypeID]model.TypeDef, len(cueBuiltInTypes))
-	for _, spec := range cueBuiltInTypes {
-		def, err := loadCUETypeDef(root, spec)
-		if err != nil {
-			return nil, err
-		}
-		result[def.ID] = def
+	catalog, err := newCUECatalog(root)
+	if err != nil {
+		return nil, err
 	}
-	return result, nil
+	return catalog.LoadTypeDefs()
 }
 
 func NewBuiltInCUERegistry(root string) (BuiltInRegistry, error) {
-	types, err := LoadBuiltInCUETypeDefs(root)
+	catalog, err := newCUECatalog(root)
 	if err != nil {
 		return BuiltInRegistry{}, err
 	}
-	return BuiltInRegistry{types: types, cueRoot: root}, nil
+	types, err := catalog.LoadTypeDefs()
+	if err != nil {
+		return BuiltInRegistry{}, err
+	}
+	return BuiltInRegistry{types: types, cue: catalog}, nil
 }
 
-func loadCUETypeDef(root string, spec cueBuiltInType) (model.TypeDef, error) {
-	cfg := &load.Config{Dir: filepath.Clean(root)}
-	instances := load.Instances([]string{spec.importPath}, cfg)
-	if len(instances) == 0 {
-		return model.TypeDef{}, fmt.Errorf("cue type %s: no instances loaded", spec.importPath)
-	}
-	if err := instances[0].Err; err != nil {
-		return model.TypeDef{}, fmt.Errorf("cue type %s: %w", spec.importPath, err)
-	}
-
-	ctx := cuecontext.New()
-	value := ctx.BuildInstance(instances[0])
-	if err := value.Err(); err != nil {
-		return model.TypeDef{}, fmt.Errorf("cue type %s: %w", spec.importPath, err)
-	}
-
+func cueTypeDefFromValue(spec cueTypeSpec, value cue.Value) (model.TypeDef, error) {
 	def := value.LookupPath(cue.ParsePath(spec.definition))
 	if err := def.Err(); err != nil {
 		return model.TypeDef{}, fmt.Errorf("cue type %s %s: %w", spec.importPath, spec.definition, err)

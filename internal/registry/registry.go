@@ -21,8 +21,9 @@ type FieldValueValidator interface {
 }
 
 type BuiltInRegistry struct {
-	types   map[model.TypeID]model.TypeDef
-	cueRoot string
+	types  map[model.TypeID]model.TypeDef
+	cue    *cueCatalog
+	cueErr error
 }
 
 func NewBuiltInRegistry() BuiltInRegistry {
@@ -99,7 +100,8 @@ func NewBuiltInRegistry() BuiltInRegistry {
 			},
 		},
 	}
-	return BuiltInRegistry{types: types, cueRoot: sourceRepoRoot()}
+	catalog, err := newCUECatalog(sourceRepoRoot())
+	return BuiltInRegistry{types: types, cue: catalog, cueErr: err}
 }
 
 func (r BuiltInRegistry) ResolveType(id model.TypeID) (model.TypeDef, bool) {
@@ -117,11 +119,23 @@ func (r BuiltInRegistry) ResolveTypeRef(ref string) (model.TypeDef, bool, error)
 }
 
 func (r BuiltInRegistry) ValidateValue(typeID model.TypeID, value string) error {
-	return ValidateCUEValue(r.cueRoot, typeID, value)
+	if r.cueErr != nil {
+		return r.cueErr
+	}
+	if r.cue == nil {
+		return nil
+	}
+	return r.cue.ValidateValue(typeID, value)
 }
 
 func (r BuiltInRegistry) ValidateFieldValue(ref model.FieldRef, value string) error {
-	return ValidateCUEFieldValue(r.cueRoot, r.types, ref, value)
+	if r.cueErr != nil {
+		return r.cueErr
+	}
+	if r.cue == nil {
+		return nil
+	}
+	return r.cue.ValidateFieldValue(r.types, ref, value)
 }
 
 func sourceRepoRoot() string {
