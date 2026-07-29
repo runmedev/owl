@@ -72,7 +72,7 @@ REDIS_AUTH_TOKEN="secret"
 	err := cmd.Execute()
 	require.Error(t, err)
 	assert.Contains(t, out.String(), "type.invalid-host")
-	assert.Contains(t, out.String(), "\n  cue: invalid value \"not a host\"")
-	assert.Contains(t, out.String(), "\n  cue: conflicting values uint and \"abc\"")
+	assert.Contains(t, out.String(), "\n  cue: must be an IP address or DNS hostname")
+	assert.Contains(t, out.String(), "\n  cue: must be an integer between 1 and 65535")
 	assert.NotContains(t, out.String(), "Usage:")
 }

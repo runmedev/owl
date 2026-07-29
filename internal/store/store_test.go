@@ -131,6 +131,7 @@ func TestValidateRedisHost(t *testing.T) {
 	require.NotEmpty(t, diagnostics)
 	assert.Equal(t, "type.invalid-host", diagnostics[0].Code)
 	assert.Contains(t, diagnostics[0].Message, `universe/redis.host value "" is invalid`)
+	assert.Contains(t, diagnostics[0].Message, "must be an IP address or DNS hostname")
 
 	diagnostics = validateFieldValue(types, model.TypeCorePlain, model.Value{
 		FieldRef:    ref,
@@ -140,8 +141,57 @@ func TestValidateRedisHost(t *testing.T) {
 	})
 	require.NotEmpty(t, diagnostics)
 	assert.Equal(t, "type.invalid-host", diagnostics[0].Code)
-	assert.Contains(t, diagnostics[0].Message, `value "not a host" is invalid: not a valid IP address`)
-	assert.Contains(t, diagnostics[0].Message, "does not match required pattern")
+	assert.Contains(t, diagnostics[0].Message, `value "not a host" is invalid: must be an IP address or DNS hostname`)
+}
+
+func TestValidateRedisPort(t *testing.T) {
+	t.Parallel()
+
+	types := registry.NewBuiltInRegistry()
+	ref := model.FieldRef{TypeID: model.TypeUniverseRedis, Instance: "queues", Field: "port"}
+	assert.Empty(t, validateFieldValue(types, model.TypeCorePlain, model.Value{
+		FieldRef:    ref,
+		Resolved:    "6379",
+		Visibility:  model.VisibilityLiteral,
+		Sensitivity: model.SensitivityNonSensitive,
+	}))
+
+	diagnostics := validateFieldValue(types, model.TypeCorePlain, model.Value{
+		FieldRef:    ref,
+		Resolved:    "not-a-port",
+		Visibility:  model.VisibilityLiteral,
+		Sensitivity: model.SensitivityNonSensitive,
+	})
+	require.NotEmpty(t, diagnostics)
+	assert.Equal(t, "type.invalid-port", diagnostics[0].Code)
+	assert.Contains(t, diagnostics[0].Message, `value "not-a-port" is invalid: must be an integer between 1 and 65535`)
+}
+
+func TestValidatePrimitiveValueMessages(t *testing.T) {
+	t.Parallel()
+
+	types := registry.NewBuiltInRegistry()
+	urlRef := model.FieldRef{TypeID: model.TypeCoreURL, Instance: "default", Field: "service.url"}
+	diagnostics := validateValue(types, model.TypeCoreURL, model.Value{
+		FieldRef:    urlRef,
+		Resolved:    "example.com",
+		Visibility:  model.VisibilityLiteral,
+		Sensitivity: model.SensitivityNonSensitive,
+	})
+	require.NotEmpty(t, diagnostics)
+	assert.Equal(t, "type.invalid-url", diagnostics[0].Code)
+	assert.Contains(t, diagnostics[0].Message, `value "example.com" is invalid: must be an absolute URL`)
+
+	secretRef := model.FieldRef{TypeID: model.TypeCoreSecret, Instance: "default", Field: "api.key"}
+	diagnostics = validateValue(types, model.TypeCoreSecret, model.Value{
+		FieldRef:    secretRef,
+		Resolved:    "",
+		Visibility:  model.VisibilityLiteral,
+		Sensitivity: model.SensitivitySensitive,
+	})
+	require.NotEmpty(t, diagnostics)
+	assert.Equal(t, "type.invalid-secret", diagnostics[0].Code)
+	assert.Contains(t, diagnostics[0].Message, "core/secret value is invalid: must not be empty")
 }
 
 func TestStoreWithDotenv(t *testing.T) {

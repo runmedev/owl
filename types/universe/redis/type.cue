@@ -22,17 +22,17 @@ import (
 			type:        "github.com/runmedev/owl/types/core/plain"
 			description: "Redis server port."
 			visibility:  "literal"
-			value:       uint & >=1 & <=65535
+			value:       (uint & >=1 & <=65535) | error("must be an integer between 1 and 65535")
 		}
 		password: owl.#Field & {
 			type:        "github.com/runmedev/owl/types/core/secret"
 			description: "Redis password."
 			visibility:  "masked"
-			value:       string & !=""
+			value:       (string & !="") | error("must not be empty")
 		}
 	}
 }
 
 #RedisHostnameValue: string & =~"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\\.?$" & =~"[A-Za-z]"
 
-#RedisHostValue: net.IP | #RedisHostnameValue
+#RedisHostValue: net.IP | #RedisHostnameValue | error("must be an IP address or DNS hostname")
