@@ -117,7 +117,7 @@ func TestValidateRedisHost(t *testing.T) {
 	ref := model.FieldRef{TypeID: model.TypeUniverseRedis, Instance: "queues", Field: "host"}
 	assert.Empty(t, validateFieldValue(types, model.TypeCorePlain, model.Value{
 		FieldRef:    ref,
-		Resolved:    "not a host",
+		Resolved:    "redis.internal",
 		Visibility:  model.VisibilityLiteral,
 		Sensitivity: model.SensitivityNonSensitive,
 	}))
@@ -125,6 +125,15 @@ func TestValidateRedisHost(t *testing.T) {
 	diagnostics := validateFieldValue(types, model.TypeCorePlain, model.Value{
 		FieldRef:    ref,
 		Resolved:    "",
+		Visibility:  model.VisibilityLiteral,
+		Sensitivity: model.SensitivityNonSensitive,
+	})
+	require.NotEmpty(t, diagnostics)
+	assert.Equal(t, "type.invalid-host", diagnostics[0].Code)
+
+	diagnostics = validateFieldValue(types, model.TypeCorePlain, model.Value{
+		FieldRef:    ref,
+		Resolved:    "not a host",
 		Visibility:  model.VisibilityLiteral,
 		Sensitivity: model.SensitivityNonSensitive,
 	})

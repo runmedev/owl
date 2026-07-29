@@ -60,7 +60,9 @@ func TestBuiltInCUERegistryValidatesValues(t *testing.T) {
 	require.NoError(t, err)
 
 	redisHost := model.FieldRef{TypeID: model.TypeUniverseRedis, Instance: "queues", Field: "host"}
-	assert.NoError(t, registry.ValidateFieldValue(redisHost, "not a host"))
+	assert.NoError(t, registry.ValidateFieldValue(redisHost, "redis.internal"))
+	assert.NoError(t, registry.ValidateFieldValue(redisHost, "127.0.0.1"))
+	assert.Error(t, registry.ValidateFieldValue(redisHost, "not a host"))
 	assert.Error(t, registry.ValidateFieldValue(redisHost, ""))
 
 	redisPort := model.FieldRef{TypeID: model.TypeUniverseRedis, Instance: "queues", Field: "port"}

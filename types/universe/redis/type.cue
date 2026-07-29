@@ -1,6 +1,8 @@
 package redis
 
 import (
+	"net"
+
 	coresecret "github.com/runmedev/owl/types/core/secret"
 	owl "github.com/runmedev/owl/schema"
 )
@@ -30,7 +32,11 @@ import (
 }
 
 #RedisValue: {
-	host:     string & !=""
+	host:     #RedisHostValue
 	port:     uint & >=1 & <=65535
 	password: coresecret.SecretValue
 }
+
+#RedisHostnameValue: string & =~"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\\.?$" & =~"[A-Za-z]"
+
+#RedisHostValue: net.IP | #RedisHostnameValue
