@@ -70,6 +70,7 @@ type CheckRequest struct {
 type CheckResult struct {
 	OK          bool
 	Diagnostics []string
+	Checked     int
 }
 
 type TypeRequest struct {
@@ -233,7 +234,7 @@ func newCheckCommand(opts StoreCommandOptions) *cobra.Command {
 			}
 
 			if len(result.Diagnostics) == 0 {
-				_, err = fmt.Fprintln(cmd.OutOrStdout(), "Success")
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "ok: %d variables checked, 0 errors, 0 warnings\n", result.Checked)
 				return err
 			}
 			for _, diagnostic := range result.Diagnostics {

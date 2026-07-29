@@ -96,9 +96,14 @@ func (c *LocalStoreClient) Check(_ context.Context, req CheckRequest) (*CheckRes
 	}
 
 	check := store.Check()
+	items, err := store.Snapshot(owl.SnapshotPolicy{})
+	if err != nil {
+		return nil, err
+	}
 	return &CheckResult{
 		OK:          check.OK,
 		Diagnostics: diagnosticStrings(check.Diagnostics, req.Details),
+		Checked:     len(items),
 	}, nil
 }
 

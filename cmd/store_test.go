@@ -137,10 +137,10 @@ func TestStoreSnapshotAllRendersInheritedAfterExplicit(t *testing.T) {
 	assert.Less(t, strings.Index(rendered, "AAA_SYSTEM"), strings.Index(rendered, "ZZZ_SYSTEM"))
 }
 
-func TestStoreCheckPassesDetailsFlag(t *testing.T) {
+func TestStoreCheckRendersSuccessSummaryAndPassesDetailsFlag(t *testing.T) {
 	t.Parallel()
 
-	client := &fakeStoreClient{check: &CheckResult{OK: true}}
+	client := &fakeStoreClient{check: &CheckResult{OK: true, Checked: 3}}
 	cmd := NewStoreCommand(StoreCommandOptions{
 		ClientFactory: func(*cobra.Command) (StoreClient, error) {
 			return client, nil
@@ -154,6 +154,7 @@ func TestStoreCheckPassesDetailsFlag(t *testing.T) {
 
 	require.NoError(t, cmd.Execute())
 	assert.True(t, client.checkReq.Details)
+	assert.Equal(t, "ok: 3 variables checked, 0 errors, 0 warnings\n", out.String())
 }
 
 func TestStoreSnapshotRevealRequiresInsecurePermission(t *testing.T) {
