@@ -8,6 +8,7 @@ require (
 	github.com/expr-lang/expr v1.17.8
 	github.com/go-playground/validator/v10 v10.30.3
 	github.com/graphql-go/graphql v0.8.1
+	github.com/pelletier/go-toml/v2 v2.3.1
 	github.com/pkg/errors v0.9.1
 	github.com/spf13/cobra v1.10.2
 	github.com/stateful/godotenv v0.0.0-20240309032207-c7bc0b812915
@@ -62,7 +63,6 @@ require (
 	github.com/olekukonko/tablewriter v0.0.5 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
-	github.com/pelletier/go-toml/v2 v2.3.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/protocolbuffers/txtpbfmt v0.0.0-20260420112717-c39628bde8b5 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect

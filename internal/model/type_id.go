@@ -8,8 +8,7 @@ import (
 type TypeID string
 
 const (
-	typeIDPrefix       = "github.com/runmedev/owl/types/"
-	legacyTypeIDPrefix = "https://owl.runme.dev/v1/types/"
+	typeIDPrefix = "github.com/runmedev/owl/types/"
 )
 
 const (
@@ -34,20 +33,13 @@ var canonicalTypeAliases = map[string]TypeID{
 }
 
 var typeAliases = map[string]TypeID{
-	"core/opaque":                         TypeCoreOpaque,
-	"core/plain":                          TypeCorePlain,
-	"core/secret":                         TypeCoreSecret,
-	"core/url":                            TypeCoreURL,
-	"core/host":                           TypeCoreHost,
-	"core/port":                           TypeCorePort,
-	"universe/redis":                      TypeUniverseRedis,
-	legacyTypeIDPrefix + "core/opaque":    TypeCoreOpaque,
-	legacyTypeIDPrefix + "core/plain":     TypeCorePlain,
-	legacyTypeIDPrefix + "core/secret":    TypeCoreSecret,
-	legacyTypeIDPrefix + "core/url":       TypeCoreURL,
-	legacyTypeIDPrefix + "core/host":      TypeCoreHost,
-	legacyTypeIDPrefix + "core/port":      TypeCorePort,
-	legacyTypeIDPrefix + "universe/redis": TypeUniverseRedis,
+	"core/opaque":    TypeCoreOpaque,
+	"core/plain":     TypeCorePlain,
+	"core/secret":    TypeCoreSecret,
+	"core/url":       TypeCoreURL,
+	"core/host":      TypeCoreHost,
+	"core/port":      TypeCorePort,
+	"universe/redis": TypeUniverseRedis,
 }
 
 var knownTypeIDs = map[TypeID]struct{}{
@@ -77,9 +69,6 @@ func ParseTypeID(ref string) (TypeID, error) {
 			return id, nil
 		}
 		return "", fmt.Errorf("unknown type id %q", ref)
-	}
-	if strings.HasPrefix(ref, legacyTypeIDPrefix) {
-		return "", fmt.Errorf("unknown legacy type id %q", ref)
 	}
 	return "", fmt.Errorf("unknown type alias %q", ref)
 }

@@ -25,6 +25,10 @@ type (
 
 	TypeID             = model.TypeID
 	FieldRef           = model.FieldRef
+	ConfigInput        = model.ConfigInput
+	NeedInput          = model.NeedInput
+	DotenvProjection   = model.DotenvProjectionInput
+	DotenvFieldBinding = model.DotenvFieldBindingInput
 	Source             = model.Source
 	DotenvVariable     = store.DotenvVariable
 	EnvContract        = store.EnvContract
@@ -73,11 +77,16 @@ type StoreOption func(*config) error
 type config struct {
 	envs      []store.SourceBytes
 	specs     []store.SourceBytes
-	requires  []store.SourceBytes
+	configs   []configInputSource
 	contracts []store.EnvContract
 	envelope  *store.StateEnvelope
 	types     registry.TypeProvider
 	clock     model.Clock
+}
+
+type configInputSource struct {
+	source model.Source
+	input  model.ConfigInput
 }
 
 type executionInfoKey struct{}
@@ -115,8 +124,8 @@ func NewStore(opts ...StoreOption) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, source := range cfg.requires {
-		contracts, err := requirements.ParseCUEContracts(source.Raw, Source{Name: source.Name, Kind: "owl-cue"}, cfg.types)
+	for _, source := range cfg.configs {
+		contracts, err := requirements.ContractsFromConfig(source.input, source.source, cfg.types)
 		if err != nil {
 			return nil, err
 		}
@@ -169,13 +178,13 @@ func WithEnvSpec(source string, r io.Reader) StoreOption {
 	}
 }
 
-func WithOwlCue(source string, r io.Reader) StoreOption {
+func WithConfig(input ConfigInput) StoreOption {
 	return func(cfg *config) error {
-		raw, err := io.ReadAll(r)
-		if err != nil {
-			return err
-		}
-		cfg.requires = append(cfg.requires, store.SourceBytes{Name: source, Raw: raw})
+		source := model.Source{Name: "[config]", Kind: "owl-config"}
+		cfg.configs = append(cfg.configs, configInputSource{
+			source: source,
+			input:  input,
+		})
 		return nil
 	}
 }

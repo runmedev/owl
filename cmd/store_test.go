@@ -279,13 +279,16 @@ type fakeStoreClient struct {
 	source         *SourceResult
 	check          *CheckResult
 	typeResult     *TypeResult
+	projectResult  *ProjectSpecResult
 	snapshotReq    SnapshotRequest
 	sourceReq      SourceRequest
 	typeReq        TypeRequest
+	projectReq     ProjectSpecRequest
 	snapshotCalled bool
 	sourceCalled   bool
 	checkCalled    bool
 	typeCalled     bool
+	projectCalled  bool
 }
 
 func (c *fakeStoreClient) Snapshot(_ context.Context, req SnapshotRequest) (*SnapshotResult, error) {
@@ -309,4 +312,10 @@ func (c *fakeStoreClient) Type(_ context.Context, req TypeRequest) (*TypeResult,
 	c.typeReq = req
 	c.typeCalled = true
 	return c.typeResult, nil
+}
+
+func (c *fakeStoreClient) ProjectSpec(_ context.Context, req ProjectSpecRequest) (*ProjectSpecResult, error) {
+	c.projectReq = req
+	c.projectCalled = true
+	return c.projectResult, nil
 }

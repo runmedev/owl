@@ -30,12 +30,11 @@ func TestParseTypeIDAcceptsCanonicalRefsAndAliases(t *testing.T) {
 	}
 }
 
-func TestParseTypeIDAcceptsLegacyHTTPSRefs(t *testing.T) {
+func TestParseTypeIDRejectsLegacyHTTPSRefs(t *testing.T) {
 	t.Parallel()
 
-	id, err := ParseTypeID("https://owl.runme.dev/v1/types/core/plain")
-	require.NoError(t, err)
-	assert.Equal(t, TypeCorePlain, id)
+	_, err := ParseTypeID("https://owl.runme.dev/v1/types/core/plain")
+	require.Error(t, err)
 }
 
 func TestParseTypeIDRejectsUnknownRefs(t *testing.T) {

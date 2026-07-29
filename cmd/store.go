@@ -17,6 +17,7 @@ type StoreClient interface {
 	Source(context.Context, SourceRequest) (*SourceResult, error)
 	Check(context.Context, CheckRequest) (*CheckResult, error)
 	Type(context.Context, TypeRequest) (*TypeResult, error)
+	ProjectSpec(context.Context, ProjectSpecRequest) (*ProjectSpecResult, error)
 }
 
 type StoreCommandOptions struct {
@@ -25,6 +26,7 @@ type StoreCommandOptions struct {
 	ConfigureSourceCommand   func(*cobra.Command)
 	ConfigureCheckCommand    func(*cobra.Command)
 	ConfigureTypeCommand     func(*cobra.Command)
+	ConfigureProjectCommand  func(*cobra.Command)
 	Hidden                   bool
 	InsecureAllowed          func() bool
 }
@@ -78,6 +80,16 @@ type TypeRequest struct {
 type TypeResult struct {
 	Proposals []TypeProposal
 	Rendered  string
+}
+
+type ProjectSpecRequest struct {
+	ConfigPath string
+	Output     string
+	Write      bool
+}
+
+type ProjectSpecResult struct {
+	Rendered string
 }
 
 type TypeProposal struct {
