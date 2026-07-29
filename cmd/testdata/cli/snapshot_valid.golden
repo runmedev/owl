@@ -1,0 +1,4 @@
+NAME               VALUE           TYPE            SOURCE                  STATUS   DESCRIPTION
+QUEUES_REDIS_HOST  redis.internal  universe/redis  testdata/cli/redis.env  literal  Redis server hostname
+QUEUES_REDIS_PORT  6379            universe/redis  testdata/cli/redis.env  literal  Redis server port
+REDIS_AUTH_TOKEN   [masked]        universe/redis  testdata/cli/redis.env  masked   Redis password

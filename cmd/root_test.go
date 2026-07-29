@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -75,4 +76,72 @@ REDIS_AUTH_TOKEN="secret"
 	assert.Contains(t, out.String(), "\n  cue: must be an IP address or DNS hostname")
 	assert.Contains(t, out.String(), "\n  cue: must be an integer between 1 and 65535")
 	assert.NotContains(t, out.String(), "Usage:")
+}
+
+func TestRootCommandRedisExampleGoldenOutputs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		args       []string
+		goldenPath string
+		wantErr    bool
+	}{
+		{
+			name:       "project spec",
+			args:       []string{"project", "spec", "--config", "../examples/redis/owl.toml"},
+			goldenPath: "testdata/cli/project_spec.golden",
+		},
+		{
+			name:       "check success",
+			args:       []string{"check", "--config", "../examples/redis/owl.toml", "--env-file", "testdata/cli/redis.env"},
+			goldenPath: "testdata/cli/check_success.golden",
+		},
+		{
+			name:       "check failure details",
+			args:       []string{"check", "--details", "--config", "../examples/redis/owl.toml", "--env-file", "testdata/cli/redis.invalid.env"},
+			goldenPath: "testdata/cli/check_failure_details.golden",
+			wantErr:    true,
+		},
+		{
+			name:       "snapshot valid",
+			args:       []string{"snapshot", "--config", "../examples/redis/owl.toml", "--env-file", "testdata/cli/redis.env", "--all"},
+			goldenPath: "testdata/cli/snapshot_valid.golden",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cmd := NewRootCommand()
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			cmd.SetOut(&stdout)
+			cmd.SetErr(&stderr)
+			cmd.SetArgs(tt.args)
+
+			err := cmd.Execute()
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Empty(t, stderr.String())
+			assert.Equal(t, readGolden(t, tt.goldenPath), stdout.String())
+		})
+	}
+}
+
+func readGolden(t *testing.T, path string) string {
+	t.Helper()
+
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	text := string(raw)
+	if !strings.HasSuffix(text, "\n") {
+		text += "\n"
+	}
+	return text
 }
