@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	cueerrors "cuelang.org/go/cue/errors"
+
 	"github.com/runmedev/owl/internal/model"
 	"github.com/runmedev/owl/internal/registry"
 )
@@ -123,10 +125,11 @@ func validateFieldValue(types registry.TypeProvider, fieldTypeID model.TypeID, v
 	if !ok {
 		return validateValue(types, fieldTypeID, value)
 	}
-	if err := validator.ValidateFieldValue(value.FieldRef, value.Resolved); err == nil {
+	err := validator.ValidateFieldValue(value.FieldRef, value.Resolved)
+	if err == nil {
 		return nil
 	}
-	return invalidValueDiagnostic("type.invalid-"+value.FieldRef.Field, value.FieldRef.TypeID.Alias()+"."+value.FieldRef.Field, value)
+	return invalidValueDiagnostic("type.invalid-"+value.FieldRef.Field, value.FieldRef.TypeID.Alias()+"."+value.FieldRef.Field, value, err)
 }
 
 func validateValue(types registry.TypeProvider, typeID model.TypeID, value model.Value) []model.Diagnostic {
@@ -137,21 +140,55 @@ func validateValue(types registry.TypeProvider, typeID model.TypeID, value model
 	if !ok {
 		return nil
 	}
-	if err := validator.ValidateValue(typeID, value.Resolved); err == nil {
+	err := validator.ValidateValue(typeID, value.Resolved)
+	if err == nil {
 		return nil
 	}
-	return invalidValueDiagnostic("type.invalid-"+typeNameForDiagnostic(typeID), typeID.Alias(), value)
+	return invalidValueDiagnostic("type.invalid-"+typeNameForDiagnostic(typeID), typeID.Alias(), value, err)
 }
 
-func invalidValueDiagnostic(code string, name string, value model.Value) []model.Diagnostic {
+func invalidValueDiagnostic(code string, name string, value model.Value, err error) []model.Diagnostic {
 	return []model.Diagnostic{{
 		Severity: model.DiagnosticError,
 		Code:     code,
-		Message:  fmt.Sprintf("%s value does not satisfy CUE schema", name),
+		Message:  fmt.Sprintf("%s value is invalid: %s", name, validationDetail(err)),
 		Key:      "",
 		FieldRef: value.FieldRef,
 		Owner:    model.DiagnosticOwnerValidation,
 	}}
+}
+
+func validationDetail(err error) string {
+	if err == nil {
+		return "unknown validation error"
+	}
+	detail := strings.TrimSpace(cueerrors.Details(err, nil))
+	if detail == "" {
+		detail = err.Error()
+	}
+	lines := strings.Split(detail, "\n")
+	filtered := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		switch {
+		case line == "":
+			continue
+		case strings.Contains(line, ".cue:"):
+			continue
+		case strings.Contains(line, "errors in empty disjunction"):
+			continue
+		default:
+			if _, after, ok := strings.Cut(line, ": "); ok {
+				line = after
+			}
+			line = strings.TrimSuffix(line, ":")
+			filtered = append(filtered, strings.Join(strings.Fields(line), " "))
+		}
+	}
+	if len(filtered) == 0 {
+		return strings.Join(strings.Fields(detail), " ")
+	}
+	return strings.Join(filtered, "; ")
 }
 
 func typeNameForDiagnostic(typeID model.TypeID) string {
