@@ -20,11 +20,7 @@ func ValidateCUEValue(root string, typeID model.TypeID, raw string) error {
 	if err != nil {
 		return err
 	}
-	candidate := cueCandidateValue(ctx, typeID, raw)
-	if err := candidate.Err(); err != nil {
-		return err
-	}
-	return schema.Unify(candidate).Validate(cue.Concrete(true))
+	return validateCUECandidates(schema, cueCandidateValues(ctx, raw))
 }
 
 func ValidateCUEFieldValue(root string, types map[model.TypeID]model.TypeDef, ref model.FieldRef, raw string) error {
@@ -36,8 +32,7 @@ func ValidateCUEFieldValue(root string, types map[model.TypeID]model.TypeDef, re
 	if !ok || def.Kind != model.FieldKindObject {
 		return nil
 	}
-	field, ok := def.Fields[ref.Field]
-	if !ok {
+	if _, ok := def.Fields[ref.Field]; !ok {
 		return nil
 	}
 
@@ -45,11 +40,7 @@ func ValidateCUEFieldValue(root string, types map[model.TypeID]model.TypeDef, re
 	if err != nil {
 		return err
 	}
-	candidate := cueCandidateValue(ctx, field.TypeID, raw)
-	if err := candidate.Err(); err != nil {
-		return err
-	}
-	return schema.Unify(candidate).Validate(cue.Concrete(true))
+	return validateCUECandidates(schema, cueCandidateValues(ctx, raw))
 }
 
 func cueBuiltInTypeForID(typeID model.TypeID) (cueBuiltInType, bool) {
@@ -82,12 +73,6 @@ var cueBuiltInTypesByID = map[model.TypeID]cueBuiltInType{
 		valueDefinition: "#URLValue",
 		name:            "url",
 	},
-	model.TypeCorePort: {
-		importPath:      "./types/core/port",
-		definition:      "#Port",
-		valueDefinition: "#PortValue",
-		name:            "port",
-	},
 	model.TypeUniverseRedis: {
 		importPath:      "./types/universe/redis",
 		definition:      "#Redis",
@@ -96,11 +81,28 @@ var cueBuiltInTypesByID = map[model.TypeID]cueBuiltInType{
 	},
 }
 
-func cueCandidateValue(ctx *cue.Context, typeID model.TypeID, raw string) cue.Value {
-	if typeID == model.TypeCorePort {
-		return ctx.CompileString(raw)
+func cueCandidateValues(ctx *cue.Context, raw string) []cue.Value {
+	compiled := ctx.CompileString(raw)
+	if compiled.Err() == nil {
+		return []cue.Value{compiled, ctx.Encode(raw)}
 	}
-	return ctx.Encode(raw)
+	return []cue.Value{ctx.Encode(raw)}
+}
+
+func validateCUECandidates(schema cue.Value, candidates []cue.Value) error {
+	var lastErr error
+	for _, candidate := range candidates {
+		if err := candidate.Err(); err != nil {
+			lastErr = err
+			continue
+		}
+		if err := schema.Unify(candidate).Validate(cue.Concrete(true)); err != nil {
+			lastErr = err
+			continue
+		}
+		return nil
+	}
+	return lastErr
 }
 
 func loadCUEValueSchema(root string, spec cueBuiltInType, path string) (cue.Value, *cue.Context, error) {

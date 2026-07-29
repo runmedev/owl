@@ -16,7 +16,6 @@ const (
 	TypeCorePlain  TypeID = typeIDPrefix + "core/plain"
 	TypeCoreSecret TypeID = typeIDPrefix + "core/secret"
 	TypeCoreURL    TypeID = typeIDPrefix + "core/url"
-	TypeCorePort   TypeID = typeIDPrefix + "core/port"
 
 	TypeUniverseRedis TypeID = typeIDPrefix + "universe/redis"
 )
@@ -26,7 +25,6 @@ var canonicalTypeAliases = map[string]TypeID{
 	"core/plain":     TypeCorePlain,
 	"core/secret":    TypeCoreSecret,
 	"core/url":       TypeCoreURL,
-	"core/port":      TypeCorePort,
 	"universe/redis": TypeUniverseRedis,
 }
 
@@ -35,7 +33,6 @@ var typeAliases = map[string]TypeID{
 	"core/plain":     TypeCorePlain,
 	"core/secret":    TypeCoreSecret,
 	"core/url":       TypeCoreURL,
-	"core/port":      TypeCorePort,
 	"universe/redis": TypeUniverseRedis,
 }
 
@@ -44,7 +41,6 @@ var knownTypeIDs = map[TypeID]struct{}{
 	TypeCorePlain:     {},
 	TypeCoreSecret:    {},
 	TypeCoreURL:       {},
-	TypeCorePort:      {},
 	TypeUniverseRedis: {},
 }
 

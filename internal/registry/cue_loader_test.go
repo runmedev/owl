@@ -30,7 +30,7 @@ func TestLoadBuiltInCUETypeDefs(t *testing.T) {
 	require.Contains(t, redis.Fields, "port")
 	require.Contains(t, redis.Fields, "password")
 	assert.Equal(t, model.TypeCorePlain, redis.Fields["host"].TypeID)
-	assert.Equal(t, model.TypeCorePort, redis.Fields["port"].TypeID)
+	assert.Equal(t, model.TypeCorePlain, redis.Fields["port"].TypeID)
 	assert.Equal(t, model.TypeCoreSecret, redis.Fields["password"].TypeID)
 	assert.True(t, redis.Fields["password"].Required)
 	assert.Equal(t, model.SensitivitySensitive, redis.Fields["password"].Sensitivity)
@@ -59,13 +59,14 @@ func TestBuiltInCUERegistryValidatesValues(t *testing.T) {
 	registry, err := NewBuiltInCUERegistry(repoRoot(t))
 	require.NoError(t, err)
 
-	assert.NoError(t, registry.ValidateValue(model.TypeCorePort, "6379"))
-	assert.Error(t, registry.ValidateValue(model.TypeCorePort, "abc"))
-	assert.Error(t, registry.ValidateValue(model.TypeCorePort, "70000"))
-
 	redisHost := model.FieldRef{TypeID: model.TypeUniverseRedis, Instance: "queues", Field: "host"}
 	assert.NoError(t, registry.ValidateFieldValue(redisHost, "not a host"))
 	assert.Error(t, registry.ValidateFieldValue(redisHost, ""))
+
+	redisPort := model.FieldRef{TypeID: model.TypeUniverseRedis, Instance: "queues", Field: "port"}
+	assert.NoError(t, registry.ValidateFieldValue(redisPort, "6379"))
+	assert.Error(t, registry.ValidateFieldValue(redisPort, "abc"))
+	assert.Error(t, registry.ValidateFieldValue(redisPort, "70000"))
 }
 
 func repoRoot(t *testing.T) string {

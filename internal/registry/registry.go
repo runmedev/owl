@@ -59,14 +59,6 @@ func NewBuiltInRegistry() BuiltInRegistry {
 			Source:      "builtin-go",
 			Description: "URL-shaped string-carried ENV value.",
 		},
-		model.TypeCorePort: {
-			ID:          model.TypeCorePort,
-			Version:     "0.1.0",
-			Name:        "port",
-			Kind:        model.FieldKindScalar,
-			Source:      "builtin-go",
-			Description: "Port-shaped string-carried ENV value.",
-		},
 		model.TypeUniverseRedis: {
 			ID:      model.TypeUniverseRedis,
 			Version: "0.1.0",
@@ -86,7 +78,7 @@ func NewBuiltInRegistry() BuiltInRegistry {
 				},
 				"port": {
 					Name:                 "port",
-					TypeID:               model.TypeCorePort,
+					TypeID:               model.TypeCorePlain,
 					Required:             true,
 					Sensitivity:          model.SensitivityNonSensitive,
 					Exposure:             model.ExposureClear,

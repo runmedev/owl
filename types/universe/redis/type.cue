@@ -1,7 +1,6 @@
 package redis
 
 import (
-	coreport "github.com/runmedev/owl/types/core/port"
 	coresecret "github.com/runmedev/owl/types/core/secret"
 	owl "github.com/runmedev/owl/schema"
 )
@@ -18,7 +17,7 @@ import (
 			visibility:  "literal"
 		}
 		port: owl.#Field & {
-			type:        "github.com/runmedev/owl/types/core/port"
+			type:        "github.com/runmedev/owl/types/core/plain"
 			description: "Redis server port."
 			visibility:  "literal"
 		}
@@ -32,6 +31,6 @@ import (
 
 #RedisValue: {
 	host:     string & !=""
-	port:     coreport.PortValue
+	port:     uint & >=1 & <=65535
 	password: coresecret.SecretValue
 }

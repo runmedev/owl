@@ -48,7 +48,7 @@ func TestMapSpec(t *testing.T) {
 				"KEY5": {Name: AtomicNamePlain},
 				"KEY6": {Name: AtomicNameURL, Valid: true},
 				"KEY7": {Name: "Host", Valid: false},
-				"KEY8": {Name: AtomicNamePort, Valid: true},
+				"KEY8": {Name: "Port", Valid: false},
 			},
 		},
 		"WithRequiredSpecs": {

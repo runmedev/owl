@@ -23,11 +23,12 @@ The core ownership boundaries are:
 ## Owl Store V2 Decisions
 
 - CUE owns type-value validation. Go may orchestrate registry/store behavior and
-  diagnostics, but must not reimplement type semantics such as port, URL,
-  secret, or composite-field validation.
-- Do not add a generic `core/host` type yet. Host-like values carry domain
-  policy; keep them field/domain-specific, for example `universe/redis.host`,
-  until reusable semantics are clearer.
+  diagnostics, but must not reimplement type semantics such as URL, secret, or
+  composite-field validation.
+- Do not add generic `core/host` or `core/port` types yet. Network-shaped
+  values carry domain policy; keep them field/domain-specific, for example
+  `universe/redis.host` and `universe/redis.port`, until reusable semantics are
+  clearer.
 - Go owns store and contract invariants. Unknown types, unknown fields, binding
   conflicts, unresolved required dotenv values, and sensitivity mismatches are
   graph/store consistency rules rather than CUE type-value validation.

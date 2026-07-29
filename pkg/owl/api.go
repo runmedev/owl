@@ -47,7 +47,6 @@ const (
 	TypeCorePlain     = model.TypeCorePlain
 	TypeCoreSecret    = model.TypeCoreSecret
 	TypeCoreURL       = model.TypeCoreURL
-	TypeCorePort      = model.TypeCorePort
 	TypeUniverseRedis = model.TypeUniverseRedis
 
 	VisibilityLiteral    = model.VisibilityLiteral

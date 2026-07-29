@@ -23,7 +23,6 @@ var cueBuiltInTypes = []cueBuiltInType{
 	{importPath: "./types/core/plain", definition: "#Plain", valueDefinition: "#PlainValue", name: "plain"},
 	{importPath: "./types/core/secret", definition: "#Secret", valueDefinition: "#SecretValue", name: "secret"},
 	{importPath: "./types/core/url", definition: "#URL", valueDefinition: "#URLValue", name: "url"},
-	{importPath: "./types/core/port", definition: "#Port", valueDefinition: "#PortValue", name: "port"},
 	{importPath: "./types/universe/redis", definition: "#Redis", valueDefinition: "#RedisValue", name: "redis"},
 }
 

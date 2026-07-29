@@ -458,8 +458,6 @@ func dotenvSpecName(typeID owl.TypeID) string {
 		return "Secret"
 	case owl.TypeCoreURL:
 		return "Url"
-	case owl.TypeCorePort:
-		return "Port"
 	case owl.TypeCorePlain:
 		return "Plain"
 	default:

@@ -868,8 +868,6 @@ func suggestPrimitiveType(key string, value model.Value) (model.TypeID, string, 
 		return model.TypeCoreSecret, "key name suggests sensitive value", true
 	case upper == "URL" || strings.HasSuffix(upper, "_URL") || strings.Contains(upper, "URL_"):
 		return model.TypeCoreURL, "key name suggests URL", true
-	case upper == "PORT" || strings.HasSuffix(upper, "_PORT") || strings.Contains(upper, "PORT_"):
-		return model.TypeCorePort, "key name suggests port", true
 	case value.Sensitivity == model.SensitivitySensitive:
 		return model.TypeCoreSecret, "value sensitivity suggests secret", true
 	default:
@@ -899,7 +897,7 @@ func inferSensitivityForField(ref model.FieldRef) model.Sensitivity {
 	if ref.TypeID == model.TypeCoreSecret {
 		return model.SensitivitySensitive
 	}
-	if ref.TypeID == model.TypeCorePlain || ref.TypeID == model.TypeCoreURL || ref.TypeID == model.TypeCorePort {
+	if ref.TypeID == model.TypeCorePlain || ref.TypeID == model.TypeCoreURL {
 		return model.SensitivityNonSensitive
 	}
 	if ref.TypeID == model.TypeCoreOpaque {
