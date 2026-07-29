@@ -20,6 +20,28 @@ The core ownership boundaries are:
   internal model detail by default.
 - `cmd`: command wiring and rendering only.
 
+## Owl Store V2 Decisions
+
+- CUE owns type-value validation. Go may orchestrate registry/store behavior and
+  diagnostics, but must not reimplement primitive semantics such as host, port,
+  URL, or secret validation.
+- Go owns store and contract invariants. Unknown types, unknown fields, binding
+  conflicts, unresolved required dotenv values, and sensitivity mismatches are
+  graph/store consistency rules rather than CUE type-value validation.
+- Prefer `owl.toml` for local project config examples and default authoring.
+  Keep `owl.yaml`, `owl.yml`, and `owl.json` possible because the canonical
+  config shape should serialize through JSON-like inputs.
+- Do not expose `owl.cue` as the local project config frontend for now. CUE
+  remains the type-definition and validation language, not necessarily the user
+  config language.
+- Shape project config like a GraphQL input type so the same canonical model can
+  later appear idiomatically in platform files such as TOML, YAML, JSON,
+  `package.json`, or `pyproject.toml`.
+- Keep Owl project commands flatter than Runme's store command shape when that
+  better fits Owl; do not add command nesting just for symmetry.
+- Env var names are projection keys. Typed fields are semantic state.
+- Undeclared observed dotenv variables become `core/opaque`.
+
 ## Graph Engine
 
 Do not cargo-cult against Owl's GraphQL layer.
@@ -82,4 +104,3 @@ make check
 runme run test
 runme run lint
 ```
-
