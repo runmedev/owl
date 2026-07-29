@@ -238,7 +238,7 @@ func newCheckCommand(opts StoreCommandOptions) *cobra.Command {
 				}
 			}
 			if !result.OK {
-				return errors.New("owl store check failed")
+				return errSilentExit
 			}
 			return nil
 		},
