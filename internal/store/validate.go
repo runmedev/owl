@@ -151,11 +151,18 @@ func invalidValueDiagnostic(code string, name string, value model.Value, err err
 	return []model.Diagnostic{{
 		Severity: model.DiagnosticError,
 		Code:     code,
-		Message:  fmt.Sprintf("%s value is invalid: %s", name, validationDetail(err)),
+		Message:  fmt.Sprintf("%s %s is invalid: %s", name, diagnosticValueLabel(value), validationDetail(err)),
 		Key:      "",
 		FieldRef: value.FieldRef,
 		Owner:    model.DiagnosticOwnerValidation,
 	}}
+}
+
+func diagnosticValueLabel(value model.Value) string {
+	if value.Sensitivity == model.SensitivitySensitive || value.Visibility == model.VisibilityMasked || value.Visibility == model.VisibilityHidden {
+		return "value"
+	}
+	return fmt.Sprintf("value %q", value.Resolved)
 }
 
 func validationDetail(err error) string {
@@ -182,6 +189,7 @@ func validationDetail(err error) string {
 				line = after
 			}
 			line = strings.TrimSuffix(line, ":")
+			line = friendlyValidationLine(line)
 			filtered = append(filtered, strings.Join(strings.Fields(line), " "))
 		}
 	}
@@ -189,6 +197,19 @@ func validationDetail(err error) string {
 		return strings.Join(strings.Fields(detail), " ")
 	}
 	return strings.Join(filtered, "; ")
+}
+
+func friendlyValidationLine(line string) string {
+	switch {
+	case strings.Contains(line, "does not satisfy net.IP"):
+		return "not a valid IP address"
+	case strings.Contains(line, "out of bound =~"):
+		return "does not match required pattern"
+	case strings.Contains(line, "conflicting values uint and"):
+		return strings.Replace(line, "conflicting values uint and", "expected unsigned integer, got", 1)
+	default:
+		return line
+	}
 }
 
 func typeNameForDiagnostic(typeID model.TypeID) string {

@@ -130,7 +130,7 @@ func TestValidateRedisHost(t *testing.T) {
 	})
 	require.NotEmpty(t, diagnostics)
 	assert.Equal(t, "type.invalid-host", diagnostics[0].Code)
-	assert.Contains(t, diagnostics[0].Message, "universe/redis.host value is invalid")
+	assert.Contains(t, diagnostics[0].Message, `universe/redis.host value "" is invalid`)
 
 	diagnostics = validateFieldValue(types, model.TypeCorePlain, model.Value{
 		FieldRef:    ref,
@@ -140,7 +140,8 @@ func TestValidateRedisHost(t *testing.T) {
 	})
 	require.NotEmpty(t, diagnostics)
 	assert.Equal(t, "type.invalid-host", diagnostics[0].Code)
-	assert.Contains(t, diagnostics[0].Message, "not a host")
+	assert.Contains(t, diagnostics[0].Message, `value "not a host" is invalid: not a valid IP address`)
+	assert.Contains(t, diagnostics[0].Message, "does not match required pattern")
 }
 
 func TestStoreWithDotenv(t *testing.T) {
