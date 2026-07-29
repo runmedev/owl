@@ -8,9 +8,11 @@ import (
 
 func NewRootCommand() *cobra.Command {
 	cmd := cobra.Command{
-		Use:     "owl",
-		Short:   "Typed environment variable store",
-		Version: version.BaseVersionInfo(),
+		Use:           "owl",
+		Short:         "Typed environment variable store",
+		Version:       version.BaseVersionInfo(),
+		SilenceErrors: true,
+		SilenceUsage:  true,
 	}
 
 	cmd.AddCommand(NewLocalCommands()...)
