@@ -12,18 +12,17 @@ import (
 )
 
 type cueBuiltInType struct {
-	importPath      string
-	definition      string
-	valueDefinition string
-	name            string
+	importPath string
+	definition string
+	name       string
 }
 
 var cueBuiltInTypes = []cueBuiltInType{
-	{importPath: "./types/core/opaque", definition: "#Opaque", valueDefinition: "#OpaqueValue", name: "opaque"},
-	{importPath: "./types/core/plain", definition: "#Plain", valueDefinition: "#PlainValue", name: "plain"},
-	{importPath: "./types/core/secret", definition: "#Secret", valueDefinition: "#SecretValue", name: "secret"},
-	{importPath: "./types/core/url", definition: "#URL", valueDefinition: "#URLValue", name: "url"},
-	{importPath: "./types/universe/redis", definition: "#Redis", valueDefinition: "#RedisValue", name: "redis"},
+	{importPath: "./types/core/opaque", definition: "#Opaque", name: "opaque"},
+	{importPath: "./types/core/plain", definition: "#Plain", name: "plain"},
+	{importPath: "./types/core/secret", definition: "#Secret", name: "secret"},
+	{importPath: "./types/core/url", definition: "#URL", name: "url"},
+	{importPath: "./types/universe/redis", definition: "#Redis", name: "redis"},
 }
 
 func LoadBuiltInCUETypeDefs(root string) (map[model.TypeID]model.TypeDef, error) {

@@ -6,8 +6,5 @@ import owl "github.com/runmedev/owl/schema"
 	id:          "github.com/runmedev/owl/types/core/secret"
 	kind:        "primitive"
 	description: "Sensitive string-carried environment value."
+	value:       string & !=""
 }
-
-#SecretValue: string & !=""
-
-SecretValue: #SecretValue

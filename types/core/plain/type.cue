@@ -6,6 +6,5 @@ import owl "github.com/runmedev/owl/schema"
 	id:          "github.com/runmedev/owl/types/core/plain"
 	kind:        "primitive"
 	description: "Known non-sensitive string-carried environment value with no narrower semantic contract."
+	value:       string
 }
-
-#PlainValue: string

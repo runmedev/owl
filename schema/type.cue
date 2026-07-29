@@ -9,7 +9,13 @@ package schema
 	kind:        #Kind
 	description: string
 
-	fields?: [string]: #Field
+	if kind == "primitive" {
+		value: _
+	}
+
+	if kind == "composite" {
+		fields: [string]: #Field
+	}
 }
 
 #Field: {
@@ -17,4 +23,5 @@ package schema
 	required:    bool | *true
 	description: string
 	visibility:  #Visibility
+	value:       _
 }

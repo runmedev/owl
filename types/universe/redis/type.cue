@@ -3,7 +3,6 @@ package redis
 import (
 	"net"
 
-	coresecret "github.com/runmedev/owl/types/core/secret"
 	owl "github.com/runmedev/owl/schema"
 )
 
@@ -17,24 +16,21 @@ import (
 			type:        "github.com/runmedev/owl/types/core/plain"
 			description: "Redis server hostname."
 			visibility:  "literal"
+			value:       #RedisHostValue
 		}
 		port: owl.#Field & {
 			type:        "github.com/runmedev/owl/types/core/plain"
 			description: "Redis server port."
 			visibility:  "literal"
+			value:       uint & >=1 & <=65535
 		}
 		password: owl.#Field & {
 			type:        "github.com/runmedev/owl/types/core/secret"
 			description: "Redis password."
 			visibility:  "masked"
+			value:       string & !=""
 		}
 	}
-}
-
-#RedisValue: {
-	host:     #RedisHostValue
-	port:     uint & >=1 & <=65535
-	password: coresecret.SecretValue
 }
 
 #RedisHostnameValue: string & =~"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\\.?$" & =~"[A-Za-z]"

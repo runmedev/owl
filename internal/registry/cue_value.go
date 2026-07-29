@@ -13,10 +13,10 @@ import (
 
 func ValidateCUEValue(root string, typeID model.TypeID, raw string) error {
 	spec, ok := cueBuiltInTypeForID(typeID)
-	if !ok || spec.valueDefinition == "" {
+	if !ok {
 		return nil
 	}
-	schema, ctx, err := loadCUEValueSchema(root, spec, spec.valueDefinition)
+	schema, ctx, err := loadCUEValueSchema(root, spec, spec.definition+".value")
 	if err != nil {
 		return err
 	}
@@ -25,7 +25,7 @@ func ValidateCUEValue(root string, typeID model.TypeID, raw string) error {
 
 func ValidateCUEFieldValue(root string, types map[model.TypeID]model.TypeDef, ref model.FieldRef, raw string) error {
 	spec, ok := cueBuiltInTypeForID(ref.TypeID)
-	if !ok || spec.valueDefinition == "" || ref.Field == "" {
+	if !ok || ref.Field == "" {
 		return nil
 	}
 	def, ok := types[ref.TypeID]
@@ -36,7 +36,7 @@ func ValidateCUEFieldValue(root string, types map[model.TypeID]model.TypeDef, re
 		return nil
 	}
 
-	schema, ctx, err := loadCUEValueSchema(root, spec, spec.valueDefinition+"."+ref.Field)
+	schema, ctx, err := loadCUEValueSchema(root, spec, spec.definition+".fields."+ref.Field+".value")
 	if err != nil {
 		return err
 	}
@@ -50,34 +50,29 @@ func cueBuiltInTypeForID(typeID model.TypeID) (cueBuiltInType, bool) {
 
 var cueBuiltInTypesByID = map[model.TypeID]cueBuiltInType{
 	model.TypeCoreOpaque: {
-		importPath:      "./types/core/opaque",
-		definition:      "#Opaque",
-		valueDefinition: "#OpaqueValue",
-		name:            "opaque",
+		importPath: "./types/core/opaque",
+		definition: "#Opaque",
+		name:       "opaque",
 	},
 	model.TypeCorePlain: {
-		importPath:      "./types/core/plain",
-		definition:      "#Plain",
-		valueDefinition: "#PlainValue",
-		name:            "plain",
+		importPath: "./types/core/plain",
+		definition: "#Plain",
+		name:       "plain",
 	},
 	model.TypeCoreSecret: {
-		importPath:      "./types/core/secret",
-		definition:      "#Secret",
-		valueDefinition: "#SecretValue",
-		name:            "secret",
+		importPath: "./types/core/secret",
+		definition: "#Secret",
+		name:       "secret",
 	},
 	model.TypeCoreURL: {
-		importPath:      "./types/core/url",
-		definition:      "#URL",
-		valueDefinition: "#URLValue",
-		name:            "url",
+		importPath: "./types/core/url",
+		definition: "#URL",
+		name:       "url",
 	},
 	model.TypeUniverseRedis: {
-		importPath:      "./types/universe/redis",
-		definition:      "#Redis",
-		valueDefinition: "#RedisValue",
-		name:            "redis",
+		importPath: "./types/universe/redis",
+		definition: "#Redis",
+		name:       "redis",
 	},
 }
 
