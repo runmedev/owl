@@ -63,7 +63,9 @@ type SourceResult struct {
 	Envs []string
 }
 
-type CheckRequest struct{}
+type CheckRequest struct {
+	Details bool
+}
 
 type CheckResult struct {
 	OK          bool
@@ -212,6 +214,8 @@ func newSourceCommand(opts StoreCommandOptions) *cobra.Command {
 }
 
 func newCheckCommand(opts StoreCommandOptions) *cobra.Command {
+	var req CheckRequest
+
 	cmd := cobra.Command{
 		Hidden: opts.Hidden,
 		Use:    "check",
@@ -223,7 +227,7 @@ func newCheckCommand(opts StoreCommandOptions) *cobra.Command {
 				return err
 			}
 
-			result, err := client.Check(cmd.Context(), CheckRequest{})
+			result, err := client.Check(cmd.Context(), req)
 			if err != nil {
 				return err
 			}
@@ -243,6 +247,7 @@ func newCheckCommand(opts StoreCommandOptions) *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&req.Details, "details", false, "Show detailed validation errors")
 	if opts.ConfigureCheckCommand != nil {
 		opts.ConfigureCheckCommand(&cmd)
 	}

@@ -138,6 +138,7 @@ type Diagnostic struct {
 	Severity DiagnosticSeverity
 	Code     string
 	Message  string
+	Details  []string
 	Key      string
 	FieldRef FieldRef
 	Owner    DiagnosticOwner

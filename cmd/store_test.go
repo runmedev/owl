@@ -137,6 +137,25 @@ func TestStoreSnapshotAllRendersInheritedAfterExplicit(t *testing.T) {
 	assert.Less(t, strings.Index(rendered, "AAA_SYSTEM"), strings.Index(rendered, "ZZZ_SYSTEM"))
 }
 
+func TestStoreCheckPassesDetailsFlag(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeStoreClient{check: &CheckResult{OK: true}}
+	cmd := NewStoreCommand(StoreCommandOptions{
+		ClientFactory: func(*cobra.Command) (StoreClient, error) {
+			return client, nil
+		},
+	})
+
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"check", "--details"})
+
+	require.NoError(t, cmd.Execute())
+	assert.True(t, client.checkReq.Details)
+}
+
 func TestStoreSnapshotRevealRequiresInsecurePermission(t *testing.T) {
 	t.Parallel()
 
@@ -316,6 +335,7 @@ type fakeStoreClient struct {
 	projectResult  *ProjectSpecResult
 	snapshotReq    SnapshotRequest
 	sourceReq      SourceRequest
+	checkReq       CheckRequest
 	typeReq        TypeRequest
 	projectReq     ProjectSpecRequest
 	snapshotCalled bool
@@ -337,7 +357,8 @@ func (c *fakeStoreClient) Source(_ context.Context, req SourceRequest) (*SourceR
 	return c.source, nil
 }
 
-func (c *fakeStoreClient) Check(context.Context, CheckRequest) (*CheckResult, error) {
+func (c *fakeStoreClient) Check(_ context.Context, req CheckRequest) (*CheckResult, error) {
+	c.checkReq = req
 	c.checkCalled = true
 	return c.check, nil
 }

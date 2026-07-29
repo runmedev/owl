@@ -69,6 +69,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"severity": &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"code":     &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"message":  &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"details":  &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.String)},
 			"key":      &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"field":    &graphql.InputObjectFieldConfig{Type: fieldRefInput},
 			"owner":    &graphql.InputObjectFieldConfig{Type: graphql.String},
@@ -156,8 +157,20 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"severity": &graphql.Field{Type: graphql.String},
 			"code":     &graphql.Field{Type: graphql.String},
 			"message":  &graphql.Field{Type: graphql.String},
-			"key":      &graphql.Field{Type: graphql.String},
-			"owner":    &graphql.Field{Type: graphql.String},
+			"details": &graphql.Field{
+				Type: graphql.NewList(graphql.String),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					switch diagnostic := p.Source.(type) {
+					case model.Diagnostic:
+						return diagnostic.Details, nil
+					case map[string]interface{}:
+						return decodeStringList(diagnostic["details"]), nil
+					}
+					return nil, nil
+				},
+			},
+			"key":   &graphql.Field{Type: graphql.String},
+			"owner": &graphql.Field{Type: graphql.String},
 			"field": &graphql.Field{
 				Type: graphql.String,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -689,6 +702,7 @@ func decodeEffectiveStateInput(raw interface{}) model.EffectiveState {
 			Severity: model.DiagnosticSeverity(stringValue(diagnosticRaw["severity"])),
 			Code:     stringValue(diagnosticRaw["code"]),
 			Message:  stringValue(diagnosticRaw["message"]),
+			Details:  decodeStringList(diagnosticRaw["details"]),
 			Key:      stringValue(diagnosticRaw["key"]),
 			FieldRef: decodeFieldRef(diagnosticRaw["field"]),
 			Owner:    model.DiagnosticOwner(stringValue(diagnosticRaw["owner"])),

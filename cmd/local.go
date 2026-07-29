@@ -89,7 +89,7 @@ func (c *LocalStoreClient) Source(_ context.Context, req SourceRequest) (*Source
 	return &SourceResult{Envs: envs}, nil
 }
 
-func (c *LocalStoreClient) Check(context.Context, CheckRequest) (*CheckResult, error) {
+func (c *LocalStoreClient) Check(_ context.Context, req CheckRequest) (*CheckResult, error) {
 	store, err := c.store()
 	if err != nil {
 		return nil, err
@@ -98,7 +98,7 @@ func (c *LocalStoreClient) Check(context.Context, CheckRequest) (*CheckResult, e
 	check := store.Check()
 	return &CheckResult{
 		OK:          check.OK,
-		Diagnostics: diagnosticStrings(check.Diagnostics),
+		Diagnostics: diagnosticStrings(check.Diagnostics, req.Details),
 	}, nil
 }
 
@@ -514,7 +514,7 @@ func snapshotEnvsFromItems(items []owl.SnapshotItem) []SnapshotEnv {
 		if visibility == "" {
 			visibility = "UNSPECIFIED"
 		}
-		diagnostics := diagnosticStrings(item.Diagnostics)
+		diagnostics := diagnosticStrings(item.Diagnostics, false)
 		status := visibility
 		if len(item.Diagnostics) > 0 {
 			status = item.Diagnostics[0].Code
@@ -542,20 +542,27 @@ func snapshotEnvsFromItems(items []owl.SnapshotItem) []SnapshotEnv {
 	return envs
 }
 
-func diagnosticStrings(diagnostics []owl.Diagnostic) []string {
+func diagnosticStrings(diagnostics []owl.Diagnostic, details bool) []string {
 	result := make([]string, 0, len(diagnostics))
 	for _, diagnostic := range diagnostics {
-		result = append(result, diagnosticString(diagnostic))
+		result = append(result, diagnosticString(diagnostic, details))
 	}
 	return result
 }
 
-func diagnosticString(diagnostic owl.Diagnostic) string {
+func diagnosticString(diagnostic owl.Diagnostic, details bool) string {
+	line := ""
 	if diagnostic.Key != "" {
-		return string(diagnostic.Severity) + " " + diagnostic.Code + " " + diagnostic.Key + ": " + diagnostic.Message
+		line = string(diagnostic.Severity) + " " + diagnostic.Code + " " + diagnostic.Key + ": " + diagnostic.Message
+	} else if diagnostic.FieldRef.TypeID != "" {
+		line = string(diagnostic.Severity) + " " + diagnostic.Code + " " + diagnostic.FieldRef.String() + ": " + diagnostic.Message
+	} else {
+		line = string(diagnostic.Severity) + " " + diagnostic.Code + ": " + diagnostic.Message
 	}
-	if diagnostic.FieldRef.TypeID != "" {
-		return string(diagnostic.Severity) + " " + diagnostic.Code + " " + diagnostic.FieldRef.String() + ": " + diagnostic.Message
+	if details {
+		for _, detail := range diagnostic.Details {
+			line += "\n  cue: " + detail
+		}
 	}
-	return string(diagnostic.Severity) + " " + diagnostic.Code + ": " + diagnostic.Message
+	return line
 }

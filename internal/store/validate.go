@@ -148,10 +148,12 @@ func validateValue(types registry.TypeProvider, typeID model.TypeID, value model
 }
 
 func invalidValueDiagnostic(code string, name string, value model.Value, err error) []model.Diagnostic {
+	details := validationDetails(err)
 	return []model.Diagnostic{{
 		Severity: model.DiagnosticError,
 		Code:     code,
-		Message:  fmt.Sprintf("%s %s is invalid: %s", name, diagnosticValueLabel(value), validationDetail(err)),
+		Message:  fmt.Sprintf("%s %s is invalid: %s", name, diagnosticValueLabel(value), friendlyValidationDetail(details)),
+		Details:  details,
 		Key:      "",
 		FieldRef: value.FieldRef,
 		Owner:    model.DiagnosticOwnerValidation,
@@ -165,9 +167,9 @@ func diagnosticValueLabel(value model.Value) string {
 	return fmt.Sprintf("value %q", value.Resolved)
 }
 
-func validationDetail(err error) string {
+func validationDetails(err error) []string {
 	if err == nil {
-		return "unknown validation error"
+		return []string{"unknown validation error"}
 	}
 	detail := strings.TrimSpace(cueerrors.Details(err, nil))
 	if detail == "" {
@@ -189,14 +191,21 @@ func validationDetail(err error) string {
 				line = after
 			}
 			line = strings.TrimSuffix(line, ":")
-			line = friendlyValidationLine(line)
 			filtered = append(filtered, strings.Join(strings.Fields(line), " "))
 		}
 	}
 	if len(filtered) == 0 {
-		return strings.Join(strings.Fields(detail), " ")
+		return []string{strings.Join(strings.Fields(detail), " ")}
 	}
-	return strings.Join(filtered, "; ")
+	return filtered
+}
+
+func friendlyValidationDetail(details []string) string {
+	friendly := make([]string, 0, len(details))
+	for _, detail := range details {
+		friendly = append(friendly, friendlyValidationLine(detail))
+	}
+	return strings.Join(friendly, "; ")
 }
 
 func friendlyValidationLine(line string) string {
