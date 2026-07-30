@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"cuelang.org/go/cue/cuecontext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -42,11 +43,41 @@ func TestLoadBuiltInCUETypeDefs(t *testing.T) {
 	assert.Equal(t, model.TypeCorePlain, redis.Fields["host"].TypeID)
 	assert.Equal(t, model.TypeCorePlain, redis.Fields["port"].TypeID)
 	assert.Equal(t, model.TypeCoreSecret, redis.Fields["password"].TypeID)
+	assert.True(t, redis.Fields["host"].Required)
+	assert.True(t, redis.Fields["port"].Required)
 	assert.Equal(t, model.SensitivityPlaintext, redis.Fields["host"].Sensitivity)
 	assert.Equal(t, model.SensitivityPlaintext, redis.Fields["port"].Sensitivity)
 	assert.True(t, redis.Fields["password"].Required)
 	assert.Equal(t, model.SensitivitySensitive, redis.Fields["password"].Sensitivity)
 	assert.Equal(t, "Redis password.", redis.Fields["password"].Description)
+
+	openai := types[model.TypeUniverseOpenAI]
+	assert.Equal(t, model.TypeUniverseOpenAI, openai.ID)
+	assert.Equal(t, model.FieldKindObject, openai.Kind)
+	assert.Equal(t, "OpenAI API client configuration.", openai.Description)
+	require.Contains(t, openai.Fields, "apiKey")
+	require.Contains(t, openai.Fields, "baseURL")
+	require.Contains(t, openai.Fields, "organization")
+	require.Contains(t, openai.Fields, "project")
+	assert.True(t, openai.Fields["apiKey"].Required)
+	assert.False(t, openai.Fields["baseURL"].Required)
+	assert.Equal(t, model.TypeCoreSecret, openai.Fields["apiKey"].TypeID)
+	assert.Equal(t, model.TypeCoreURL, openai.Fields["baseURL"].TypeID)
+	assert.Equal(t, model.SensitivitySensitive, openai.Fields["apiKey"].Sensitivity)
+	assert.Equal(t, model.SensitivityPlaintext, openai.Fields["baseURL"].Sensitivity)
+
+	anthropic := types[model.TypeUniverseAnthropic]
+	assert.Equal(t, model.TypeUniverseAnthropic, anthropic.ID)
+	assert.Equal(t, model.FieldKindObject, anthropic.Kind)
+	assert.Equal(t, "Anthropic API client configuration.", anthropic.Description)
+	require.Contains(t, anthropic.Fields, "apiKey")
+	require.Contains(t, anthropic.Fields, "baseURL")
+	assert.True(t, anthropic.Fields["apiKey"].Required)
+	assert.False(t, anthropic.Fields["baseURL"].Required)
+	assert.Equal(t, model.TypeCoreSecret, anthropic.Fields["apiKey"].TypeID)
+	assert.Equal(t, model.TypeCoreURL, anthropic.Fields["baseURL"].TypeID)
+	assert.Equal(t, model.SensitivitySensitive, anthropic.Fields["apiKey"].Sensitivity)
+	assert.Equal(t, model.SensitivityPlaintext, anthropic.Fields["baseURL"].Sensitivity)
 }
 
 func TestNewBuiltInCUERegistry(t *testing.T) {
@@ -63,6 +94,16 @@ func TestNewBuiltInCUERegistry(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, model.TypeUniverseRedis, def.ID)
+
+	def, ok, err = registry.ResolveTypeRef("universe/openai")
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, model.TypeUniverseOpenAI, def.ID)
+
+	def, ok, err = registry.ResolveTypeRef("universe/anthropic")
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, model.TypeUniverseAnthropic, def.ID)
 }
 
 func TestBuiltInCUERegistryValidatesValues(t *testing.T) {
@@ -81,6 +122,51 @@ func TestBuiltInCUERegistryValidatesValues(t *testing.T) {
 	assert.NoError(t, registry.ValidateFieldValue(redisPort, "6379"))
 	assert.Error(t, registry.ValidateFieldValue(redisPort, "abc"))
 	assert.Error(t, registry.ValidateFieldValue(redisPort, "70000"))
+
+	openaiAPIKey := model.FieldRef{TypeID: model.TypeUniverseOpenAI, Instance: "default", Field: "apiKey"}
+	assert.NoError(t, registry.ValidateFieldValue(openaiAPIKey, "sk-test"))
+	assert.Error(t, registry.ValidateFieldValue(openaiAPIKey, ""))
+
+	openaiBaseURL := model.FieldRef{TypeID: model.TypeUniverseOpenAI, Instance: "default", Field: "baseURL"}
+	assert.NoError(t, registry.ValidateFieldValue(openaiBaseURL, "https://api.openai.com/v1"))
+	assert.Error(t, registry.ValidateFieldValue(openaiBaseURL, "api.openai.com/v1"))
+
+	anthropicAPIKey := model.FieldRef{TypeID: model.TypeUniverseAnthropic, Instance: "default", Field: "apiKey"}
+	assert.NoError(t, registry.ValidateFieldValue(anthropicAPIKey, "sk-ant-test"))
+	assert.Error(t, registry.ValidateFieldValue(anthropicAPIKey, ""))
+
+	anthropicBaseURL := model.FieldRef{TypeID: model.TypeUniverseAnthropic, Instance: "default", Field: "baseURL"}
+	assert.NoError(t, registry.ValidateFieldValue(anthropicBaseURL, "https://api.anthropic.com"))
+	assert.Error(t, registry.ValidateFieldValue(anthropicBaseURL, "api.anthropic.com"))
+}
+
+func TestCUETypeDefRequiresExplicitFieldRequiredness(t *testing.T) {
+	t.Parallel()
+
+	value := cuecontext.New().CompileString(`
+package broken
+
+#Broken: {
+	id:          "github.com/runmedev/owl/types/universe/redis"
+	kind:        "composite"
+	description: "Broken type."
+	fields: {
+		host: {
+			type:        "github.com/runmedev/owl/types/core/plain"
+			description: "Host."
+			value:       string
+		}
+	}
+}
+`)
+	require.NoError(t, value.Err())
+
+	_, err := cueTypeDefFromValue(cueTypeSpec{importPath: "test", definition: "#Broken", name: "broken"}, value, map[model.TypeID]model.TypeDef{
+		model.TypeCorePlain: {Sensitivity: model.SensitivityPlaintext},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "field host")
+	assert.Contains(t, err.Error(), "required")
 }
 
 func repoRoot(t *testing.T) string {

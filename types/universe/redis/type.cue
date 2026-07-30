@@ -14,16 +14,19 @@ import (
 	fields: {
 		host: owl.#Field & {
 			type:        "github.com/runmedev/owl/types/core/plain"
+			required:    true
 			description: "Redis server hostname."
 			value:       #RedisHostValue
 		}
 		port: owl.#Field & {
 			type:        "github.com/runmedev/owl/types/core/plain"
+			required:    true
 			description: "Redis server port."
 			value:       (uint & >=1 & <=65535) | error("must be an integer between 1 and 65535")
 		}
 		password: owl.#Field & {
 			type:        "github.com/runmedev/owl/types/core/secret"
+			required:    true
 			description: "Redis password."
 			value:       (string & !="") | error("must not be empty")
 		}

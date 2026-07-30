@@ -1,0 +1,5 @@
+[needs.anthropic.default]
+type = "github.com/runmedev/owl/types/universe/anthropic"
+
+[needs.anthropic.default.dotenv]
+baseURL = "ANTHROPIC_BASE_URL"

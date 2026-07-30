@@ -55,7 +55,7 @@ func TestRuntimeDrivesLoadNormalizeValidateSnapshot(t *testing.T) {
 	assert.Equal(t, "[masked]", byName["API_KEY"].Value)
 	assert.Equal(t, model.TypeCoreSecret, byName["API_KEY"].Type)
 	assert.Equal(t, `core/plain("default").api.url`, byName["API_URL"].Field.String())
-	assert.Equal(t, model.TypeUniverseRedis, byName["REDIS_HOST"].Type)
+	assert.Equal(t, model.TypeCoreOpaque, byName["REDIS_HOST"].Type)
 }
 
 func TestRuntimeRendersDotenvThroughGraphQL(t *testing.T) {

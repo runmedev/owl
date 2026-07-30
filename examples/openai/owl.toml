@@ -1,0 +1,7 @@
+[needs.openai.default]
+type = "github.com/runmedev/owl/types/universe/openai"
+
+[needs.openai.default.dotenv]
+baseURL = "OPENAI_BASE_URL"
+organization = "OPENAI_ORG_ID"
+project = "OPENAI_PROJECT_ID"

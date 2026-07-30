@@ -128,7 +128,7 @@ func TestPublicAPIObservedEmptyValuesArePresent(t *testing.T) {
 	t.Parallel()
 
 	store, err := owl.NewStore(
-		owl.WithDotenv("[system]", strings.NewReader("RUNME_TEST_TOKEN=\nEMPTY_OPAQUE=\n")),
+		owl.WithDotenv("[process]", strings.NewReader("RUNME_TEST_TOKEN=\nEMPTY_OPAQUE=\n")),
 		owl.WithEnvSpec(".env.spec", strings.NewReader("RUNME_TEST_TOKEN=\"Runme test token\" # Secret\nEMPTY_OPAQUE=\"Opaque value\" # Opaque\n")),
 	)
 	require.NoError(t, err)
@@ -141,14 +141,14 @@ func TestPublicAPIObservedEmptyValuesArePresent(t *testing.T) {
 	assert.Empty(t, byName["RUNME_TEST_TOKEN"].OriginalValue)
 	assert.Equal(t, owl.VisibilityMasked, byName["RUNME_TEST_TOKEN"].Visibility)
 	assert.Equal(t, owl.ExposureClear, byName["RUNME_TEST_TOKEN"].Exposure)
-	assert.Equal(t, "[system]", byName["RUNME_TEST_TOKEN"].Source.Name)
+	assert.Equal(t, "[process]", byName["RUNME_TEST_TOKEN"].Source.Name)
 	assert.Equal(t, ".env.spec", byName["RUNME_TEST_TOKEN"].Origin.Name)
 
 	assert.Equal(t, "[hidden]", byName["EMPTY_OPAQUE"].Value)
 	assert.Empty(t, byName["EMPTY_OPAQUE"].OriginalValue)
 	assert.Equal(t, owl.VisibilityHidden, byName["EMPTY_OPAQUE"].Visibility)
 	assert.Equal(t, owl.ExposureOpaque, byName["EMPTY_OPAQUE"].Exposure)
-	assert.Equal(t, "[system]", byName["EMPTY_OPAQUE"].Source.Name)
+	assert.Equal(t, "[process]", byName["EMPTY_OPAQUE"].Source.Name)
 	assert.Equal(t, ".env.spec", byName["EMPTY_OPAQUE"].Origin.Name)
 
 	revealed, err := store.Snapshot(owl.SnapshotPolicy{Reveal: true})

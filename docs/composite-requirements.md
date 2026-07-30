@@ -12,6 +12,11 @@ The first composite requirement is Redis:
 
 More Redis shape (`username`, `db`, `tls`, URI normalization, sentinel, cluster) is deferred.
 
+Owl also includes provider API client contracts for common LLM integrations:
+
+- `universe/openai`
+- `universe/anthropic`
+
 ## Flow
 
 ```mermaid
@@ -56,6 +61,31 @@ password -> REDIS_AUTH_TOKEN
 ```
 
 Owl may also read `owl.yaml`, `owl.yml`, and `owl.json`. All frontends hydrate the same config input model.
+
+Provider API client examples follow the same shape:
+
+```toml
+[needs.openai.default]
+type = "github.com/runmedev/owl/types/universe/openai"
+
+[needs.openai.default.dotenv]
+baseURL = "OPENAI_BASE_URL"
+organization = "OPENAI_ORG_ID"
+project = "OPENAI_PROJECT_ID"
+```
+
+```toml
+[needs.anthropic.default]
+type = "github.com/runmedev/owl/types/universe/anthropic"
+
+[needs.anthropic.default.dotenv]
+baseURL = "ANTHROPIC_BASE_URL"
+```
+
+See `examples/openai/owl.toml` and `examples/anthropic/owl.toml` for runnable examples.
+
+Universe examples should use real provider conventions. Custom projection key
+behavior is covered by tests and should not be confused with provider defaults.
 
 ## Canonical Input Shape
 
@@ -139,6 +169,12 @@ Rules:
 - duplicate dotenv keys are hard errors.
 - inferred keys are normalized to uppercase snake case.
 - explicit keys are preserved exactly.
+- snapshot source labels describe the observed value source: process-inherited
+  values use `[process]`, and dotenv file values use the concrete file path
+  such as `.env` or `.env.local`.
+- observed keys that are not declared by config or spec remain `core/opaque`;
+  Owl does not ambiently promote key names into `universe/*` types during
+  snapshot/check.
 
 ## Type References
 
@@ -151,6 +187,8 @@ github.com/runmedev/owl/types/core/plain
 github.com/runmedev/owl/types/core/secret
 github.com/runmedev/owl/types/core/url
 github.com/runmedev/owl/types/universe/redis
+github.com/runmedev/owl/types/universe/openai
+github.com/runmedev/owl/types/universe/anthropic
 ```
 
 An optional `#<git-ref>` suffix can request a branch, tag, or commit-ish:
@@ -163,7 +201,7 @@ github.com/runmedev/owl/types/universe/redis#abc1234
 
 The `#<git-ref>` addresses the git repo ref. Owl instance identity stays separate.
 
-Short refs such as `universe/redis` are accepted as authoring shorthand.
+Short refs such as `universe/redis`, `universe/openai`, and `universe/anthropic` are accepted as authoring shorthand.
 
 ## Schema Package
 
@@ -207,20 +245,20 @@ import (
 	fields: {
 		host: owl.#Field & {
 			type:        "github.com/runmedev/owl/types/core/plain"
+			required:    true
 			description: "Redis server hostname"
-			visibility:  "literal"
 			value:       #RedisHostValue
 		}
 		port: owl.#Field & {
 			type:        "github.com/runmedev/owl/types/core/plain"
+			required:    true
 			description: "Redis server port"
-			visibility:  "literal"
 			value:       uint & >=1 & <=65535
 		}
 		password: owl.#Field & {
 			type:        "github.com/runmedev/owl/types/core/secret"
+			required:    true
 			description: "Redis password"
-			visibility:  "masked"
 			value:       string & !=""
 		}
 	}

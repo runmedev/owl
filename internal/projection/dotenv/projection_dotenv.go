@@ -10,6 +10,7 @@ import (
 
 type DotenvIngestOptions struct {
 	Source       model.Source
+	Sources      map[string]model.Source
 	Actor        string
 	Clock        model.Clock
 	OperationIDs model.OperationIDGenerator
@@ -81,8 +82,12 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 		now := clock()
 		opID := opIDs()
 		value := values[key]
+		valueSource := source
+		if keySource, ok := opts.Sources[key]; ok && keySource.Name != "" {
+			valueSource = keySource
+		}
 		fieldRef, confidence, diagnostic := dotenvFieldRef(key)
-		origin := source
+		origin := valueSource
 		explicit := false
 		order := uint(0)
 		preserveKey := confidence == model.BindingConfidenceOpaque
@@ -110,7 +115,7 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 				FieldRef: fieldRef,
 				Owner:    model.DiagnosticOwnerProjection,
 			})
-			state.Bindings = append(state.Bindings, newBinding(opID, key, fieldRef, description, source, origin, confidence, explicit, order, preserveKey, false, now))
+			state.Bindings = append(state.Bindings, newBinding(opID, key, fieldRef, description, valueSource, origin, confidence, explicit, order, preserveKey, false, now))
 			seenKeys[key] = struct{}{}
 			continue
 		}
@@ -131,7 +136,7 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 			Sensitivity:     sensitivity,
 			Exposure:        exposure,
 			Origin:          origin,
-			Source:          source,
+			Source:          valueSource,
 			CreatedAt:       now,
 			UpdatedAt:       now,
 			LastOperationID: opID,
@@ -140,13 +145,13 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 		if declaration, ok := declarationsByKey[key]; ok {
 			required = declaration.Required
 		}
-		state.Bindings = append(state.Bindings, newBinding(opID, key, fieldRef, description, source, origin, confidence, explicit, order, preserveKey, required, now))
+		state.Bindings = append(state.Bindings, newBinding(opID, key, fieldRef, description, valueSource, origin, confidence, explicit, order, preserveKey, required, now))
 		state.Operations = append(state.Operations, model.OperationMetadata{
 			ID:           opID,
 			Kind:         model.OperationKindLoad,
 			Timestamp:    now,
 			Actor:        opts.Actor,
-			Source:       source,
+			Source:       valueSource,
 			ProjectionID: model.ProjectionDotenv,
 		})
 	}
@@ -322,38 +327,7 @@ func preferredDotenvKey(ref model.FieldRef) string {
 }
 
 func dotenvFieldRef(key string) (model.FieldRef, model.BindingConfidence, *model.Diagnostic) {
-	parts := strings.Split(key, "_")
-	if len(parts) >= 2 && parts[len(parts)-2] == "REDIS" {
-		field, ok := redisField(parts[len(parts)-1])
-		if ok {
-			instance := "default"
-			if len(parts) > 2 {
-				instance = strings.ToLower(strings.Join(parts[:len(parts)-2], "_"))
-			}
-			return model.FieldRef{TypeID: model.TypeUniverseRedis, Instance: instance, Field: field}, model.BindingConfidenceTypeDerived, nil
-		}
-	}
-	if strings.HasPrefix(key, "REDIS_") {
-		field, ok := redisField(strings.TrimPrefix(key, "REDIS_"))
-		if ok {
-			return model.FieldRef{TypeID: model.TypeUniverseRedis, Instance: "default", Field: field}, model.BindingConfidenceTypeDerived, nil
-		}
-	}
-
 	return model.FieldRef{TypeID: model.TypeCoreOpaque, Instance: "default", Field: opaqueFieldName(key)}, model.BindingConfidenceOpaque, nil
-}
-
-func redisField(suffix string) (string, bool) {
-	switch suffix {
-	case "HOST":
-		return "host", true
-	case "PORT":
-		return "port", true
-	case "PASSWORD":
-		return "password", true
-	default:
-		return "", false
-	}
 }
 
 func redisPreferredSuffix(field string) (string, bool) {
@@ -374,8 +348,15 @@ func opaqueFieldName(key string) string {
 }
 
 func sensitivityForField(ref model.FieldRef) model.Sensitivity {
-	if ref.TypeID == model.TypeUniverseRedis && ref.Field == "password" {
-		return model.SensitivitySensitive
+	if ref.TypeID == model.TypeUniverseRedis {
+		switch ref.Field {
+		case "password":
+			return model.SensitivitySensitive
+		case "host", "port":
+			return model.SensitivityPlaintext
+		default:
+			return model.SensitivityUnknown
+		}
 	}
 	if ref.TypeID == model.TypeCoreSecret {
 		return model.SensitivitySensitive
@@ -396,7 +377,7 @@ func sensitivityForField(ref model.FieldRef) model.Sensitivity {
 			return model.SensitivityUnknown
 		}
 	}
-	return model.SensitivityPlaintext
+	return model.SensitivityUnknown
 }
 
 func exposureForField(ref model.FieldRef) model.Exposure {

@@ -31,8 +31,9 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 	dotenvVariableInput := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "DotenvVariableInput",
 		Fields: graphql.InputObjectConfigFieldMap{
-			"key":   &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-			"value": &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"key":    &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
+			"value":  &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"source": &graphql.InputObjectFieldConfig{Type: sourceInput},
 		},
 	})
 	dotenvInput := graphql.NewInputObject(graphql.InputObjectConfig{
@@ -53,6 +54,8 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"description": &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"source":      &graphql.InputObjectFieldConfig{Type: sourceInput},
 			"order":       &graphql.InputObjectFieldConfig{Type: graphql.Int},
+			"sensitivity": &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"exposure":    &graphql.InputObjectFieldConfig{Type: graphql.String},
 		},
 	})
 	envContractInput := graphql.NewInputObject(graphql.InputObjectConfig{
@@ -617,6 +620,8 @@ func decodeLoadInput(raw map[string]interface{}) store.LoadInput {
 				Description: stringValue(bindingRaw["description"]),
 				Source:      decodeSource(bindingRaw["source"]),
 				Order:       uintValue(bindingRaw["order"]),
+				Sensitivity: model.Sensitivity(stringValue(bindingRaw["sensitivity"])),
+				Exposure:    model.Exposure(stringValue(bindingRaw["exposure"])),
 			})
 		}
 		input.Contracts = append(input.Contracts, contract)
@@ -641,8 +646,9 @@ func decodeDotenvInput(raw interface{}) store.LoadInput {
 			continue
 		}
 		input.Dotenv = append(input.Dotenv, store.DotenvVariable{
-			Key:   stringValue(variable["key"]),
-			Value: stringValue(variable["value"]),
+			Key:    stringValue(variable["key"]),
+			Value:  stringValue(variable["value"]),
+			Source: decodeSource(variable["source"]),
 		})
 	}
 	return input
