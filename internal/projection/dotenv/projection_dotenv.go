@@ -365,17 +365,7 @@ func sensitivityForField(ref model.FieldRef) model.Sensitivity {
 		return model.SensitivityPlaintext
 	}
 	if ref.TypeID == model.TypeCoreOpaque {
-		key := strings.ToUpper(ref.Field)
-		switch {
-		case strings.Contains(key, "PASSWORD"),
-			strings.Contains(key, "SECRET"),
-			strings.Contains(key, "TOKEN"),
-			strings.Contains(key, "API.KEY"),
-			strings.Contains(key, "PRIVATE.KEY"):
-			return model.SensitivitySensitive
-		default:
-			return model.SensitivityUnknown
-		}
+		return model.SensitivityUnknown
 	}
 	return model.SensitivityUnknown
 }

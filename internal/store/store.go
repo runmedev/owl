@@ -499,10 +499,14 @@ func (s *Store) Snapshot(policy SnapshotPolicy) ([]SnapshotItem, error) {
 	for _, binding := range s.state.Bindings {
 		value := s.state.Values[binding.FieldRef]
 		rendered := renderSnapshotValue(value, policy)
+		original := value.Original
+		if rendered.visibility != model.VisibilityLiteral {
+			original = ""
+		}
 		items = append(items, SnapshotItem{
 			Name:          string(binding.Key),
 			Value:         rendered.value,
-			OriginalValue: value.Original,
+			OriginalValue: original,
 			Type:          value.FieldRef.TypeID,
 			Field:         value.FieldRef,
 			Source:        value.Source,
@@ -872,17 +876,7 @@ func inferSensitivityForField(ref model.FieldRef) model.Sensitivity {
 		return model.SensitivityPlaintext
 	}
 	if ref.TypeID == model.TypeCoreOpaque {
-		key := strings.ToUpper(ref.Field)
-		switch {
-		case strings.Contains(key, "PASSWORD"),
-			strings.Contains(key, "SECRET"),
-			strings.Contains(key, "TOKEN"),
-			strings.Contains(key, "API.KEY"),
-			strings.Contains(key, "PRIVATE.KEY"):
-			return model.SensitivitySensitive
-		default:
-			return model.SensitivityUnknown
-		}
+		return model.SensitivityUnknown
 	}
 	return model.SensitivityPlaintext
 }
