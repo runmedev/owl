@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"cuelang.org/go/cue/cuecontext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -42,6 +43,8 @@ func TestLoadBuiltInCUETypeDefs(t *testing.T) {
 	assert.Equal(t, model.TypeCorePlain, redis.Fields["host"].TypeID)
 	assert.Equal(t, model.TypeCorePlain, redis.Fields["port"].TypeID)
 	assert.Equal(t, model.TypeCoreSecret, redis.Fields["password"].TypeID)
+	assert.True(t, redis.Fields["host"].Required)
+	assert.True(t, redis.Fields["port"].Required)
 	assert.Equal(t, model.SensitivityPlaintext, redis.Fields["host"].Sensitivity)
 	assert.Equal(t, model.SensitivityPlaintext, redis.Fields["port"].Sensitivity)
 	assert.True(t, redis.Fields["password"].Required)
@@ -81,6 +84,35 @@ func TestBuiltInCUERegistryValidatesValues(t *testing.T) {
 	assert.NoError(t, registry.ValidateFieldValue(redisPort, "6379"))
 	assert.Error(t, registry.ValidateFieldValue(redisPort, "abc"))
 	assert.Error(t, registry.ValidateFieldValue(redisPort, "70000"))
+}
+
+func TestCUETypeDefRequiresExplicitFieldRequiredness(t *testing.T) {
+	t.Parallel()
+
+	value := cuecontext.New().CompileString(`
+package broken
+
+#Broken: {
+	id:          "github.com/runmedev/owl/types/universe/redis"
+	kind:        "composite"
+	description: "Broken type."
+	fields: {
+		host: {
+			type:        "github.com/runmedev/owl/types/core/plain"
+			description: "Host."
+			value:       string
+		}
+	}
+}
+`)
+	require.NoError(t, value.Err())
+
+	_, err := cueTypeDefFromValue(cueTypeSpec{importPath: "test", definition: "#Broken", name: "broken"}, value, map[model.TypeID]model.TypeDef{
+		model.TypeCorePlain: {Sensitivity: model.SensitivityPlaintext},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "field host")
+	assert.Contains(t, err.Error(), "required")
 }
 
 func repoRoot(t *testing.T) string {

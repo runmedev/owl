@@ -21,7 +21,7 @@ package schema
 
 #Field: {
 	type:        string
-	required:    bool | *true
+	required:    bool
 	description: string
 	sensitivity?: #Sensitivity
 	value:       _

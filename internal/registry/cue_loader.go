@@ -98,7 +98,7 @@ func cueFields(value cue.Value, types map[model.TypeID]model.TypeDef) (map[strin
 		if err != nil {
 			return nil, fmt.Errorf("field %s: %w", name, err)
 		}
-		required, err := cueBoolDefault(field, "required", true)
+		required, err := cueBool(field, "required")
 		if err != nil {
 			return nil, fmt.Errorf("field %s: %w", name, err)
 		}
@@ -141,11 +141,8 @@ func cueOptionalString(value cue.Value, path string) (string, bool, error) {
 	return result, true, nil
 }
 
-func cueBoolDefault(value cue.Value, path string, fallback bool) (bool, error) {
+func cueBool(value cue.Value, path string) (bool, error) {
 	field := value.LookupPath(cue.ParsePath(path))
-	if !field.Exists() {
-		return fallback, nil
-	}
 	defaultValue, ok := field.Default()
 	if ok {
 		field = defaultValue
