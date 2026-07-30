@@ -178,7 +178,7 @@ func (c *LocalStoreClient) storeWithOptions(allowMissingSpec bool, loadConfig bo
 		}
 	}
 
-	specFiles, err := filesOrDefaults(c.options.SpecFiles, ".env.example")
+	specFiles, err := filesOrDefaults(c.options.SpecFiles, ".env.sample", ".env.example", ".env.spec")
 	if err != nil {
 		return nil, err
 	}
@@ -259,7 +259,7 @@ func isDotenvKey(key string) bool {
 func validateNoHumanDotenvSpecs(specFiles []string) error {
 	files := specFiles
 	if len(files) == 0 {
-		files = []string{".env.spec", ".env.example"}
+		files = []string{".env.sample", ".env.example", ".env.spec"}
 	}
 	for _, file := range files {
 		raw, err := os.ReadFile(file)
