@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/graphql-go/graphql"
@@ -68,6 +69,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"severity": &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"code":     &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"message":  &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"details":  &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.String)},
 			"key":      &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"field":    &graphql.InputObjectFieldConfig{Type: fieldRefInput},
 			"owner":    &graphql.InputObjectFieldConfig{Type: graphql.String},
@@ -155,8 +157,20 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"severity": &graphql.Field{Type: graphql.String},
 			"code":     &graphql.Field{Type: graphql.String},
 			"message":  &graphql.Field{Type: graphql.String},
-			"key":      &graphql.Field{Type: graphql.String},
-			"owner":    &graphql.Field{Type: graphql.String},
+			"details": &graphql.Field{
+				Type: graphql.NewList(graphql.String),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					switch diagnostic := p.Source.(type) {
+					case model.Diagnostic:
+						return diagnostic.Details, nil
+					case map[string]interface{}:
+						return decodeStringList(diagnostic["details"]), nil
+					}
+					return nil, nil
+				},
+			},
+			"key":   &graphql.Field{Type: graphql.String},
+			"owner": &graphql.Field{Type: graphql.String},
 			"field": &graphql.Field{
 				Type: graphql.String,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -522,7 +536,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 						gctx := p.Source.(Context)
 						s := store.NewState(gctx.State, gctx.Types)
-						state, err := s.Apply(contextFromParams(p), store.ValidateOperation{Types: gctx.Types})
+						state, err := s.Apply(contextFromParams(p), store.IntegrityOperation{Types: gctx.Types})
 						if err != nil {
 							return nil, err
 						}
@@ -688,6 +702,7 @@ func decodeEffectiveStateInput(raw interface{}) model.EffectiveState {
 			Severity: model.DiagnosticSeverity(stringValue(diagnosticRaw["severity"])),
 			Code:     stringValue(diagnosticRaw["code"]),
 			Message:  stringValue(diagnosticRaw["message"]),
+			Details:  decodeStringList(diagnosticRaw["details"]),
 			Key:      stringValue(diagnosticRaw["key"]),
 			FieldRef: decodeFieldRef(diagnosticRaw["field"]),
 			Owner:    model.DiagnosticOwner(stringValue(diagnosticRaw["owner"])),
@@ -731,6 +746,9 @@ func decodeSource(raw interface{}) model.Source {
 }
 
 func decodeFieldRef(raw interface{}) model.FieldRef {
+	if ref, ok := raw.(string); ok {
+		return decodeFieldRefString(ref)
+	}
 	field, ok := raw.(map[string]interface{})
 	if !ok {
 		return model.FieldRef{}
@@ -740,6 +758,23 @@ func decodeFieldRef(raw interface{}) model.FieldRef {
 		Instance: stringValue(field["instance"]),
 		Field:    stringValue(field["field"]),
 	}
+}
+
+func decodeFieldRefString(raw string) model.FieldRef {
+	typeRef, field, ok := strings.Cut(raw, ".")
+	if !ok {
+		return model.FieldRef{}
+	}
+	instance := ""
+	if before, after, ok := strings.Cut(typeRef, "("); ok {
+		typeRef = before
+		instance = strings.Trim(after, ")\"")
+	}
+	typeID, err := model.ParseTypeID(typeRef)
+	if err != nil {
+		return model.FieldRef{}
+	}
+	return model.FieldRef{TypeID: typeID, Instance: instance, Field: field}
 }
 
 func decodeStringList(raw interface{}) []string {

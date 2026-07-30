@@ -1,0 +1,16 @@
+[needs.redis.default]
+type = "github.com/runmedev/owl/types/universe/redis"
+
+[needs.redis.queues]
+type = "github.com/runmedev/owl/types/universe/redis"
+
+[needs.redis.queues.dotenv]
+password = "REDIS_AUTH_TOKEN"
+
+[needs.redis.cache]
+type = "github.com/runmedev/owl/types/universe/redis"
+
+[needs.redis.cache.dotenv]
+host = "CACHE_REDIS_HOST"
+port = "CACHE_REDIS_PORT"
+password = "CACHE_REDIS_TOKEN"

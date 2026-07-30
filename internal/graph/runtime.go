@@ -359,6 +359,7 @@ func marshalEffectiveState(state model.EffectiveState) map[string]interface{} {
 			"severity": string(diagnostic.Severity),
 			"code":     diagnostic.Code,
 			"message":  diagnostic.Message,
+			"details":  append([]string{}, diagnostic.Details...),
 			"key":      diagnostic.Key,
 			"field":    marshalFieldRef(diagnostic.FieldRef),
 			"owner":    string(diagnostic.Owner),
@@ -450,7 +451,7 @@ query OwlSnapshot($input: LoadInput!, $reveal: Boolean = false) {
               exposure
               description
               updatedAt
-              diagnostics { severity code message key field owner }
+              diagnostics { severity code message details key field owner }
             }
           }
         }
@@ -623,6 +624,7 @@ func decodeDiagnostics(raw interface{}) []model.Diagnostic {
 			Severity: model.DiagnosticSeverity(stringValue(item["severity"])),
 			Code:     stringValue(item["code"]),
 			Message:  stringValue(item["message"]),
+			Details:  decodeStringList(item["details"]),
 			Key:      stringValue(item["key"]),
 			FieldRef: decodeFieldRef(item["field"]),
 			Owner:    model.DiagnosticOwner(stringValue(item["owner"])),
@@ -660,7 +662,7 @@ query OwlGet($input: LoadInput!, $key: String!, $reveal: Boolean = false) {
               visibility
               exposure
               source { name kind }
-              diagnostics { severity code message key field owner }
+              diagnostics { severity code message details key field owner }
             }
           }
         }
@@ -691,7 +693,7 @@ query OwlCheck($input: LoadInput!) {
       normalize {
         validate {
           render {
-            check { ok diagnostics { severity code message key field owner } }
+            check { ok diagnostics { severity code message details key field owner } }
           }
         }
       }

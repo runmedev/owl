@@ -36,7 +36,7 @@ func TestIngestDotenv_RedisAndOpaque(t *testing.T) {
 	defaultHost := model.FieldRef{TypeID: model.TypeUniverseRedis, Instance: "default", Field: "host"}
 	require.Contains(t, state.Values, defaultHost)
 	assert.Equal(t, "localhost", state.Values[defaultHost].Resolved)
-	assert.Equal(t, model.SensitivityNonSensitive, state.Values[defaultHost].Sensitivity)
+	assert.Equal(t, model.SensitivityPlaintext, state.Values[defaultHost].Sensitivity)
 	assert.Equal(t, model.ExposureClear, state.Values[defaultHost].Exposure)
 	assert.Equal(t, model.OperationID("test-op-000006"), state.Values[defaultHost].LastOperationID)
 

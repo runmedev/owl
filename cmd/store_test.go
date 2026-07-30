@@ -44,6 +44,40 @@ func TestStoreSnapshotRendersStatusColumn(t *testing.T) {
 	assert.Contains(t, out.String(), "masked")
 }
 
+func TestStoreSnapshotRendersDiagnosticStatus(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeStoreClient{
+		snapshot: &SnapshotResult{Envs: []SnapshotEnv{
+			{
+				Name:        "REDIS_HOST",
+				Value:       "not a host",
+				Type:        "universe/redis",
+				Source:      ".env",
+				Visibility:  "type.invalid-host: host value must be a hostname or IP address",
+				Description: "Redis host",
+				Invalid:     true,
+			},
+		}},
+	}
+	cmd := NewStoreCommand(StoreCommandOptions{
+		ClientFactory: func(*cobra.Command) (StoreClient, error) {
+			return client, nil
+		},
+	})
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"snapshot", "--all"})
+
+	require.NoError(t, cmd.Execute())
+	assert.Contains(t, stdout.String(), "type.invalid-host")
+	assert.NotContains(t, stdout.String(), "\tliteral\t")
+	assert.Contains(t, stderr.String(), "run `owl check`")
+}
+
 func TestStoreSnapshotRendersExplicitItemsByDefault(t *testing.T) {
 	t.Parallel()
 
@@ -101,6 +135,26 @@ func TestStoreSnapshotAllRendersInheritedAfterExplicit(t *testing.T) {
 	assert.Less(t, strings.Index(rendered, "API_KEY"), strings.Index(rendered, "API_URL"))
 	assert.Less(t, strings.Index(rendered, "API_URL"), strings.Index(rendered, "AAA_SYSTEM"))
 	assert.Less(t, strings.Index(rendered, "AAA_SYSTEM"), strings.Index(rendered, "ZZZ_SYSTEM"))
+}
+
+func TestStoreCheckRendersSuccessSummaryAndPassesDetailsFlag(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeStoreClient{check: &CheckResult{OK: true, Checked: 3}}
+	cmd := NewStoreCommand(StoreCommandOptions{
+		ClientFactory: func(*cobra.Command) (StoreClient, error) {
+			return client, nil
+		},
+	})
+
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"check", "--details"})
+
+	require.NoError(t, cmd.Execute())
+	assert.True(t, client.checkReq.Details)
+	assert.Equal(t, "ok: 3 variables checked, 0 errors, 0 warnings\n", out.String())
 }
 
 func TestStoreSnapshotRevealRequiresInsecurePermission(t *testing.T) {
@@ -279,13 +333,17 @@ type fakeStoreClient struct {
 	source         *SourceResult
 	check          *CheckResult
 	typeResult     *TypeResult
+	projectResult  *ProjectSpecResult
 	snapshotReq    SnapshotRequest
 	sourceReq      SourceRequest
+	checkReq       CheckRequest
 	typeReq        TypeRequest
+	projectReq     ProjectSpecRequest
 	snapshotCalled bool
 	sourceCalled   bool
 	checkCalled    bool
 	typeCalled     bool
+	projectCalled  bool
 }
 
 func (c *fakeStoreClient) Snapshot(_ context.Context, req SnapshotRequest) (*SnapshotResult, error) {
@@ -300,7 +358,8 @@ func (c *fakeStoreClient) Source(_ context.Context, req SourceRequest) (*SourceR
 	return c.source, nil
 }
 
-func (c *fakeStoreClient) Check(context.Context, CheckRequest) (*CheckResult, error) {
+func (c *fakeStoreClient) Check(_ context.Context, req CheckRequest) (*CheckResult, error) {
+	c.checkReq = req
 	c.checkCalled = true
 	return c.check, nil
 }
@@ -309,4 +368,10 @@ func (c *fakeStoreClient) Type(_ context.Context, req TypeRequest) (*TypeResult,
 	c.typeReq = req
 	c.typeCalled = true
 	return c.typeResult, nil
+}
+
+func (c *fakeStoreClient) ProjectSpec(_ context.Context, req ProjectSpecRequest) (*ProjectSpecResult, error) {
+	c.projectReq = req
+	c.projectCalled = true
+	return c.projectResult, nil
 }

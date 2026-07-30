@@ -1,0 +1,10 @@
+NAME               VALUE           TYPE            SOURCE                  STATUS   DESCRIPTION
+CACHE_REDIS_HOST   cache.internal  universe/redis  testdata/cli/redis.env  literal  Redis server hostname
+CACHE_REDIS_PORT   6380            universe/redis  testdata/cli/redis.env  literal  Redis server port
+CACHE_REDIS_TOKEN  [masked]        universe/redis  testdata/cli/redis.env  masked   Redis password
+QUEUES_REDIS_HOST  redis.internal  universe/redis  testdata/cli/redis.env  literal  Redis server hostname
+QUEUES_REDIS_PORT  6379            universe/redis  testdata/cli/redis.env  literal  Redis server port
+REDIS_AUTH_TOKEN   [masked]        universe/redis  testdata/cli/redis.env  masked   Redis password
+REDIS_HOST         localhost       universe/redis  testdata/cli/redis.env  literal  Redis server hostname
+REDIS_PASSWORD     [masked]        universe/redis  testdata/cli/redis.env  masked   Redis password
+REDIS_PORT         6379            universe/redis  testdata/cli/redis.env  literal  Redis server port

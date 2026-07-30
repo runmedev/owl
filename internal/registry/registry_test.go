@@ -33,7 +33,7 @@ func TestBuiltInRegistry_ResolveTypeRef(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, model.TypeUniverseRedis, def.ID)
 
-	def, ok, err = provider.ResolveTypeRef("https://owl.runme.dev/v1/types/core/opaque")
+	def, ok, err = provider.ResolveTypeRef("github.com/runmedev/owl/types/core/opaque")
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, model.TypeCoreOpaque, def.ID)

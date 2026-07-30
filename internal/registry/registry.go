@@ -1,14 +1,29 @@
 package registry
 
-import "github.com/runmedev/owl/internal/model"
+import (
+	"path/filepath"
+	"runtime"
+
+	"github.com/runmedev/owl/internal/model"
+)
 
 type TypeProvider interface {
 	ResolveType(model.TypeID) (model.TypeDef, bool)
 	ResolveTypeRef(string) (model.TypeDef, bool, error)
 }
 
+type ValueValidator interface {
+	ValidateValue(model.TypeID, string) error
+}
+
+type FieldValueValidator interface {
+	ValidateFieldValue(model.FieldRef, string) error
+}
+
 type BuiltInRegistry struct {
-	types map[model.TypeID]model.TypeDef
+	types  map[model.TypeID]model.TypeDef
+	cue    *cueCatalog
+	cueErr error
 }
 
 func NewBuiltInRegistry() BuiltInRegistry {
@@ -18,6 +33,7 @@ func NewBuiltInRegistry() BuiltInRegistry {
 			Version:     "0.1.0",
 			Name:        "opaque",
 			Kind:        model.FieldKindScalar,
+			Sensitivity: model.SensitivityUnknown,
 			Source:      "builtin-go",
 			Description: "Unknown string-carried ENV value with unknown semantics and sensitivity.",
 		},
@@ -26,14 +42,16 @@ func NewBuiltInRegistry() BuiltInRegistry {
 			Version:     "0.1.0",
 			Name:        "plain",
 			Kind:        model.FieldKindScalar,
+			Sensitivity: model.SensitivityPlaintext,
 			Source:      "builtin-go",
-			Description: "Known non-sensitive string-carried ENV value with no narrower semantic contract.",
+			Description: "Known plaintext string-carried ENV value with no narrower semantic contract.",
 		},
 		model.TypeCoreSecret: {
 			ID:          model.TypeCoreSecret,
 			Version:     "0.1.0",
 			Name:        "secret",
 			Kind:        model.FieldKindScalar,
+			Sensitivity: model.SensitivitySensitive,
 			Source:      "builtin-go",
 			Description: "Sensitive string-carried ENV value.",
 		},
@@ -42,24 +60,9 @@ func NewBuiltInRegistry() BuiltInRegistry {
 			Version:     "0.1.0",
 			Name:        "url",
 			Kind:        model.FieldKindScalar,
+			Sensitivity: model.SensitivityPlaintext,
 			Source:      "builtin-go",
 			Description: "URL-shaped string-carried ENV value.",
-		},
-		model.TypeCoreHost: {
-			ID:          model.TypeCoreHost,
-			Version:     "0.1.0",
-			Name:        "host",
-			Kind:        model.FieldKindScalar,
-			Source:      "builtin-go",
-			Description: "Host-shaped string-carried ENV value.",
-		},
-		model.TypeCorePort: {
-			ID:          model.TypeCorePort,
-			Version:     "0.1.0",
-			Name:        "port",
-			Kind:        model.FieldKindScalar,
-			Source:      "builtin-go",
-			Description: "Port-shaped string-carried ENV value.",
 		},
 		model.TypeUniverseRedis: {
 			ID:      model.TypeUniverseRedis,
@@ -70,35 +73,39 @@ func NewBuiltInRegistry() BuiltInRegistry {
 			Fields: map[string]model.FieldDef{
 				"host": {
 					Name:                 "host",
-					TypeID:               model.TypeCoreHost,
+					TypeID:               model.TypeCorePlain,
 					Required:             true,
-					Sensitivity:          model.SensitivityNonSensitive,
+					Sensitivity:          model.SensitivityPlaintext,
 					Exposure:             model.ExposureClear,
 					PreferredDotenvKey:   "REDIS_HOST",
 					AcceptedDotenvSuffix: []string{"HOST"},
+					Description:          "Redis server hostname",
 				},
 				"port": {
 					Name:                 "port",
-					TypeID:               model.TypeCorePort,
+					TypeID:               model.TypeCorePlain,
 					Required:             true,
-					Sensitivity:          model.SensitivityNonSensitive,
+					Sensitivity:          model.SensitivityPlaintext,
 					Exposure:             model.ExposureClear,
 					PreferredDotenvKey:   "REDIS_PORT",
 					AcceptedDotenvSuffix: []string{"PORT"},
+					Description:          "Redis server port",
 				},
 				"password": {
 					Name:                 "password",
 					TypeID:               model.TypeCoreSecret,
-					Required:             false,
+					Required:             true,
 					Sensitivity:          model.SensitivitySensitive,
 					Exposure:             model.ExposureClear,
 					PreferredDotenvKey:   "REDIS_PASSWORD",
 					AcceptedDotenvSuffix: []string{"PASSWORD"},
+					Description:          "Redis password",
 				},
 			},
 		},
 	}
-	return BuiltInRegistry{types: types}
+	catalog, err := newCUECatalog(sourceRepoRoot())
+	return BuiltInRegistry{types: types, cue: catalog, cueErr: err}
 }
 
 func (r BuiltInRegistry) ResolveType(id model.TypeID) (model.TypeDef, bool) {
@@ -113,4 +120,32 @@ func (r BuiltInRegistry) ResolveTypeRef(ref string) (model.TypeDef, bool, error)
 	}
 	def, ok := r.ResolveType(id)
 	return def, ok, nil
+}
+
+func (r BuiltInRegistry) ValidateValue(typeID model.TypeID, value string) error {
+	if r.cueErr != nil {
+		return r.cueErr
+	}
+	if r.cue == nil {
+		return nil
+	}
+	return r.cue.ValidateValue(typeID, value)
+}
+
+func (r BuiltInRegistry) ValidateFieldValue(ref model.FieldRef, value string) error {
+	if r.cueErr != nil {
+		return r.cueErr
+	}
+	if r.cue == nil {
+		return nil
+	}
+	return r.cue.ValidateFieldValue(r.types, ref, value)
+}
+
+func sourceRepoRoot() string {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		return ""
+	}
+	return filepath.Clean(filepath.Join(filepath.Dir(file), "../.."))
 }

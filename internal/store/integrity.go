@@ -7,7 +7,7 @@ import (
 	"github.com/runmedev/owl/internal/registry"
 )
 
-func ValidateState(state model.EffectiveState, types registry.TypeProvider) []model.Diagnostic {
+func CheckStateIntegrity(state model.EffectiveState, types registry.TypeProvider) []model.Diagnostic {
 	if types == nil {
 		types = registry.NewBuiltInRegistry()
 	}
@@ -57,7 +57,11 @@ func ValidateState(state model.EffectiveState, types registry.TypeProvider) []mo
 					Owner:    model.DiagnosticOwnerValidation,
 				})
 			}
+			diagnostics = append(diagnostics, fieldValueDiagnostics(types, field.TypeID, value)...)
+			continue
 		}
+
+		diagnostics = append(diagnostics, valueDiagnostics(types, def.ID, value)...)
 	}
 
 	seenBindings := make(map[string]model.FieldRef)
@@ -108,4 +112,34 @@ func ValidateState(state model.EffectiveState, types registry.TypeProvider) []mo
 	}
 
 	return diagnostics
+}
+
+func fieldValueDiagnostics(types registry.TypeProvider, fieldTypeID model.TypeID, value model.Value) []model.Diagnostic {
+	if value.Visibility == model.VisibilityUnresolved {
+		return nil
+	}
+	validator, ok := types.(registry.FieldValueValidator)
+	if !ok {
+		return valueDiagnostics(types, fieldTypeID, value)
+	}
+	err := validator.ValidateFieldValue(value.FieldRef, value.Resolved)
+	if err == nil {
+		return nil
+	}
+	return invalidTypeDiagnostic("type.invalid-"+value.FieldRef.Field, value.FieldRef.TypeID.Alias()+"."+value.FieldRef.Field, value, err)
+}
+
+func valueDiagnostics(types registry.TypeProvider, typeID model.TypeID, value model.Value) []model.Diagnostic {
+	if value.Visibility == model.VisibilityUnresolved {
+		return nil
+	}
+	validator, ok := types.(registry.ValueValidator)
+	if !ok {
+		return nil
+	}
+	err := validator.ValidateValue(typeID, value.Resolved)
+	if err == nil {
+		return nil
+	}
+	return invalidTypeDiagnostic("type.invalid-"+typeNameForDiagnostic(typeID), typeID.Alias(), value, err)
 }

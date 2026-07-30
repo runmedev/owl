@@ -190,7 +190,7 @@ type OperationRecord struct {
 
 type NormalizeOperation struct{}
 
-type ValidateOperation struct {
+type IntegrityOperation struct {
 	Types registry.TypeProvider
 }
 
@@ -301,7 +301,7 @@ func NewStore(opts ...StoreOption) (*Store, error) {
 	if _, err := store.Apply(context.Background(), NormalizeOperation{}); err != nil {
 		return nil, err
 	}
-	state, err := store.Apply(context.Background(), ValidateOperation{Types: cfg.types})
+	state, err := store.Apply(context.Background(), IntegrityOperation{Types: cfg.types})
 	if err != nil {
 		return nil, err
 	}
@@ -476,13 +476,13 @@ func (NormalizeOperation) Apply(_ context.Context, state model.EffectiveState) (
 	return state, nil
 }
 
-func (op ValidateOperation) Apply(_ context.Context, state model.EffectiveState) (model.EffectiveState, error) {
+func (op IntegrityOperation) Apply(_ context.Context, state model.EffectiveState) (model.EffectiveState, error) {
 	types := op.Types
 	if types == nil {
 		types = registry.NewBuiltInRegistry()
 	}
 	state.Diagnostics = withoutDiagnosticOwner(state.Diagnostics, model.DiagnosticOwnerValidation)
-	state.Diagnostics = append(state.Diagnostics, ValidateState(state, types)...)
+	state.Diagnostics = append(state.Diagnostics, CheckStateIntegrity(state, types)...)
 	return state, nil
 }
 
@@ -868,10 +868,6 @@ func suggestPrimitiveType(key string, value model.Value) (model.TypeID, string, 
 		return model.TypeCoreSecret, "key name suggests sensitive value", true
 	case upper == "URL" || strings.HasSuffix(upper, "_URL") || strings.Contains(upper, "URL_"):
 		return model.TypeCoreURL, "key name suggests URL", true
-	case upper == "HOST" || strings.HasSuffix(upper, "_HOST") || strings.Contains(upper, "HOST_"):
-		return model.TypeCoreHost, "key name suggests host", true
-	case upper == "PORT" || strings.HasSuffix(upper, "_PORT") || strings.Contains(upper, "PORT_"):
-		return model.TypeCorePort, "key name suggests port", true
 	case value.Sensitivity == model.SensitivitySensitive:
 		return model.TypeCoreSecret, "value sensitivity suggests secret", true
 	default:
@@ -901,8 +897,8 @@ func inferSensitivityForField(ref model.FieldRef) model.Sensitivity {
 	if ref.TypeID == model.TypeCoreSecret {
 		return model.SensitivitySensitive
 	}
-	if ref.TypeID == model.TypeCorePlain || ref.TypeID == model.TypeCoreURL || ref.TypeID == model.TypeCoreHost || ref.TypeID == model.TypeCorePort {
-		return model.SensitivityNonSensitive
+	if ref.TypeID == model.TypeCorePlain || ref.TypeID == model.TypeCoreURL {
+		return model.SensitivityPlaintext
 	}
 	if ref.TypeID == model.TypeCoreOpaque {
 		key := strings.ToUpper(ref.Field)
@@ -917,7 +913,7 @@ func inferSensitivityForField(ref model.FieldRef) model.Sensitivity {
 			return model.SensitivityUnknown
 		}
 	}
-	return model.SensitivityNonSensitive
+	return model.SensitivityPlaintext
 }
 
 func inferExposureForField(ref model.FieldRef) model.Exposure {

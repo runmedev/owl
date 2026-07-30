@@ -17,6 +17,7 @@ type StoreClient interface {
 	Source(context.Context, SourceRequest) (*SourceResult, error)
 	Check(context.Context, CheckRequest) (*CheckResult, error)
 	Type(context.Context, TypeRequest) (*TypeResult, error)
+	ProjectSpec(context.Context, ProjectSpecRequest) (*ProjectSpecResult, error)
 }
 
 type StoreCommandOptions struct {
@@ -25,6 +26,7 @@ type StoreCommandOptions struct {
 	ConfigureSourceCommand   func(*cobra.Command)
 	ConfigureCheckCommand    func(*cobra.Command)
 	ConfigureTypeCommand     func(*cobra.Command)
+	ConfigureProjectCommand  func(*cobra.Command)
 	Hidden                   bool
 	InsecureAllowed          func() bool
 }
@@ -49,6 +51,7 @@ type SnapshotEnv struct {
 	Explicit    bool
 	Visibility  string
 	Diagnostics []string
+	Invalid     bool
 }
 
 type SourceRequest struct {
@@ -60,11 +63,14 @@ type SourceResult struct {
 	Envs []string
 }
 
-type CheckRequest struct{}
+type CheckRequest struct {
+	Details bool
+}
 
 type CheckResult struct {
 	OK          bool
 	Diagnostics []string
+	Checked     int
 }
 
 type TypeRequest struct {
@@ -78,6 +84,16 @@ type TypeRequest struct {
 type TypeResult struct {
 	Proposals []TypeProposal
 	Rendered  string
+}
+
+type ProjectSpecRequest struct {
+	ConfigPath string
+	Output     string
+	Write      bool
+}
+
+type ProjectSpecResult struct {
+	Rendered string
 }
 
 type TypeProposal struct {
@@ -143,7 +159,13 @@ func newSnapshotCommand(opts StoreCommandOptions) *cobra.Command {
 				return err
 			}
 
-			return errors.Wrap(renderSnapshot(cmd.OutOrStdout(), result, req), "failed to render")
+			if err := renderSnapshot(cmd.OutOrStdout(), result, req); err != nil {
+				return errors.Wrap(err, "failed to render")
+			}
+			if snapshotHasInvalidRows(result.Envs, req) {
+				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "warning: snapshot contains invalid state; run `owl check` for details")
+			}
+			return nil
 		},
 	}
 
@@ -193,6 +215,8 @@ func newSourceCommand(opts StoreCommandOptions) *cobra.Command {
 }
 
 func newCheckCommand(opts StoreCommandOptions) *cobra.Command {
+	var req CheckRequest
+
 	cmd := cobra.Command{
 		Hidden: opts.Hidden,
 		Use:    "check",
@@ -204,13 +228,13 @@ func newCheckCommand(opts StoreCommandOptions) *cobra.Command {
 				return err
 			}
 
-			result, err := client.Check(cmd.Context(), CheckRequest{})
+			result, err := client.Check(cmd.Context(), req)
 			if err != nil {
 				return err
 			}
 
 			if len(result.Diagnostics) == 0 {
-				_, err = fmt.Fprintln(cmd.OutOrStdout(), "Success")
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "ok: %d variables checked, 0 errors, 0 warnings\n", result.Checked)
 				return err
 			}
 			for _, diagnostic := range result.Diagnostics {
@@ -219,11 +243,12 @@ func newCheckCommand(opts StoreCommandOptions) *cobra.Command {
 				}
 			}
 			if !result.OK {
-				return errors.New("owl store check failed")
+				return errSilentExit
 			}
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&req.Details, "details", false, "Show detailed validation errors")
 	if opts.ConfigureCheckCommand != nil {
 		opts.ConfigureCheckCommand(&cmd)
 	}
@@ -308,6 +333,18 @@ func renderSnapshot(w io.Writer, result *SnapshotResult, req SnapshotRequest) er
 	}
 
 	return tw.Flush()
+}
+
+func snapshotHasInvalidRows(envs []SnapshotEnv, req SnapshotRequest) bool {
+	for i, env := range snapshotEnvsForRender(envs, req) {
+		if i >= req.Limit && !req.All {
+			break
+		}
+		if env.Invalid {
+			return true
+		}
+	}
+	return false
 }
 
 func snapshotEnvsForRender(envs []SnapshotEnv, req SnapshotRequest) []SnapshotEnv {

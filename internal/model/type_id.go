@@ -7,26 +7,32 @@ import (
 
 type TypeID string
 
-const typeIDPrefix = "https://owl.runme.dev/v1/types/"
+const (
+	typeIDPrefix = "github.com/runmedev/owl/types/"
+)
 
 const (
 	TypeCoreOpaque TypeID = typeIDPrefix + "core/opaque"
 	TypeCorePlain  TypeID = typeIDPrefix + "core/plain"
 	TypeCoreSecret TypeID = typeIDPrefix + "core/secret"
 	TypeCoreURL    TypeID = typeIDPrefix + "core/url"
-	TypeCoreHost   TypeID = typeIDPrefix + "core/host"
-	TypeCorePort   TypeID = typeIDPrefix + "core/port"
 
 	TypeUniverseRedis TypeID = typeIDPrefix + "universe/redis"
 )
+
+var canonicalTypeAliases = map[string]TypeID{
+	"core/opaque":    TypeCoreOpaque,
+	"core/plain":     TypeCorePlain,
+	"core/secret":    TypeCoreSecret,
+	"core/url":       TypeCoreURL,
+	"universe/redis": TypeUniverseRedis,
+}
 
 var typeAliases = map[string]TypeID{
 	"core/opaque":    TypeCoreOpaque,
 	"core/plain":     TypeCorePlain,
 	"core/secret":    TypeCoreSecret,
 	"core/url":       TypeCoreURL,
-	"core/host":      TypeCoreHost,
-	"core/port":      TypeCorePort,
 	"universe/redis": TypeUniverseRedis,
 }
 
@@ -35,8 +41,6 @@ var knownTypeIDs = map[TypeID]struct{}{
 	TypeCorePlain:     {},
 	TypeCoreSecret:    {},
 	TypeCoreURL:       {},
-	TypeCoreHost:      {},
-	TypeCorePort:      {},
 	TypeUniverseRedis: {},
 }
 
@@ -62,7 +66,7 @@ func ParseTypeID(ref string) (TypeID, error) {
 }
 
 func (id TypeID) Alias() string {
-	for alias, candidate := range typeAliases {
+	for alias, candidate := range canonicalTypeAliases {
 		if candidate == id {
 			return alias
 		}

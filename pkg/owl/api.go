@@ -8,6 +8,7 @@ import (
 	"github.com/runmedev/owl/internal/graph"
 	"github.com/runmedev/owl/internal/model"
 	"github.com/runmedev/owl/internal/registry"
+	"github.com/runmedev/owl/internal/requirements"
 	"github.com/runmedev/owl/internal/store"
 )
 
@@ -24,6 +25,10 @@ type (
 
 	TypeID             = model.TypeID
 	FieldRef           = model.FieldRef
+	ConfigInput        = model.ConfigInput
+	NeedInput          = model.NeedInput
+	DotenvProjection   = model.DotenvProjectionInput
+	DotenvFieldBinding = model.DotenvFieldBindingInput
 	Source             = model.Source
 	DotenvVariable     = store.DotenvVariable
 	EnvContract        = store.EnvContract
@@ -42,8 +47,6 @@ const (
 	TypeCorePlain     = model.TypeCorePlain
 	TypeCoreSecret    = model.TypeCoreSecret
 	TypeCoreURL       = model.TypeCoreURL
-	TypeCoreHost      = model.TypeCoreHost
-	TypeCorePort      = model.TypeCorePort
 	TypeUniverseRedis = model.TypeUniverseRedis
 
 	VisibilityLiteral    = model.VisibilityLiteral
@@ -72,10 +75,16 @@ type StoreOption func(*config) error
 type config struct {
 	envs      []store.SourceBytes
 	specs     []store.SourceBytes
+	configs   []configInputSource
 	contracts []store.EnvContract
 	envelope  *store.StateEnvelope
 	types     registry.TypeProvider
 	clock     model.Clock
+}
+
+type configInputSource struct {
+	source model.Source
+	input  model.ConfigInput
 }
 
 type executionInfoKey struct{}
@@ -112,6 +121,13 @@ func NewStore(opts ...StoreOption) (*Store, error) {
 	load, err := store.LoadInputFromSourceBytes(cfg.envs, cfg.specs)
 	if err != nil {
 		return nil, err
+	}
+	for _, source := range cfg.configs {
+		contracts, err := requirements.ContractsFromConfig(source.input, source.source, cfg.types)
+		if err != nil {
+			return nil, err
+		}
+		load.Contracts = append(load.Contracts, contracts...)
 	}
 	load.Contracts = append(load.Contracts, cfg.contracts...)
 	load.Envelope = cfg.envelope
@@ -160,6 +176,27 @@ func WithEnvSpec(source string, r io.Reader) StoreOption {
 	}
 }
 
+func WithConfig(input ConfigInput) StoreOption {
+	return func(cfg *config) error {
+		source := model.Source{Name: "[config]", Kind: "owl-config"}
+		cfg.configs = append(cfg.configs, configInputSource{
+			source: source,
+			input:  input,
+		})
+		return nil
+	}
+}
+
+func WithConfigSource(source string, input ConfigInput) StoreOption {
+	return func(cfg *config) error {
+		cfg.configs = append(cfg.configs, configInputSource{
+			source: model.Source{Name: source, Kind: "owl-config"},
+			input:  input,
+		})
+		return nil
+	}
+}
+
 func WithEnvContract(contract EnvContract) StoreOption {
 	return func(cfg *config) error {
 		cfg.contracts = append(cfg.contracts, contract)
@@ -201,6 +238,13 @@ func (s *Store) Snapshot(policy SnapshotPolicy) ([]SnapshotItem, error) {
 
 func (s *Store) Dotenv(policy DotenvPolicy) ([]string, error) {
 	return store.NewState(s.state, s.types).Dotenv(policy)
+}
+
+func (s *Store) DotenvSpec() (string, error) {
+	if len(s.operations) == 0 || s.operations[0].Kind != store.OperationRecordLoad {
+		return requirements.RenderDotenvSpec(nil, s.types)
+	}
+	return requirements.RenderDotenvSpec(s.operations[0].Load.Contracts, s.types)
 }
 
 func (s *Store) Type(policy TypePolicy) (TypeResult, error) {

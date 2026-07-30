@@ -153,6 +153,7 @@ func diagnosticSelection() *ast.SelectionSet {
 		field("severity", nil, nil),
 		field("code", nil, nil),
 		field("message", nil, nil),
+		field("details", nil, nil),
 		field("key", nil, nil),
 		field("field", nil, nil),
 		field("owner", nil, nil),

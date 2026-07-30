@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/runmedev/owl/internal/model"
+	"github.com/runmedev/owl/internal/registry"
 )
 
 func TestStoreSnapshotSourceAndCheck(t *testing.T) {
@@ -83,8 +84,10 @@ func TestStoreTypeProposesMissingPrimitiveTypes(t *testing.T) {
 	byKey := typeProposalsByKey(result.Proposals)
 	assert.Equal(t, model.TypeCoreSecret, byKey["API_KEY"].SuggestedType)
 	assert.Equal(t, "key name suggests sensitive value", byKey["API_KEY"].Reason)
-	assert.Equal(t, model.TypeCoreHost, byKey["SERVICE_HOST"].SuggestedType)
-	assert.Equal(t, model.TypeCorePort, byKey["SERVICE_PORT"].SuggestedType)
+	assert.Empty(t, byKey["SERVICE_HOST"].SuggestedType)
+	assert.Equal(t, model.BindingConfidenceNone, byKey["SERVICE_HOST"].Confidence)
+	assert.Empty(t, byKey["SERVICE_PORT"].SuggestedType)
+	assert.Equal(t, model.BindingConfidenceNone, byKey["SERVICE_PORT"].Confidence)
 	assert.Empty(t, byKey["TARGET_PLATFORM"].SuggestedType)
 	assert.Equal(t, model.BindingConfidenceNone, byKey["TARGET_PLATFORM"].Confidence)
 	assert.Equal(t, "no primitive type heuristic matched", byKey["TARGET_PLATFORM"].Reason)
@@ -105,6 +108,90 @@ func TestStoreTypeSkipsDefaultPlainProposalsByDefault(t *testing.T) {
 	require.Len(t, result.Proposals, 1)
 	assert.Equal(t, "API_KEY", result.Proposals[0].Key)
 	assert.Equal(t, model.TypeCoreSecret, result.Proposals[0].SuggestedType)
+}
+
+func TestRedisHostDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	types := registry.NewBuiltInRegistry()
+	ref := model.FieldRef{TypeID: model.TypeUniverseRedis, Instance: "queues", Field: "host"}
+	assert.Empty(t, fieldValueDiagnostics(types, model.TypeCorePlain, model.Value{
+		FieldRef:    ref,
+		Resolved:    "redis.internal",
+		Visibility:  model.VisibilityLiteral,
+		Sensitivity: model.SensitivityPlaintext,
+	}))
+
+	diagnostics := fieldValueDiagnostics(types, model.TypeCorePlain, model.Value{
+		FieldRef:    ref,
+		Resolved:    "",
+		Visibility:  model.VisibilityLiteral,
+		Sensitivity: model.SensitivityPlaintext,
+	})
+	require.NotEmpty(t, diagnostics)
+	assert.Equal(t, "type.invalid-host", diagnostics[0].Code)
+	assert.Contains(t, diagnostics[0].Message, `universe/redis.host value "" is invalid`)
+	assert.Contains(t, diagnostics[0].Message, "must be an IP address or DNS hostname")
+
+	diagnostics = fieldValueDiagnostics(types, model.TypeCorePlain, model.Value{
+		FieldRef:    ref,
+		Resolved:    "not a host",
+		Visibility:  model.VisibilityLiteral,
+		Sensitivity: model.SensitivityPlaintext,
+	})
+	require.NotEmpty(t, diagnostics)
+	assert.Equal(t, "type.invalid-host", diagnostics[0].Code)
+	assert.Contains(t, diagnostics[0].Message, `value "not a host" is invalid: must be an IP address or DNS hostname`)
+}
+
+func TestRedisPortDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	types := registry.NewBuiltInRegistry()
+	ref := model.FieldRef{TypeID: model.TypeUniverseRedis, Instance: "queues", Field: "port"}
+	assert.Empty(t, fieldValueDiagnostics(types, model.TypeCorePlain, model.Value{
+		FieldRef:    ref,
+		Resolved:    "6379",
+		Visibility:  model.VisibilityLiteral,
+		Sensitivity: model.SensitivityPlaintext,
+	}))
+
+	diagnostics := fieldValueDiagnostics(types, model.TypeCorePlain, model.Value{
+		FieldRef:    ref,
+		Resolved:    "not-a-port",
+		Visibility:  model.VisibilityLiteral,
+		Sensitivity: model.SensitivityPlaintext,
+	})
+	require.NotEmpty(t, diagnostics)
+	assert.Equal(t, "type.invalid-port", diagnostics[0].Code)
+	assert.Contains(t, diagnostics[0].Message, `value "not-a-port" is invalid: must be an integer between 1 and 65535`)
+}
+
+func TestPrimitiveValueDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	types := registry.NewBuiltInRegistry()
+	urlRef := model.FieldRef{TypeID: model.TypeCoreURL, Instance: "default", Field: "service.url"}
+	diagnostics := valueDiagnostics(types, model.TypeCoreURL, model.Value{
+		FieldRef:    urlRef,
+		Resolved:    "example.com",
+		Visibility:  model.VisibilityLiteral,
+		Sensitivity: model.SensitivityPlaintext,
+	})
+	require.NotEmpty(t, diagnostics)
+	assert.Equal(t, "type.invalid-url", diagnostics[0].Code)
+	assert.Contains(t, diagnostics[0].Message, `value "example.com" is invalid: must be an absolute URL`)
+
+	secretRef := model.FieldRef{TypeID: model.TypeCoreSecret, Instance: "default", Field: "api.key"}
+	diagnostics = valueDiagnostics(types, model.TypeCoreSecret, model.Value{
+		FieldRef:    secretRef,
+		Resolved:    "",
+		Visibility:  model.VisibilityLiteral,
+		Sensitivity: model.SensitivitySensitive,
+	})
+	require.NotEmpty(t, diagnostics)
+	assert.Equal(t, "type.invalid-secret", diagnostics[0].Code)
+	assert.Contains(t, diagnostics[0].Message, "core/secret value is invalid: must not be empty")
 }
 
 func TestStoreWithDotenv(t *testing.T) {
