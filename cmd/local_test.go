@@ -99,6 +99,40 @@ func TestLocalStoreClientEnvFileOverridesProcessEnvBaseline(t *testing.T) {
 	assert.Equal(t, "from-file", snapshotByName(snapshot.Envs)["OWL_PROCESS_OVERRIDE"].Value)
 }
 
+func TestLocalStoreClientAutoloadsV1SpecDefaultsInOrder(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	require.NoError(t, os.WriteFile(".env", []byte(strings.Join([]string{
+		"SAMPLE_KEY=from-sample",
+		"EXAMPLE_KEY=from-example",
+		"SPEC_KEY=from-spec",
+		"",
+	}, "\n")), 0o600))
+	require.NoError(t, os.WriteFile(".env.sample", []byte("SAMPLE_KEY=\"Sample key\" # Plain!\n"), 0o600))
+	require.NoError(t, os.WriteFile(".env.example", []byte("EXAMPLE_KEY=\"Example key\" # Plain!\n"), 0o600))
+	require.NoError(t, os.WriteFile(".env.spec", []byte("SPEC_KEY=\"Spec key\" # Plain!\n"), 0o600))
+
+	files, err := filesOrDefaults(nil, ".env.sample", ".env.example", ".env.spec")
+	require.NoError(t, err)
+	assert.Equal(t, []string{".env.sample", ".env.example", ".env.spec"}, files)
+
+	client := NewLocalStoreClient(LocalStoreOptions{
+		ProcessEnv: []string{},
+	})
+
+	snapshot, err := client.Snapshot(context.Background(), SnapshotRequest{})
+	require.NoError(t, err)
+	byName := snapshotByName(snapshot.Envs)
+
+	assert.Equal(t, "from-sample", byName["SAMPLE_KEY"].Value)
+	assert.Equal(t, "Sample key", byName["SAMPLE_KEY"].Description)
+	assert.Equal(t, "from-example", byName["EXAMPLE_KEY"].Value)
+	assert.Equal(t, "Example key", byName["EXAMPLE_KEY"].Description)
+	assert.Equal(t, "from-spec", byName["SPEC_KEY"].Value)
+	assert.Equal(t, "Spec key", byName["SPEC_KEY"].Description)
+}
+
 func TestProcessEnvDotenvQuotesValuesAndSkipsInvalidKeys(t *testing.T) {
 	t.Parallel()
 
