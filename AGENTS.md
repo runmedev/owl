@@ -45,6 +45,10 @@ The core ownership boundaries are:
   better fits Owl; do not add command nesting just for symmetry.
 - Env var names are projection keys. Typed fields are semantic state.
 - Undeclared observed dotenv variables become `core/opaque`.
+- Do not implicitly promote observed env keys into `universe/*` types during
+  snapshot/check. Project config and specs are the source of semantic truth;
+  key-name heuristics belong in deliberate assistive commands such as
+  `owl type`, not ambient store ingestion.
 - `types/universe/*` is for real ecosystem contracts only. Universe examples
   should use realistic provider conventions and official/default env keys where
   they exist. Arbitrary projection keys, odd names, collisions, and edge cases

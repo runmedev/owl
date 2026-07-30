@@ -322,38 +322,7 @@ func preferredDotenvKey(ref model.FieldRef) string {
 }
 
 func dotenvFieldRef(key string) (model.FieldRef, model.BindingConfidence, *model.Diagnostic) {
-	parts := strings.Split(key, "_")
-	if len(parts) >= 2 && parts[len(parts)-2] == "REDIS" {
-		field, ok := redisField(parts[len(parts)-1])
-		if ok {
-			instance := "default"
-			if len(parts) > 2 {
-				instance = strings.ToLower(strings.Join(parts[:len(parts)-2], "_"))
-			}
-			return model.FieldRef{TypeID: model.TypeUniverseRedis, Instance: instance, Field: field}, model.BindingConfidenceTypeDerived, nil
-		}
-	}
-	if strings.HasPrefix(key, "REDIS_") {
-		field, ok := redisField(strings.TrimPrefix(key, "REDIS_"))
-		if ok {
-			return model.FieldRef{TypeID: model.TypeUniverseRedis, Instance: "default", Field: field}, model.BindingConfidenceTypeDerived, nil
-		}
-	}
-
 	return model.FieldRef{TypeID: model.TypeCoreOpaque, Instance: "default", Field: opaqueFieldName(key)}, model.BindingConfidenceOpaque, nil
-}
-
-func redisField(suffix string) (string, bool) {
-	switch suffix {
-	case "HOST":
-		return "host", true
-	case "PORT":
-		return "port", true
-	case "PASSWORD":
-		return "password", true
-	default:
-		return "", false
-	}
 }
 
 func redisPreferredSuffix(field string) (string, bool) {

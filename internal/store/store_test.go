@@ -204,8 +204,8 @@ func TestStoreWithDotenv(t *testing.T) {
 	require.NoError(t, err)
 	byName := snapshotByName(snapshot)
 
-	assert.Equal(t, model.TypeUniverseRedis, byName["REDIS_HOST"].Type)
-	assert.Equal(t, `universe/redis("default").host`, byName["REDIS_HOST"].Field.String())
+	assert.Equal(t, model.TypeCoreOpaque, byName["REDIS_HOST"].Type)
+	assert.Equal(t, `core/opaque("default").redis.host`, byName["REDIS_HOST"].Field.String())
 }
 
 func TestStoreRecordsFactOperationsOnly(t *testing.T) {

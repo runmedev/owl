@@ -10,7 +10,7 @@ import (
 	"github.com/runmedev/owl/internal/model"
 )
 
-func TestIngestDotenv_RedisAndOpaque(t *testing.T) {
+func TestIngestDotenvDefaultsUndeclaredKeysToOpaque(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 7, 18, 10, 0, 0, 0, time.UTC)
@@ -33,18 +33,18 @@ func TestIngestDotenv_RedisAndOpaque(t *testing.T) {
 	require.Len(t, state.Values, 8)
 	require.Len(t, state.Bindings, 8)
 
-	defaultHost := model.FieldRef{TypeID: model.TypeUniverseRedis, Instance: "default", Field: "host"}
+	defaultHost := model.FieldRef{TypeID: model.TypeCoreOpaque, Instance: "default", Field: "redis.host"}
 	require.Contains(t, state.Values, defaultHost)
 	assert.Equal(t, "localhost", state.Values[defaultHost].Resolved)
-	assert.Equal(t, model.SensitivityPlaintext, state.Values[defaultHost].Sensitivity)
-	assert.Equal(t, model.ExposureClear, state.Values[defaultHost].Exposure)
+	assert.Equal(t, model.SensitivityUnknown, state.Values[defaultHost].Sensitivity)
+	assert.Equal(t, model.ExposureOpaque, state.Values[defaultHost].Exposure)
 	assert.Equal(t, model.OperationID("test-op-000006"), state.Values[defaultHost].LastOperationID)
 
-	queuesPort := model.FieldRef{TypeID: model.TypeUniverseRedis, Instance: "queues", Field: "port"}
+	queuesPort := model.FieldRef{TypeID: model.TypeCoreOpaque, Instance: "default", Field: "queues.redis.port"}
 	require.Contains(t, state.Values, queuesPort)
 	assert.Equal(t, "6380", state.Values[queuesPort].Resolved)
 
-	password := model.FieldRef{TypeID: model.TypeUniverseRedis, Instance: "default", Field: "password"}
+	password := model.FieldRef{TypeID: model.TypeCoreOpaque, Instance: "default", Field: "redis.password"}
 	require.Contains(t, state.Values, password)
 	assert.Equal(t, model.SensitivitySensitive, state.Values[password].Sensitivity)
 
@@ -76,7 +76,7 @@ func TestRenderDotenv_SafeAndInsecure(t *testing.T) {
 	})
 
 	safe := renderedByKey(RenderDotenv(state, model.RenderPolicy{}))
-	assert.Equal(t, "localhost", safe["REDIS_HOST"].Value)
+	assert.Equal(t, "[hidden]", safe["REDIS_HOST"].Value)
 	assert.Equal(t, "[masked]", safe["REDIS_PASSWORD"].Value)
 	assert.Equal(t, model.VisibilityMasked, safe["REDIS_PASSWORD"].Visibility)
 	assert.Equal(t, "[hidden]", safe["DATABASE_URL"].Value)
@@ -183,18 +183,22 @@ func TestIngestDotenvKeepsObservedEmptyValueLiteral(t *testing.T) {
 	assert.Equal(t, model.SensitivitySensitive, state.Values[secretRef].Sensitivity)
 }
 
-func TestIngestDotenv_CollidingProjectionKeepsFirstValue(t *testing.T) {
+func TestIngestDotenv_CollidingDeclaredProjectionKeepsFirstValue(t *testing.T) {
 	t.Parallel()
 
+	defaultHost := model.FieldRef{TypeID: model.TypeUniverseRedis, Instance: "default", Field: "host"}
 	state := IngestDotenv(map[string]string{
 		"DEFAULT_REDIS_HOST": "later.local",
 		"REDIS_HOST":         "localhost",
 	}, DotenvIngestOptions{
 		Clock:        func() time.Time { return time.Date(2026, 7, 18, 10, 0, 0, 0, time.UTC) },
 		OperationIDs: model.NewMonotonicOperationIDGenerator("collision-op"),
+		Declarations: []FieldDeclaration{
+			{FieldRef: defaultHost, Key: "DEFAULT_REDIS_HOST"},
+			{FieldRef: defaultHost, Key: "REDIS_HOST"},
+		},
 	})
 
-	defaultHost := model.FieldRef{TypeID: model.TypeUniverseRedis, Instance: "default", Field: "host"}
 	require.Contains(t, state.Values, defaultHost)
 	assert.Equal(t, "later.local", state.Values[defaultHost].Resolved)
 	assert.Contains(t, diagnosticCodes(state.Diagnostics), "dotenv.collision")
