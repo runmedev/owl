@@ -3,16 +3,11 @@ package cmd
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 
-	"github.com/pelletier/go-toml/v2"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 
 	"github.com/runmedev/owl/internal/requirements"
 	"github.com/runmedev/owl/pkg/owl"
@@ -164,7 +159,7 @@ func (c *LocalStoreClient) storeWithOptions(allowMissingSpec bool, loadConfig bo
 		}
 		configPath = path
 		if configPath != "" {
-			input, err := readConfigFile(configPath)
+			input, err := requirements.ReadConfigFile(configPath)
 			if err != nil {
 				return nil, err
 			}
@@ -239,7 +234,7 @@ func (c *LocalStoreClient) ProjectSpec(_ context.Context, req ProjectSpecRequest
 	if err != nil {
 		return nil, err
 	}
-	input, err := readConfigFile(configPath)
+	input, err := requirements.ReadConfigFile(configPath)
 	if err != nil {
 		return nil, err
 	}
@@ -289,84 +284,6 @@ func resolveConfigPath(explicit string, required bool) (string, error) {
 		return "", errors.New("owl config not found; pass --config <path> or create owl.toml")
 	}
 	return "", nil
-}
-
-func readConfigFile(path string) (owl.ConfigInput, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return owl.ConfigInput{}, err
-	}
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".json":
-		var input owl.ConfigInput
-		if err := json.Unmarshal(raw, &input); err != nil {
-			return owl.ConfigInput{}, err
-		}
-		return input, nil
-	case ".yaml", ".yml":
-		var input owl.ConfigInput
-		if err := yaml.Unmarshal(raw, &input); err != nil {
-			return owl.ConfigInput{}, err
-		}
-		return input, nil
-	case ".toml":
-		return parseTomlConfig(raw)
-	default:
-		return owl.ConfigInput{}, errors.New("unsupported Owl config extension; use .toml, .yaml, .yml, or .json")
-	}
-}
-
-type tomlConfig struct {
-	Needs map[string]map[string]tomlNeed `toml:"needs"`
-}
-
-type tomlNeed struct {
-	Type   string            `toml:"type"`
-	Dotenv map[string]string `toml:"dotenv"`
-}
-
-func parseTomlConfig(raw []byte) (owl.ConfigInput, error) {
-	var cfg tomlConfig
-	if err := toml.Unmarshal(raw, &cfg); err != nil {
-		return owl.ConfigInput{}, err
-	}
-	var kinds []string
-	for kind := range cfg.Needs {
-		kinds = append(kinds, kind)
-	}
-	sort.Strings(kinds)
-	var input owl.ConfigInput
-	for _, kind := range kinds {
-		var instances []string
-		for instance := range cfg.Needs[kind] {
-			instances = append(instances, instance)
-		}
-		sort.Strings(instances)
-		for _, instance := range instances {
-			need := cfg.Needs[kind][instance]
-			inputNeed := owl.NeedInput{
-				ID:       kind + "." + instance,
-				Type:     owl.TypeID(need.Type),
-				Instance: instance,
-			}
-			if len(need.Dotenv) > 0 {
-				var fields []string
-				for field := range need.Dotenv {
-					fields = append(fields, field)
-				}
-				sort.Strings(fields)
-				inputNeed.Dotenv = &owl.DotenvProjection{}
-				for _, field := range fields {
-					inputNeed.Dotenv.Fields = append(inputNeed.Dotenv.Fields, owl.DotenvFieldBinding{
-						Field: field,
-						Key:   need.Dotenv[field],
-					})
-				}
-			}
-			input.Needs = append(input.Needs, inputNeed)
-		}
-	}
-	return input, nil
 }
 
 func writeGeneratedDotenvSpec(path string, rendered string) error {

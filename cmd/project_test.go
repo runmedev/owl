@@ -11,6 +11,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/runmedev/owl/internal/requirements"
 )
 
 func TestProjectSpecRendersGeneratedSpec(t *testing.T) {
@@ -144,9 +146,9 @@ needs:
     instance: default
 `), 0o600))
 
-	jsonConfig, err := readConfigFile(jsonPath)
+	jsonConfig, err := requirements.ReadConfigFile(jsonPath)
 	require.NoError(t, err)
-	yamlConfig, err := readConfigFile(yamlPath)
+	yamlConfig, err := requirements.ReadConfigFile(yamlPath)
 	require.NoError(t, err)
 
 	require.Len(t, jsonConfig.Needs, 1)
