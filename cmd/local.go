@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"os"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -17,11 +19,14 @@ type LocalStoreOptions struct {
 	EnvFiles   []string
 	SpecFiles  []string
 	ConfigPath string
+	ProcessEnv []string
 }
 
 type LocalStoreClient struct {
 	options LocalStoreOptions
 }
+
+var processEnviron = os.Environ
 
 func NewLocalCommands() []*cobra.Command {
 	var options LocalStoreOptions
@@ -198,6 +203,7 @@ func (c *LocalStoreClient) storeWithOptions(allowMissingSpec bool, loadConfig bo
 	if err != nil {
 		return nil, err
 	}
+	opts = append(opts, owl.WithDotenv("[process]", strings.NewReader(processEnvDotenv(c.processEnv()))))
 	for _, file := range envFiles {
 		raw, err := os.ReadFile(file)
 		if err != nil {
@@ -207,6 +213,47 @@ func (c *LocalStoreClient) storeWithOptions(allowMissingSpec bool, loadConfig bo
 	}
 
 	return owl.NewStore(opts...)
+}
+
+func (c *LocalStoreClient) processEnv() []string {
+	if c.options.ProcessEnv != nil {
+		return c.options.ProcessEnv
+	}
+	return processEnviron()
+}
+
+func processEnvDotenv(envs []string) string {
+	envs = append([]string{}, envs...)
+	sort.Strings(envs)
+	var b strings.Builder
+	for _, env := range envs {
+		key, value, ok := strings.Cut(env, "=")
+		if !ok || !isDotenvKey(key) {
+			continue
+		}
+		_, _ = b.WriteString(key)
+		_ = b.WriteByte('=')
+		_, _ = b.WriteString(strconv.Quote(value))
+		_ = b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+func isDotenvKey(key string) bool {
+	if key == "" {
+		return false
+	}
+	for i, r := range key {
+		switch {
+		case r == '_':
+		case r >= 'A' && r <= 'Z':
+		case r >= 'a' && r <= 'z':
+		case i > 0 && r >= '0' && r <= '9':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func validateNoHumanDotenvSpecs(specFiles []string) error {
