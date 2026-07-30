@@ -190,7 +190,7 @@ type OperationRecord struct {
 
 type NormalizeOperation struct{}
 
-type ValidateOperation struct {
+type IntegrityOperation struct {
 	Types registry.TypeProvider
 }
 
@@ -301,7 +301,7 @@ func NewStore(opts ...StoreOption) (*Store, error) {
 	if _, err := store.Apply(context.Background(), NormalizeOperation{}); err != nil {
 		return nil, err
 	}
-	state, err := store.Apply(context.Background(), ValidateOperation{Types: cfg.types})
+	state, err := store.Apply(context.Background(), IntegrityOperation{Types: cfg.types})
 	if err != nil {
 		return nil, err
 	}
@@ -476,13 +476,13 @@ func (NormalizeOperation) Apply(_ context.Context, state model.EffectiveState) (
 	return state, nil
 }
 
-func (op ValidateOperation) Apply(_ context.Context, state model.EffectiveState) (model.EffectiveState, error) {
+func (op IntegrityOperation) Apply(_ context.Context, state model.EffectiveState) (model.EffectiveState, error) {
 	types := op.Types
 	if types == nil {
 		types = registry.NewBuiltInRegistry()
 	}
 	state.Diagnostics = withoutDiagnosticOwner(state.Diagnostics, model.DiagnosticOwnerValidation)
-	state.Diagnostics = append(state.Diagnostics, ValidateState(state, types)...)
+	state.Diagnostics = append(state.Diagnostics, CheckStateIntegrity(state, types)...)
 	return state, nil
 }
 

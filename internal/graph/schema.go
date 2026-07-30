@@ -536,7 +536,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 						gctx := p.Source.(Context)
 						s := store.NewState(gctx.State, gctx.Types)
-						state, err := s.Apply(contextFromParams(p), store.ValidateOperation{Types: gctx.Types})
+						state, err := s.Apply(contextFromParams(p), store.IntegrityOperation{Types: gctx.Types})
 						if err != nil {
 							return nil, err
 						}
