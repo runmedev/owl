@@ -23,6 +23,8 @@ var builtInCUETypes = []cueTypeSpec{
 	{importPath: "./types/core/secret", definition: "#Secret", name: "secret"},
 	{importPath: "./types/core/url", definition: "#URL", name: "url"},
 	{importPath: "./types/universe/redis", definition: "#Redis", name: "redis"},
+	{importPath: "./types/universe/openai", definition: "#OpenAI", name: "openai"},
+	{importPath: "./types/universe/anthropic", definition: "#Anthropic", name: "anthropic"},
 }
 
 type cueCatalog struct {

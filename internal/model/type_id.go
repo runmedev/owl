@@ -17,31 +17,39 @@ const (
 	TypeCoreSecret TypeID = typeIDPrefix + "core/secret"
 	TypeCoreURL    TypeID = typeIDPrefix + "core/url"
 
-	TypeUniverseRedis TypeID = typeIDPrefix + "universe/redis"
+	TypeUniverseRedis     TypeID = typeIDPrefix + "universe/redis"
+	TypeUniverseOpenAI    TypeID = typeIDPrefix + "universe/openai"
+	TypeUniverseAnthropic TypeID = typeIDPrefix + "universe/anthropic"
 )
 
 var canonicalTypeAliases = map[string]TypeID{
-	"core/opaque":    TypeCoreOpaque,
-	"core/plain":     TypeCorePlain,
-	"core/secret":    TypeCoreSecret,
-	"core/url":       TypeCoreURL,
-	"universe/redis": TypeUniverseRedis,
+	"core/opaque":        TypeCoreOpaque,
+	"core/plain":         TypeCorePlain,
+	"core/secret":        TypeCoreSecret,
+	"core/url":           TypeCoreURL,
+	"universe/redis":     TypeUniverseRedis,
+	"universe/openai":    TypeUniverseOpenAI,
+	"universe/anthropic": TypeUniverseAnthropic,
 }
 
 var typeAliases = map[string]TypeID{
-	"core/opaque":    TypeCoreOpaque,
-	"core/plain":     TypeCorePlain,
-	"core/secret":    TypeCoreSecret,
-	"core/url":       TypeCoreURL,
-	"universe/redis": TypeUniverseRedis,
+	"core/opaque":        TypeCoreOpaque,
+	"core/plain":         TypeCorePlain,
+	"core/secret":        TypeCoreSecret,
+	"core/url":           TypeCoreURL,
+	"universe/redis":     TypeUniverseRedis,
+	"universe/openai":    TypeUniverseOpenAI,
+	"universe/anthropic": TypeUniverseAnthropic,
 }
 
 var knownTypeIDs = map[TypeID]struct{}{
-	TypeCoreOpaque:    {},
-	TypeCorePlain:     {},
-	TypeCoreSecret:    {},
-	TypeCoreURL:       {},
-	TypeUniverseRedis: {},
+	TypeCoreOpaque:        {},
+	TypeCorePlain:         {},
+	TypeCoreSecret:        {},
+	TypeCoreURL:           {},
+	TypeUniverseRedis:     {},
+	TypeUniverseOpenAI:    {},
+	TypeUniverseAnthropic: {},
 }
 
 func ParseTypeID(ref string) (TypeID, error) {

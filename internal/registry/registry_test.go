@@ -21,6 +21,28 @@ func TestBuiltInRegistry_TypeProvider(t *testing.T) {
 	assert.Contains(t, def.Fields, "host")
 	assert.Contains(t, def.Fields, "port")
 	assert.Contains(t, def.Fields, "password")
+
+	def, ok = provider.ResolveType(model.TypeUniverseOpenAI)
+	require.True(t, ok)
+	assert.Equal(t, model.TypeUniverseOpenAI, def.ID)
+	assert.Contains(t, def.Fields, "apiKey")
+	assert.Contains(t, def.Fields, "baseURL")
+	assert.Contains(t, def.Fields, "organization")
+	assert.Contains(t, def.Fields, "project")
+	assert.True(t, def.Fields["apiKey"].Required)
+	assert.False(t, def.Fields["baseURL"].Required)
+	assert.Equal(t, model.SensitivitySensitive, def.Fields["apiKey"].Sensitivity)
+	assert.Equal(t, model.SensitivityPlaintext, def.Fields["baseURL"].Sensitivity)
+
+	def, ok = provider.ResolveType(model.TypeUniverseAnthropic)
+	require.True(t, ok)
+	assert.Equal(t, model.TypeUniverseAnthropic, def.ID)
+	assert.Contains(t, def.Fields, "apiKey")
+	assert.Contains(t, def.Fields, "baseURL")
+	assert.True(t, def.Fields["apiKey"].Required)
+	assert.False(t, def.Fields["baseURL"].Required)
+	assert.Equal(t, model.SensitivitySensitive, def.Fields["apiKey"].Sensitivity)
+	assert.Equal(t, model.SensitivityPlaintext, def.Fields["baseURL"].Sensitivity)
 }
 
 func TestBuiltInRegistry_ResolveTypeRef(t *testing.T) {
@@ -42,6 +64,16 @@ func TestBuiltInRegistry_ResolveTypeRef(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, model.TypeCorePlain, def.ID)
+
+	def, ok, err = provider.ResolveTypeRef("universe/openai")
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, model.TypeUniverseOpenAI, def.ID)
+
+	def, ok, err = provider.ResolveTypeRef("universe/anthropic")
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, model.TypeUniverseAnthropic, def.ID)
 
 	_, _, err = provider.ResolveTypeRef("universe/Redis")
 	require.Error(t, err)
