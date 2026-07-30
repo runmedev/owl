@@ -12,7 +12,7 @@ import (
 )
 
 func TestRootCommandDoesNotRenderUsageOnCheckFailure(t *testing.T) {
-	t.Parallel()
+	withProcessEnv(t, nil)
 
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "owl.toml")
@@ -38,15 +38,16 @@ REDIS_AUTH_TOKEN=""
 
 	err := cmd.Execute()
 	require.Error(t, err)
-	assert.Contains(t, out.String(), "dotenv.unresolved-required")
+	assert.Contains(t, out.String(), "type.invalid-password")
 	assert.Contains(t, out.String(), "type.invalid-port")
+	assert.NotContains(t, out.String(), "dotenv.unresolved-required")
 	assert.NotContains(t, out.String(), "\n  cue:")
 	assert.NotContains(t, out.String(), "Error:")
 	assert.NotContains(t, out.String(), "Usage:")
 }
 
 func TestRootCommandCheckDetailsRendersCueDetails(t *testing.T) {
-	t.Parallel()
+	withProcessEnv(t, nil)
 
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "owl.toml")
@@ -79,7 +80,7 @@ REDIS_AUTH_TOKEN="secret"
 }
 
 func TestRootCommandRedisExampleGoldenOutputs(t *testing.T) {
-	t.Parallel()
+	withProcessEnv(t, nil)
 
 	tests := []struct {
 		name       string
@@ -113,8 +114,6 @@ func TestRootCommandRedisExampleGoldenOutputs(t *testing.T) {
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
 			cmd := NewRootCommand()
 			var stdout bytes.Buffer
 			var stderr bytes.Buffer
@@ -132,6 +131,18 @@ func TestRootCommandRedisExampleGoldenOutputs(t *testing.T) {
 			assert.Equal(t, readGolden(t, tt.goldenPath), stdout.String())
 		})
 	}
+}
+
+func withProcessEnv(t *testing.T, env []string) {
+	t.Helper()
+
+	previous := processEnviron
+	processEnviron = func() []string {
+		return append([]string{}, env...)
+	}
+	t.Cleanup(func() {
+		processEnviron = previous
+	})
 }
 
 func readGolden(t *testing.T, path string) string {

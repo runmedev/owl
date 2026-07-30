@@ -126,6 +126,40 @@ func TestIngestDotenv_MaterializesDeclaredMissingField(t *testing.T) {
 	assert.Contains(t, diagnosticCodes(rendered.Diagnostics), "dotenv.render-unresolved")
 }
 
+func TestIngestDotenvKeepsObservedEmptyValueLiteral(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 7, 18, 10, 0, 0, 0, time.UTC)
+	secretRef := model.FieldRef{TypeID: model.TypeCoreSecret, Instance: "default", Field: "runme.test.token"}
+	state := IngestDotenv(map[string]string{
+		"EMPTY_OPAQUE":     "",
+		"RUNME_TEST_TOKEN": "",
+	}, DotenvIngestOptions{
+		Source:       model.Source{Name: "[process]", Kind: "dotenv"},
+		Clock:        func() time.Time { return now },
+		OperationIDs: model.NewMonotonicOperationIDGenerator("empty-op"),
+		Declarations: []FieldDeclaration{
+			{
+				FieldRef: secretRef,
+				Key:      "RUNME_TEST_TOKEN",
+				Required: true,
+				Source:   model.Source{Name: ".env.example", Kind: "dotenv-spec"},
+			},
+		},
+	})
+
+	opaqueRef := model.FieldRef{TypeID: model.TypeCoreOpaque, Instance: "default", Field: "empty.opaque"}
+	require.Contains(t, state.Values, opaqueRef)
+	assert.Equal(t, "", state.Values[opaqueRef].Resolved)
+	assert.Equal(t, model.VisibilityLiteral, state.Values[opaqueRef].Visibility)
+	assert.Equal(t, model.Source{Name: "[process]", Kind: "dotenv"}, state.Values[opaqueRef].Source)
+
+	require.Contains(t, state.Values, secretRef)
+	assert.Equal(t, "", state.Values[secretRef].Resolved)
+	assert.Equal(t, model.VisibilityLiteral, state.Values[secretRef].Visibility)
+	assert.Equal(t, model.SensitivitySensitive, state.Values[secretRef].Sensitivity)
+}
+
 func TestIngestDotenv_CollidingProjectionKeepsFirstValue(t *testing.T) {
 	t.Parallel()
 
