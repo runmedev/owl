@@ -408,7 +408,7 @@ func sensitivityForField(ref model.FieldRef) model.Sensitivity {
 		return model.SensitivitySensitive
 	}
 	if ref.TypeID == model.TypeCorePlain || ref.TypeID == model.TypeCoreURL {
-		return model.SensitivityNonSensitive
+		return model.SensitivityPlaintext
 	}
 	if ref.TypeID == model.TypeCoreOpaque {
 		key := strings.ToUpper(ref.Field)
@@ -423,7 +423,7 @@ func sensitivityForField(ref model.FieldRef) model.Sensitivity {
 			return model.SensitivityUnknown
 		}
 	}
-	return model.SensitivityNonSensitive
+	return model.SensitivityPlaintext
 }
 
 func exposureForField(ref model.FieldRef) model.Exposure {

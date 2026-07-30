@@ -19,8 +19,18 @@ func TestLoadBuiltInCUETypeDefs(t *testing.T) {
 	plain := types[model.TypeCorePlain]
 	assert.Equal(t, model.TypeCorePlain, plain.ID)
 	assert.Equal(t, model.FieldKindScalar, plain.Kind)
+	assert.Equal(t, model.SensitivityPlaintext, plain.Sensitivity)
 	assert.Equal(t, "builtin-cue", plain.Source)
 	assert.Empty(t, plain.Fields)
+
+	opaque := types[model.TypeCoreOpaque]
+	assert.Equal(t, model.SensitivityUnknown, opaque.Sensitivity)
+
+	secret := types[model.TypeCoreSecret]
+	assert.Equal(t, model.SensitivitySensitive, secret.Sensitivity)
+
+	url := types[model.TypeCoreURL]
+	assert.Equal(t, model.SensitivityPlaintext, url.Sensitivity)
 
 	redis := types[model.TypeUniverseRedis]
 	assert.Equal(t, model.TypeUniverseRedis, redis.ID)
@@ -32,6 +42,8 @@ func TestLoadBuiltInCUETypeDefs(t *testing.T) {
 	assert.Equal(t, model.TypeCorePlain, redis.Fields["host"].TypeID)
 	assert.Equal(t, model.TypeCorePlain, redis.Fields["port"].TypeID)
 	assert.Equal(t, model.TypeCoreSecret, redis.Fields["password"].TypeID)
+	assert.Equal(t, model.SensitivityPlaintext, redis.Fields["host"].Sensitivity)
+	assert.Equal(t, model.SensitivityPlaintext, redis.Fields["port"].Sensitivity)
 	assert.True(t, redis.Fields["password"].Required)
 	assert.Equal(t, model.SensitivitySensitive, redis.Fields["password"].Sensitivity)
 	assert.Equal(t, "Redis password.", redis.Fields["password"].Description)

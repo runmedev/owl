@@ -29,9 +29,10 @@ type cueCatalog struct {
 	root string
 	ctx  *cue.Context
 
-	specs      []cueTypeSpec
-	specsByID  map[model.TypeID]cueTypeSpec
-	valuesByID map[model.TypeID]cue.Value
+	specs        []cueTypeSpec
+	specsByID    map[model.TypeID]cueTypeSpec
+	valuesByID   map[model.TypeID]cue.Value
+	valuesBySpec map[cueTypeSpec]cue.Value
 }
 
 func newCUECatalog(root string) (*cueCatalog, error) {
@@ -40,11 +41,12 @@ func newCUECatalog(root string) (*cueCatalog, error) {
 	}
 
 	catalog := &cueCatalog{
-		root:       root,
-		ctx:        cuecontext.New(),
-		specs:      append([]cueTypeSpec{}, builtInCUETypes...),
-		specsByID:  make(map[model.TypeID]cueTypeSpec, len(builtInCUETypes)),
-		valuesByID: make(map[model.TypeID]cue.Value, len(builtInCUETypes)),
+		root:         root,
+		ctx:          cuecontext.New(),
+		specs:        append([]cueTypeSpec{}, builtInCUETypes...),
+		specsByID:    make(map[model.TypeID]cueTypeSpec, len(builtInCUETypes)),
+		valuesByID:   make(map[model.TypeID]cue.Value, len(builtInCUETypes)),
+		valuesBySpec: make(map[cueTypeSpec]cue.Value, len(builtInCUETypes)),
 	}
 	for _, spec := range catalog.specs {
 		value, err := catalog.loadValue(spec)
@@ -65,6 +67,7 @@ func newCUECatalog(root string) (*cueCatalog, error) {
 		}
 		catalog.specsByID[typeID] = spec
 		catalog.valuesByID[typeID] = value
+		catalog.valuesBySpec[spec] = value
 	}
 	return catalog, nil
 }
@@ -88,9 +91,9 @@ func (c *cueCatalog) loadValue(spec cueTypeSpec) (cue.Value, error) {
 
 func (c *cueCatalog) LoadTypeDefs() (map[model.TypeID]model.TypeDef, error) {
 	result := make(map[model.TypeID]model.TypeDef, len(c.specs))
-	for typeID, spec := range c.specsByID {
-		value := c.valuesByID[typeID]
-		def, err := cueTypeDefFromValue(spec, value)
+	for _, spec := range c.specs {
+		value := c.valuesBySpec[spec]
+		def, err := cueTypeDefFromValue(spec, value, result)
 		if err != nil {
 			return nil, err
 		}

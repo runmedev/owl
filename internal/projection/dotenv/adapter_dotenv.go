@@ -85,11 +85,11 @@ func declarationsFromSpecs(specs Specs, descriptions map[string]string, source m
 			declaration.Exposure = model.ExposureClear
 		case AtomicNamePlain:
 			declaration.FieldRef.TypeID = model.TypeCorePlain
-			declaration.Sensitivity = model.SensitivityNonSensitive
+			declaration.Sensitivity = model.SensitivityPlaintext
 			declaration.Exposure = model.ExposureClear
 		case AtomicNameURL, "URL":
 			declaration.FieldRef.TypeID = model.TypeCoreURL
-			declaration.Sensitivity = model.SensitivityNonSensitive
+			declaration.Sensitivity = model.SensitivityPlaintext
 			declaration.Exposure = model.ExposureClear
 		case AtomicNameOpaque, "":
 			declaration.Sensitivity = model.SensitivityUnknown

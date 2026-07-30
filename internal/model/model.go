@@ -15,9 +15,9 @@ const (
 type Sensitivity string
 
 const (
-	SensitivityUnknown      Sensitivity = "unknown"
-	SensitivityNonSensitive Sensitivity = "non-sensitive"
-	SensitivitySensitive    Sensitivity = "sensitive"
+	SensitivityUnknown   Sensitivity = "unknown"
+	SensitivityPlaintext Sensitivity = "plaintext"
+	SensitivitySensitive Sensitivity = "sensitive"
 )
 
 type Exposure string
@@ -32,6 +32,7 @@ type TypeDef struct {
 	Version     string
 	Name        string
 	Kind        FieldKind
+	Sensitivity Sensitivity
 	Fields      map[string]FieldDef
 	Source      string
 	Description string

@@ -28,7 +28,7 @@ func NewBuiltInCUERegistry(root string) (BuiltInRegistry, error) {
 	return BuiltInRegistry{types: types, cue: catalog}, nil
 }
 
-func cueTypeDefFromValue(spec cueTypeSpec, value cue.Value) (model.TypeDef, error) {
+func cueTypeDefFromValue(spec cueTypeSpec, value cue.Value, types map[model.TypeID]model.TypeDef) (model.TypeDef, error) {
 	def := value.LookupPath(cue.ParsePath(spec.definition))
 	if err := def.Err(); err != nil {
 		return model.TypeDef{}, fmt.Errorf("cue type %s %s: %w", spec.importPath, spec.definition, err)
@@ -59,7 +59,14 @@ func cueTypeDefFromValue(spec cueTypeSpec, value cue.Value) (model.TypeDef, erro
 		Source:      "builtin-cue",
 		Description: description,
 	}
-	fields, err := cueFields(def.LookupPath(cue.ParsePath("fields")))
+	if typeDef.Kind == model.FieldKindScalar {
+		sensitivity, err := cueSensitivity(def, "sensitivity")
+		if err != nil {
+			return model.TypeDef{}, fmt.Errorf("cue type %s %s: %w", spec.importPath, spec.definition, err)
+		}
+		typeDef.Sensitivity = sensitivity
+	}
+	fields, err := cueFields(def.LookupPath(cue.ParsePath("fields")), types)
 	if err != nil {
 		return model.TypeDef{}, fmt.Errorf("cue type %s %s: %w", spec.importPath, spec.definition, err)
 	}
@@ -67,7 +74,7 @@ func cueTypeDefFromValue(spec cueTypeSpec, value cue.Value) (model.TypeDef, erro
 	return typeDef, nil
 }
 
-func cueFields(value cue.Value) (map[string]model.FieldDef, error) {
+func cueFields(value cue.Value, types map[model.TypeID]model.TypeDef) (map[string]model.FieldDef, error) {
 	if !value.Exists() {
 		return nil, nil
 	}
@@ -91,20 +98,23 @@ func cueFields(value cue.Value) (map[string]model.FieldDef, error) {
 		if err != nil {
 			return nil, fmt.Errorf("field %s: %w", name, err)
 		}
-		visibility, err := cueString(field, "visibility")
-		if err != nil {
-			return nil, fmt.Errorf("field %s: %w", name, err)
-		}
 		required, err := cueBoolDefault(field, "required", true)
 		if err != nil {
 			return nil, fmt.Errorf("field %s: %w", name, err)
+		}
+		sensitivity, err := cueOptionalSensitivity(field, "sensitivity")
+		if err != nil {
+			return nil, fmt.Errorf("field %s: %w", name, err)
+		}
+		if sensitivity == "" {
+			sensitivity = inheritedSensitivity(types, typeID)
 		}
 		fields[name] = model.FieldDef{
 			Name:        name,
 			TypeID:      typeID,
 			Required:    required,
-			Sensitivity: sensitivityForVisibility(model.Visibility(visibility)),
-			Exposure:    exposureForVisibility(model.Visibility(visibility)),
+			Sensitivity: sensitivity,
+			Exposure:    exposureForSensitivity(sensitivity),
 			Description: description,
 		}
 	}
@@ -117,6 +127,18 @@ func cueString(value cue.Value, path string) (string, error) {
 		return "", fmt.Errorf("%s: %w", path, err)
 	}
 	return result, nil
+}
+
+func cueOptionalString(value cue.Value, path string) (string, bool, error) {
+	field := value.LookupPath(cue.ParsePath(path))
+	if !field.Exists() {
+		return "", false, nil
+	}
+	result, err := field.String()
+	if err != nil {
+		return "", true, fmt.Errorf("%s: %w", path, err)
+	}
+	return result, true, nil
 }
 
 func cueBoolDefault(value cue.Value, path string, fallback bool) (bool, error) {
@@ -142,22 +164,46 @@ func cueFieldKind(kind string) model.FieldKind {
 	return model.FieldKindScalar
 }
 
-func sensitivityForVisibility(visibility model.Visibility) model.Sensitivity {
-	switch visibility {
-	case model.VisibilityMasked:
-		return model.SensitivitySensitive
-	case model.VisibilityLiteral:
-		return model.SensitivityNonSensitive
+func cueSensitivity(value cue.Value, path string) (model.Sensitivity, error) {
+	raw, err := cueString(value, path)
+	if err != nil {
+		return "", err
+	}
+	return parseSensitivity(raw)
+}
+
+func cueOptionalSensitivity(value cue.Value, path string) (model.Sensitivity, error) {
+	raw, ok, err := cueOptionalString(value, path)
+	if err != nil || !ok {
+		return "", err
+	}
+	return parseSensitivity(raw)
+}
+
+func parseSensitivity(raw string) (model.Sensitivity, error) {
+	switch model.Sensitivity(raw) {
+	case model.SensitivityUnknown:
+		return model.SensitivityUnknown, nil
+	case model.SensitivityPlaintext:
+		return model.SensitivityPlaintext, nil
+	case model.SensitivitySensitive:
+		return model.SensitivitySensitive, nil
 	default:
-		return model.SensitivityUnknown
+		return "", fmt.Errorf("sensitivity: unknown value %q", raw)
 	}
 }
 
-func exposureForVisibility(visibility model.Visibility) model.Exposure {
-	switch visibility {
-	case model.VisibilityHidden:
-		return model.ExposureOpaque
-	default:
-		return model.ExposureClear
+func inheritedSensitivity(types map[model.TypeID]model.TypeDef, typeID model.TypeID) model.Sensitivity {
+	def, ok := types[typeID]
+	if !ok || def.Sensitivity == "" {
+		return model.SensitivityUnknown
 	}
+	return def.Sensitivity
+}
+
+func exposureForSensitivity(sensitivity model.Sensitivity) model.Exposure {
+	if sensitivity == model.SensitivityUnknown {
+		return model.ExposureOpaque
+	}
+	return model.ExposureClear
 }

@@ -2,7 +2,7 @@ package schema
 
 #Kind: "primitive" | "composite"
 
-#Visibility: "literal" | "masked" | "hidden" | "unresolved"
+#Sensitivity: "unknown" | "plaintext" | "sensitive"
 
 #Type: {
 	id:          string
@@ -10,7 +10,8 @@ package schema
 	description: string
 
 	if kind == "primitive" {
-		value: _
+		sensitivity: #Sensitivity
+		value:       _
 	}
 
 	if kind == "composite" {
@@ -22,6 +23,6 @@ package schema
 	type:        string
 	required:    bool | *true
 	description: string
-	visibility:  #Visibility
+	sensitivity?: #Sensitivity
 	value:       _
 }

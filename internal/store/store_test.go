@@ -119,14 +119,14 @@ func TestRedisHostDiagnostics(t *testing.T) {
 		FieldRef:    ref,
 		Resolved:    "redis.internal",
 		Visibility:  model.VisibilityLiteral,
-		Sensitivity: model.SensitivityNonSensitive,
+		Sensitivity: model.SensitivityPlaintext,
 	}))
 
 	diagnostics := fieldValueDiagnostics(types, model.TypeCorePlain, model.Value{
 		FieldRef:    ref,
 		Resolved:    "",
 		Visibility:  model.VisibilityLiteral,
-		Sensitivity: model.SensitivityNonSensitive,
+		Sensitivity: model.SensitivityPlaintext,
 	})
 	require.NotEmpty(t, diagnostics)
 	assert.Equal(t, "type.invalid-host", diagnostics[0].Code)
@@ -137,7 +137,7 @@ func TestRedisHostDiagnostics(t *testing.T) {
 		FieldRef:    ref,
 		Resolved:    "not a host",
 		Visibility:  model.VisibilityLiteral,
-		Sensitivity: model.SensitivityNonSensitive,
+		Sensitivity: model.SensitivityPlaintext,
 	})
 	require.NotEmpty(t, diagnostics)
 	assert.Equal(t, "type.invalid-host", diagnostics[0].Code)
@@ -153,14 +153,14 @@ func TestRedisPortDiagnostics(t *testing.T) {
 		FieldRef:    ref,
 		Resolved:    "6379",
 		Visibility:  model.VisibilityLiteral,
-		Sensitivity: model.SensitivityNonSensitive,
+		Sensitivity: model.SensitivityPlaintext,
 	}))
 
 	diagnostics := fieldValueDiagnostics(types, model.TypeCorePlain, model.Value{
 		FieldRef:    ref,
 		Resolved:    "not-a-port",
 		Visibility:  model.VisibilityLiteral,
-		Sensitivity: model.SensitivityNonSensitive,
+		Sensitivity: model.SensitivityPlaintext,
 	})
 	require.NotEmpty(t, diagnostics)
 	assert.Equal(t, "type.invalid-port", diagnostics[0].Code)
@@ -176,7 +176,7 @@ func TestPrimitiveValueDiagnostics(t *testing.T) {
 		FieldRef:    urlRef,
 		Resolved:    "example.com",
 		Visibility:  model.VisibilityLiteral,
-		Sensitivity: model.SensitivityNonSensitive,
+		Sensitivity: model.SensitivityPlaintext,
 	})
 	require.NotEmpty(t, diagnostics)
 	assert.Equal(t, "type.invalid-url", diagnostics[0].Code)
