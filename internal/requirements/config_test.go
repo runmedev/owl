@@ -86,6 +86,55 @@ func TestContractsFromConfigAppliesDotenvOverrides(t *testing.T) {
 	assert.NotContains(t, byKey, "QUEUES_REDIS_PASSWORD")
 }
 
+func TestContractsFromConfigEmitsProviderRequiredAndExplicitOptionalBindings(t *testing.T) {
+	t.Parallel()
+
+	contracts, err := ContractsFromConfig(model.ConfigInput{
+		Needs: []model.NeedInput{
+			{
+				ID:       "openai.proxy",
+				Type:     model.TypeUniverseOpenAI,
+				Instance: "proxy",
+				Dotenv: &model.DotenvProjectionInput{
+					Fields: []model.DotenvFieldBindingInput{
+						{Field: "baseURL", Key: "PROXY_OPENAI_BASE_URL"},
+						{Field: "organization", Key: "PROXY_OPENAI_ORG_ID"},
+						{Field: "project", Key: "PROXY_OPENAI_PROJECT_ID"},
+					},
+				},
+			},
+			{
+				ID:       "anthropic.gateway",
+				Type:     model.TypeUniverseAnthropic,
+				Instance: "gateway",
+				Dotenv: &model.DotenvProjectionInput{
+					Fields: []model.DotenvFieldBindingInput{
+						{Field: "baseURL", Key: "ANTHROPIC_GATEWAY_URL"},
+					},
+				},
+			},
+		},
+	}, model.Source{Name: "owl.toml"}, registry.NewBuiltInRegistry())
+	require.NoError(t, err)
+	require.Len(t, contracts, 2)
+
+	openaiByKey := bindingsByKey(contracts[0].Bindings)
+	assert.Contains(t, openaiByKey, "PROXY_OPENAI_API_KEY")
+	assert.True(t, openaiByKey["PROXY_OPENAI_API_KEY"].Required)
+	assert.Contains(t, openaiByKey, "PROXY_OPENAI_BASE_URL")
+	assert.False(t, openaiByKey["PROXY_OPENAI_BASE_URL"].Required)
+	assert.Contains(t, openaiByKey, "PROXY_OPENAI_ORG_ID")
+	assert.False(t, openaiByKey["PROXY_OPENAI_ORG_ID"].Required)
+	assert.Contains(t, openaiByKey, "PROXY_OPENAI_PROJECT_ID")
+	assert.False(t, openaiByKey["PROXY_OPENAI_PROJECT_ID"].Required)
+
+	anthropicByKey := bindingsByKey(contracts[1].Bindings)
+	assert.Contains(t, anthropicByKey, "GATEWAY_ANTHROPIC_API_KEY")
+	assert.True(t, anthropicByKey["GATEWAY_ANTHROPIC_API_KEY"].Required)
+	assert.Contains(t, anthropicByKey, "ANTHROPIC_GATEWAY_URL")
+	assert.False(t, anthropicByKey["ANTHROPIC_GATEWAY_URL"].Required)
+}
+
 func TestContractsFromConfigRejectsUnknownFields(t *testing.T) {
 	t.Parallel()
 

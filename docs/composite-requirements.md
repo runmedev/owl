@@ -12,6 +12,11 @@ The first composite requirement is Redis:
 
 More Redis shape (`username`, `db`, `tls`, URI normalization, sentinel, cluster) is deferred.
 
+Owl also includes provider API client contracts for common LLM integrations:
+
+- `universe/openai`
+- `universe/anthropic`
+
 ## Flow
 
 ```mermaid
@@ -56,6 +61,34 @@ password -> REDIS_AUTH_TOKEN
 ```
 
 Owl may also read `owl.yaml`, `owl.yml`, and `owl.json`. All frontends hydrate the same config input model.
+
+Provider API client examples follow the same shape:
+
+```toml
+[needs.openai.default]
+type = "github.com/runmedev/owl/types/universe/openai"
+
+[needs.openai.proxy]
+type = "github.com/runmedev/owl/types/universe/openai"
+
+[needs.openai.proxy.dotenv]
+apiKey = "PROXY_OPENAI_API_KEY"
+baseURL = "PROXY_OPENAI_BASE_URL"
+```
+
+```toml
+[needs.anthropic.default]
+type = "github.com/runmedev/owl/types/universe/anthropic"
+
+[needs.anthropic.gateway]
+type = "github.com/runmedev/owl/types/universe/anthropic"
+
+[needs.anthropic.gateway.dotenv]
+apiKey = "ANTHROPIC_GATEWAY_API_KEY"
+baseURL = "ANTHROPIC_GATEWAY_URL"
+```
+
+See `examples/openai/owl.toml` and `examples/anthropic/owl.toml` for runnable examples.
 
 ## Canonical Input Shape
 
@@ -151,6 +184,8 @@ github.com/runmedev/owl/types/core/plain
 github.com/runmedev/owl/types/core/secret
 github.com/runmedev/owl/types/core/url
 github.com/runmedev/owl/types/universe/redis
+github.com/runmedev/owl/types/universe/openai
+github.com/runmedev/owl/types/universe/anthropic
 ```
 
 An optional `#<git-ref>` suffix can request a branch, tag, or commit-ish:
@@ -163,7 +198,7 @@ github.com/runmedev/owl/types/universe/redis#abc1234
 
 The `#<git-ref>` addresses the git repo ref. Owl instance identity stays separate.
 
-Short refs such as `universe/redis` are accepted as authoring shorthand.
+Short refs such as `universe/redis`, `universe/openai`, and `universe/anthropic` are accepted as authoring shorthand.
 
 ## Schema Package
 
@@ -207,20 +242,20 @@ import (
 	fields: {
 		host: owl.#Field & {
 			type:        "github.com/runmedev/owl/types/core/plain"
+			required:    true
 			description: "Redis server hostname"
-			visibility:  "literal"
 			value:       #RedisHostValue
 		}
 		port: owl.#Field & {
 			type:        "github.com/runmedev/owl/types/core/plain"
+			required:    true
 			description: "Redis server port"
-			visibility:  "literal"
 			value:       uint & >=1 & <=65535
 		}
 		password: owl.#Field & {
 			type:        "github.com/runmedev/owl/types/core/secret"
+			required:    true
 			description: "Redis password"
-			visibility:  "masked"
 			value:       string & !=""
 		}
 	}

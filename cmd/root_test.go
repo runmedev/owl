@@ -79,7 +79,7 @@ REDIS_AUTH_TOKEN="secret"
 	assert.NotContains(t, out.String(), "Usage:")
 }
 
-func TestRootCommandRedisExampleGoldenOutputs(t *testing.T) {
+func TestRootCommandExampleGoldenOutputs(t *testing.T) {
 	withProcessEnv(t, nil)
 
 	tests := []struct {
@@ -89,9 +89,19 @@ func TestRootCommandRedisExampleGoldenOutputs(t *testing.T) {
 		wantErr    bool
 	}{
 		{
-			name:       "project spec",
+			name:       "redis project spec",
 			args:       []string{"project", "spec", "--config", "../examples/redis/owl.toml"},
 			goldenPath: "testdata/cli/project_spec.golden",
+		},
+		{
+			name:       "openai project spec",
+			args:       []string{"project", "spec", "--config", "../examples/openai/owl.toml"},
+			goldenPath: "testdata/cli/openai_project_spec.golden",
+		},
+		{
+			name:       "anthropic project spec",
+			args:       []string{"project", "spec", "--config", "../examples/anthropic/owl.toml"},
+			goldenPath: "testdata/cli/anthropic_project_spec.golden",
 		},
 		{
 			name:       "check success",
