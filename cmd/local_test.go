@@ -79,6 +79,32 @@ func TestLocalStoreClientSeedsProcessEnvBaseline(t *testing.T) {
 	assert.True(t, check.OK)
 }
 
+func TestLocalStoreClientConfigSnapshotMasksSensitiveProviderFields(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "owl.toml")
+	require.NoError(t, os.WriteFile(configFile, []byte(`
+[needs.anthropic.default]
+type = "github.com/runmedev/owl/types/universe/anthropic"
+`), 0o600))
+
+	client := NewLocalStoreClient(LocalStoreOptions{
+		ConfigPath: configFile,
+		ProcessEnv: []string{
+			"ANTHROPIC_API_KEY=not-a-real-key",
+		},
+	})
+
+	snapshot, err := client.Snapshot(context.Background(), SnapshotRequest{})
+	require.NoError(t, err)
+
+	env := snapshotByName(snapshot.Envs)["ANTHROPIC_API_KEY"]
+	assert.Equal(t, "[masked]", env.Value)
+	assert.Equal(t, "masked", env.Visibility)
+	assert.Equal(t, "universe/anthropic", env.Type)
+}
+
 func TestLocalStoreClientEnvFileOverridesProcessEnvBaseline(t *testing.T) {
 	t.Parallel()
 

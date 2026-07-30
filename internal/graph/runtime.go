@@ -229,6 +229,8 @@ func marshalInput(input LoadInput) map[string]interface{} {
 				"required":    binding.Required,
 				"description": binding.Description,
 				"order":       int(binding.Order),
+				"sensitivity": string(binding.Sensitivity),
+				"exposure":    string(binding.Exposure),
 			}
 			if source := marshalSource(binding.Source); source != nil {
 				bindingInput["source"] = source

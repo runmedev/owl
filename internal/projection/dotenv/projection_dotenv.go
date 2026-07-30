@@ -374,8 +374,15 @@ func opaqueFieldName(key string) string {
 }
 
 func sensitivityForField(ref model.FieldRef) model.Sensitivity {
-	if ref.TypeID == model.TypeUniverseRedis && ref.Field == "password" {
-		return model.SensitivitySensitive
+	if ref.TypeID == model.TypeUniverseRedis {
+		switch ref.Field {
+		case "password":
+			return model.SensitivitySensitive
+		case "host", "port":
+			return model.SensitivityPlaintext
+		default:
+			return model.SensitivityUnknown
+		}
 	}
 	if ref.TypeID == model.TypeCoreSecret {
 		return model.SensitivitySensitive
@@ -396,7 +403,7 @@ func sensitivityForField(ref model.FieldRef) model.Sensitivity {
 			return model.SensitivityUnknown
 		}
 	}
-	return model.SensitivityPlaintext
+	return model.SensitivityUnknown
 }
 
 func exposureForField(ref model.FieldRef) model.Exposure {

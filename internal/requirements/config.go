@@ -109,6 +109,8 @@ func (c *ConfigCompiler) compileBinding(path string, typeDef model.TypeDef, inst
 		Description: fieldDef.Description,
 		Source:      c.source,
 		Order:       c.order,
+		Sensitivity: fieldDef.Sensitivity,
+		Exposure:    fieldDef.Exposure,
 	}, nil
 }
 

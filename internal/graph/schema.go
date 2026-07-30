@@ -53,6 +53,8 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"description": &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"source":      &graphql.InputObjectFieldConfig{Type: sourceInput},
 			"order":       &graphql.InputObjectFieldConfig{Type: graphql.Int},
+			"sensitivity": &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"exposure":    &graphql.InputObjectFieldConfig{Type: graphql.String},
 		},
 	})
 	envContractInput := graphql.NewInputObject(graphql.InputObjectConfig{
@@ -617,6 +619,8 @@ func decodeLoadInput(raw map[string]interface{}) store.LoadInput {
 				Description: stringValue(bindingRaw["description"]),
 				Source:      decodeSource(bindingRaw["source"]),
 				Order:       uintValue(bindingRaw["order"]),
+				Sensitivity: model.Sensitivity(stringValue(bindingRaw["sensitivity"])),
+				Exposure:    model.Exposure(stringValue(bindingRaw["exposure"])),
 			})
 		}
 		input.Contracts = append(input.Contracts, contract)

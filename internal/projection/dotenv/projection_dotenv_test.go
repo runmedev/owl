@@ -126,6 +126,29 @@ func TestIngestDotenv_MaterializesDeclaredMissingField(t *testing.T) {
 	assert.Contains(t, diagnosticCodes(rendered.Diagnostics), "dotenv.render-unresolved")
 }
 
+func TestIngestDotenvDefaultsUnhandledSemanticFieldsToUnknownSensitivity(t *testing.T) {
+	t.Parallel()
+
+	anthropicAPIKey := model.FieldRef{TypeID: model.TypeUniverseAnthropic, Instance: "default", Field: "apiKey"}
+	state := IngestDotenv(map[string]string{
+		"ANTHROPIC_API_KEY": "secret",
+	}, DotenvIngestOptions{
+		Declarations: []FieldDeclaration{
+			{
+				FieldRef: anthropicAPIKey,
+				Key:      "ANTHROPIC_API_KEY",
+				Source:   model.Source{Name: "owl.toml", Kind: "owl-config"},
+			},
+		},
+	})
+
+	require.Contains(t, state.Values, anthropicAPIKey)
+	assert.Equal(t, model.SensitivityUnknown, state.Values[anthropicAPIKey].Sensitivity)
+
+	rendered := RenderDotenvProjection(state, model.RenderPolicy{})
+	assert.Equal(t, "[hidden]", renderedByKey(rendered.Variables)["ANTHROPIC_API_KEY"].Value)
+}
+
 func TestIngestDotenvKeepsObservedEmptyValueLiteral(t *testing.T) {
 	t.Parallel()
 

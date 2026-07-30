@@ -127,6 +127,8 @@ type EnvBinding struct {
 	Description string
 	Source      model.Source
 	Order       uint
+	Sensitivity model.Sensitivity
+	Exposure    model.Exposure
 }
 
 type EnvContract struct {
@@ -768,6 +770,8 @@ func declarationsFromContracts(contracts []EnvContract) []dotenv.FieldDeclaratio
 				Description: binding.Description,
 				Source:      bindingSource,
 				Order:       firstUint(binding.Order, order),
+				Sensitivity: binding.Sensitivity,
+				Exposure:    binding.Exposure,
 			})
 		}
 	}

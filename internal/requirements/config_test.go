@@ -121,8 +121,11 @@ func TestContractsFromConfigEmitsProviderRequiredAndExplicitOptionalBindings(t *
 	openaiByKey := bindingsByKey(contracts[0].Bindings)
 	assert.Contains(t, openaiByKey, "PROXY_OPENAI_API_KEY")
 	assert.True(t, openaiByKey["PROXY_OPENAI_API_KEY"].Required)
+	assert.Equal(t, model.SensitivitySensitive, openaiByKey["PROXY_OPENAI_API_KEY"].Sensitivity)
+	assert.Equal(t, model.ExposureClear, openaiByKey["PROXY_OPENAI_API_KEY"].Exposure)
 	assert.Contains(t, openaiByKey, "PROXY_OPENAI_BASE_URL")
 	assert.False(t, openaiByKey["PROXY_OPENAI_BASE_URL"].Required)
+	assert.Equal(t, model.SensitivityPlaintext, openaiByKey["PROXY_OPENAI_BASE_URL"].Sensitivity)
 	assert.Contains(t, openaiByKey, "PROXY_OPENAI_ORG_ID")
 	assert.False(t, openaiByKey["PROXY_OPENAI_ORG_ID"].Required)
 	assert.Contains(t, openaiByKey, "PROXY_OPENAI_PROJECT_ID")
@@ -131,8 +134,11 @@ func TestContractsFromConfigEmitsProviderRequiredAndExplicitOptionalBindings(t *
 	anthropicByKey := bindingsByKey(contracts[1].Bindings)
 	assert.Contains(t, anthropicByKey, "GATEWAY_ANTHROPIC_API_KEY")
 	assert.True(t, anthropicByKey["GATEWAY_ANTHROPIC_API_KEY"].Required)
+	assert.Equal(t, model.SensitivitySensitive, anthropicByKey["GATEWAY_ANTHROPIC_API_KEY"].Sensitivity)
+	assert.Equal(t, model.ExposureClear, anthropicByKey["GATEWAY_ANTHROPIC_API_KEY"].Exposure)
 	assert.Contains(t, anthropicByKey, "ANTHROPIC_GATEWAY_URL")
 	assert.False(t, anthropicByKey["ANTHROPIC_GATEWAY_URL"].Required)
+	assert.Equal(t, model.SensitivityPlaintext, anthropicByKey["ANTHROPIC_GATEWAY_URL"].Sensitivity)
 }
 
 func TestContractsFromConfigRejectsUnknownFields(t *testing.T) {
