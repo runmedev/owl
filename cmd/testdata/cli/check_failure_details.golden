@@ -1,5 +1,6 @@
-error dotenv.unresolved-required REDIS_AUTH_TOKEN: required declared dotenv field has no observed value
 error type.invalid-host universe/redis("queues").host: universe/redis.host value "not a host" is invalid: must be an IP address or DNS hostname
   cue: must be an IP address or DNS hostname
+error type.invalid-password universe/redis("queues").password: universe/redis.password value is invalid: must not be empty
+  cue: must not be empty
 error type.invalid-port universe/redis("queues").port: universe/redis.port value "abc" is invalid: must be an integer between 1 and 65535
   cue: must be an integer between 1 and 65535

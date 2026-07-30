@@ -38,8 +38,9 @@ REDIS_AUTH_TOKEN=""
 
 	err := cmd.Execute()
 	require.Error(t, err)
-	assert.Contains(t, out.String(), "dotenv.unresolved-required")
+	assert.Contains(t, out.String(), "type.invalid-password")
 	assert.Contains(t, out.String(), "type.invalid-port")
+	assert.NotContains(t, out.String(), "dotenv.unresolved-required")
 	assert.NotContains(t, out.String(), "\n  cue:")
 	assert.NotContains(t, out.String(), "Error:")
 	assert.NotContains(t, out.String(), "Usage:")

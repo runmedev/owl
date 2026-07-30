@@ -124,7 +124,7 @@ func TestPublicAPIVisibilityAndExposure(t *testing.T) {
 	assert.Equal(t, owl.ExposureOpaque, revealedByName["DATABASE_URL"].Exposure)
 }
 
-func TestPublicAPIEmptySensitiveValuesAreUnresolved(t *testing.T) {
+func TestPublicAPIObservedEmptyValuesArePresent(t *testing.T) {
 	t.Parallel()
 
 	store, err := owl.NewStore(
@@ -137,19 +137,32 @@ func TestPublicAPIEmptySensitiveValuesAreUnresolved(t *testing.T) {
 	require.NoError(t, err)
 	byName := snapshotByName(snapshot)
 
-	assert.Equal(t, "[unset]", byName["RUNME_TEST_TOKEN"].Value)
+	assert.Equal(t, "[masked]", byName["RUNME_TEST_TOKEN"].Value)
 	assert.Empty(t, byName["RUNME_TEST_TOKEN"].OriginalValue)
-	assert.Equal(t, owl.VisibilityUnresolved, byName["RUNME_TEST_TOKEN"].Visibility)
+	assert.Equal(t, owl.VisibilityMasked, byName["RUNME_TEST_TOKEN"].Visibility)
 	assert.Equal(t, owl.ExposureClear, byName["RUNME_TEST_TOKEN"].Exposure)
 	assert.Equal(t, "[system]", byName["RUNME_TEST_TOKEN"].Source.Name)
 	assert.Equal(t, ".env.spec", byName["RUNME_TEST_TOKEN"].Origin.Name)
 
-	assert.Equal(t, "[unset]", byName["EMPTY_OPAQUE"].Value)
+	assert.Equal(t, "[hidden]", byName["EMPTY_OPAQUE"].Value)
 	assert.Empty(t, byName["EMPTY_OPAQUE"].OriginalValue)
-	assert.Equal(t, owl.VisibilityUnresolved, byName["EMPTY_OPAQUE"].Visibility)
+	assert.Equal(t, owl.VisibilityHidden, byName["EMPTY_OPAQUE"].Visibility)
 	assert.Equal(t, owl.ExposureOpaque, byName["EMPTY_OPAQUE"].Exposure)
 	assert.Equal(t, "[system]", byName["EMPTY_OPAQUE"].Source.Name)
 	assert.Equal(t, ".env.spec", byName["EMPTY_OPAQUE"].Origin.Name)
+
+	revealed, err := store.Snapshot(owl.SnapshotPolicy{Reveal: true})
+	require.NoError(t, err)
+	revealedByName := snapshotByName(revealed)
+	assert.Equal(t, "", revealedByName["RUNME_TEST_TOKEN"].Value)
+	assert.Equal(t, owl.VisibilityLiteral, revealedByName["RUNME_TEST_TOKEN"].Visibility)
+	assert.Equal(t, "", revealedByName["EMPTY_OPAQUE"].Value)
+	assert.Equal(t, owl.VisibilityLiteral, revealedByName["EMPTY_OPAQUE"].Visibility)
+
+	check := store.Check()
+	assert.False(t, check.OK)
+	assert.Contains(t, diagnosticCodes(check.Diagnostics), "type.invalid-secret")
+	assert.NotContains(t, diagnosticCodes(check.Diagnostics), "dotenv.unresolved-required")
 }
 
 func TestPublicAPIGetRevealPolicy(t *testing.T) {
