@@ -92,24 +92,24 @@ func TestContractsFromConfigEmitsProviderRequiredAndExplicitOptionalBindings(t *
 	contracts, err := ContractsFromConfig(model.ConfigInput{
 		Needs: []model.NeedInput{
 			{
-				ID:       "openai.proxy",
+				ID:       "openai.default",
 				Type:     model.TypeUniverseOpenAI,
-				Instance: "proxy",
+				Instance: "default",
 				Dotenv: &model.DotenvProjectionInput{
 					Fields: []model.DotenvFieldBindingInput{
-						{Field: "baseURL", Key: "PROXY_OPENAI_BASE_URL"},
-						{Field: "organization", Key: "PROXY_OPENAI_ORG_ID"},
-						{Field: "project", Key: "PROXY_OPENAI_PROJECT_ID"},
+						{Field: "baseURL", Key: "OPENAI_BASE_URL"},
+						{Field: "organization", Key: "OPENAI_ORG_ID"},
+						{Field: "project", Key: "OPENAI_PROJECT_ID"},
 					},
 				},
 			},
 			{
-				ID:       "anthropic.gateway",
+				ID:       "anthropic.default",
 				Type:     model.TypeUniverseAnthropic,
-				Instance: "gateway",
+				Instance: "default",
 				Dotenv: &model.DotenvProjectionInput{
 					Fields: []model.DotenvFieldBindingInput{
-						{Field: "baseURL", Key: "ANTHROPIC_GATEWAY_URL"},
+						{Field: "baseURL", Key: "ANTHROPIC_BASE_URL"},
 					},
 				},
 			},
@@ -119,26 +119,86 @@ func TestContractsFromConfigEmitsProviderRequiredAndExplicitOptionalBindings(t *
 	require.Len(t, contracts, 2)
 
 	openaiByKey := bindingsByKey(contracts[0].Bindings)
-	assert.Contains(t, openaiByKey, "PROXY_OPENAI_API_KEY")
-	assert.True(t, openaiByKey["PROXY_OPENAI_API_KEY"].Required)
-	assert.Equal(t, model.SensitivitySensitive, openaiByKey["PROXY_OPENAI_API_KEY"].Sensitivity)
-	assert.Equal(t, model.ExposureClear, openaiByKey["PROXY_OPENAI_API_KEY"].Exposure)
-	assert.Contains(t, openaiByKey, "PROXY_OPENAI_BASE_URL")
-	assert.False(t, openaiByKey["PROXY_OPENAI_BASE_URL"].Required)
-	assert.Equal(t, model.SensitivityPlaintext, openaiByKey["PROXY_OPENAI_BASE_URL"].Sensitivity)
-	assert.Contains(t, openaiByKey, "PROXY_OPENAI_ORG_ID")
-	assert.False(t, openaiByKey["PROXY_OPENAI_ORG_ID"].Required)
-	assert.Contains(t, openaiByKey, "PROXY_OPENAI_PROJECT_ID")
-	assert.False(t, openaiByKey["PROXY_OPENAI_PROJECT_ID"].Required)
+	assert.Contains(t, openaiByKey, "OPENAI_API_KEY")
+	assert.True(t, openaiByKey["OPENAI_API_KEY"].Required)
+	assert.Equal(t, model.SensitivitySensitive, openaiByKey["OPENAI_API_KEY"].Sensitivity)
+	assert.Equal(t, model.ExposureClear, openaiByKey["OPENAI_API_KEY"].Exposure)
+	assert.Contains(t, openaiByKey, "OPENAI_BASE_URL")
+	assert.False(t, openaiByKey["OPENAI_BASE_URL"].Required)
+	assert.Equal(t, model.SensitivityPlaintext, openaiByKey["OPENAI_BASE_URL"].Sensitivity)
+	assert.Contains(t, openaiByKey, "OPENAI_ORG_ID")
+	assert.False(t, openaiByKey["OPENAI_ORG_ID"].Required)
+	assert.Contains(t, openaiByKey, "OPENAI_PROJECT_ID")
+	assert.False(t, openaiByKey["OPENAI_PROJECT_ID"].Required)
 
 	anthropicByKey := bindingsByKey(contracts[1].Bindings)
-	assert.Contains(t, anthropicByKey, "GATEWAY_ANTHROPIC_API_KEY")
-	assert.True(t, anthropicByKey["GATEWAY_ANTHROPIC_API_KEY"].Required)
-	assert.Equal(t, model.SensitivitySensitive, anthropicByKey["GATEWAY_ANTHROPIC_API_KEY"].Sensitivity)
-	assert.Equal(t, model.ExposureClear, anthropicByKey["GATEWAY_ANTHROPIC_API_KEY"].Exposure)
-	assert.Contains(t, anthropicByKey, "ANTHROPIC_GATEWAY_URL")
-	assert.False(t, anthropicByKey["ANTHROPIC_GATEWAY_URL"].Required)
-	assert.Equal(t, model.SensitivityPlaintext, anthropicByKey["ANTHROPIC_GATEWAY_URL"].Sensitivity)
+	assert.Contains(t, anthropicByKey, "ANTHROPIC_API_KEY")
+	assert.True(t, anthropicByKey["ANTHROPIC_API_KEY"].Required)
+	assert.Equal(t, model.SensitivitySensitive, anthropicByKey["ANTHROPIC_API_KEY"].Sensitivity)
+	assert.Equal(t, model.ExposureClear, anthropicByKey["ANTHROPIC_API_KEY"].Exposure)
+	assert.Contains(t, anthropicByKey, "ANTHROPIC_BASE_URL")
+	assert.False(t, anthropicByKey["ANTHROPIC_BASE_URL"].Required)
+	assert.Equal(t, model.SensitivityPlaintext, anthropicByKey["ANTHROPIC_BASE_URL"].Sensitivity)
+}
+
+func TestContractsFromConfigPreservesFixtureProjectionOverrides(t *testing.T) {
+	t.Parallel()
+
+	const fixtureTypeID model.TypeID = "test/fixture/service"
+	provider := fixtureTypeProvider{
+		types: map[model.TypeID]model.TypeDef{
+			fixtureTypeID: {
+				ID:   fixtureTypeID,
+				Name: "fixture",
+				Kind: model.FieldKindObject,
+				Fields: map[string]model.FieldDef{
+					"requiredToken": {
+						Name:               "requiredToken",
+						TypeID:             model.TypeCoreSecret,
+						Required:           true,
+						Sensitivity:        model.SensitivitySensitive,
+						Exposure:           model.ExposureClear,
+						PreferredDotenvKey: "FIXTURE_REQUIRED_TOKEN",
+						Description:        "Fixture required token",
+					},
+					"optionalURL": {
+						Name:        "optionalURL",
+						TypeID:      model.TypeCoreURL,
+						Required:    false,
+						Sensitivity: model.SensitivityPlaintext,
+						Exposure:    model.ExposureClear,
+						Description: "Fixture optional URL",
+					},
+				},
+			},
+		},
+	}
+
+	contracts, err := ContractsFromConfig(model.ConfigInput{
+		Needs: []model.NeedInput{
+			{
+				ID:       "fixture.custom",
+				Type:     fixtureTypeID,
+				Instance: "custom",
+				Dotenv: &model.DotenvProjectionInput{
+					Fields: []model.DotenvFieldBindingInput{
+						{Field: "optionalURL", Key: "CUSTOM_OPTIONAL_URL"},
+					},
+				},
+			},
+		},
+	}, model.Source{Name: "owl.toml"}, provider)
+	require.NoError(t, err)
+	require.Len(t, contracts, 1)
+
+	byKey := bindingsByKey(contracts[0].Bindings)
+	assert.Contains(t, byKey, "CUSTOM_FIXTURE_REQUIRED_TOKEN")
+	assert.True(t, byKey["CUSTOM_FIXTURE_REQUIRED_TOKEN"].Required)
+	assert.Equal(t, model.SensitivitySensitive, byKey["CUSTOM_FIXTURE_REQUIRED_TOKEN"].Sensitivity)
+	assert.Equal(t, model.ExposureClear, byKey["CUSTOM_FIXTURE_REQUIRED_TOKEN"].Exposure)
+	assert.Contains(t, byKey, "CUSTOM_OPTIONAL_URL")
+	assert.False(t, byKey["CUSTOM_OPTIONAL_URL"].Required)
+	assert.Equal(t, model.SensitivityPlaintext, byKey["CUSTOM_OPTIONAL_URL"].Sensitivity)
 }
 
 func TestContractsFromConfigRejectsUnknownFields(t *testing.T) {
@@ -222,4 +282,18 @@ func bindingsByKey(bindings []store.EnvBinding) map[string]store.EnvBinding {
 		result[binding.Key] = binding
 	}
 	return result
+}
+
+type fixtureTypeProvider struct {
+	types map[model.TypeID]model.TypeDef
+}
+
+func (p fixtureTypeProvider) ResolveType(id model.TypeID) (model.TypeDef, bool) {
+	def, ok := p.types[id]
+	return def, ok
+}
+
+func (p fixtureTypeProvider) ResolveTypeRef(ref string) (model.TypeDef, bool, error) {
+	def, ok := p.types[model.TypeID(ref)]
+	return def, ok, nil
 }

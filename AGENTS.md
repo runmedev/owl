@@ -45,6 +45,11 @@ The core ownership boundaries are:
   better fits Owl; do not add command nesting just for symmetry.
 - Env var names are projection keys. Typed fields are semantic state.
 - Undeclared observed dotenv variables become `core/opaque`.
+- `types/universe/*` is for real ecosystem contracts only. Universe examples
+  should use realistic provider conventions and official/default env keys where
+  they exist. Arbitrary projection keys, odd names, collisions, and edge cases
+  belong in test-only fixtures; prefer in-test fixture providers before adding
+  persistent fixture CUE trees.
 - Never leak sensitive values in logs, CLI output, snapshots, diffs,
   diagnostics, examples, or chat unless the user explicitly requests an
   insecure/reveal path such as `--insecure`. Unknown sensitivity must default

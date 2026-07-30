@@ -1,9 +1,5 @@
 [needs.anthropic.default]
 type = "github.com/runmedev/owl/types/universe/anthropic"
 
-[needs.anthropic.gateway]
-type = "github.com/runmedev/owl/types/universe/anthropic"
-
-[needs.anthropic.gateway.dotenv]
-apiKey = "ANTHROPIC_GATEWAY_API_KEY"
-baseURL = "ANTHROPIC_GATEWAY_URL"
+[needs.anthropic.default.dotenv]
+baseURL = "ANTHROPIC_BASE_URL"

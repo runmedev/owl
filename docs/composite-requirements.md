@@ -68,27 +68,24 @@ Provider API client examples follow the same shape:
 [needs.openai.default]
 type = "github.com/runmedev/owl/types/universe/openai"
 
-[needs.openai.proxy]
-type = "github.com/runmedev/owl/types/universe/openai"
-
-[needs.openai.proxy.dotenv]
-apiKey = "PROXY_OPENAI_API_KEY"
-baseURL = "PROXY_OPENAI_BASE_URL"
+[needs.openai.default.dotenv]
+baseURL = "OPENAI_BASE_URL"
+organization = "OPENAI_ORG_ID"
+project = "OPENAI_PROJECT_ID"
 ```
 
 ```toml
 [needs.anthropic.default]
 type = "github.com/runmedev/owl/types/universe/anthropic"
 
-[needs.anthropic.gateway]
-type = "github.com/runmedev/owl/types/universe/anthropic"
-
-[needs.anthropic.gateway.dotenv]
-apiKey = "ANTHROPIC_GATEWAY_API_KEY"
-baseURL = "ANTHROPIC_GATEWAY_URL"
+[needs.anthropic.default.dotenv]
+baseURL = "ANTHROPIC_BASE_URL"
 ```
 
 See `examples/openai/owl.toml` and `examples/anthropic/owl.toml` for runnable examples.
+
+Universe examples should use real provider conventions. Custom projection key
+behavior is covered by tests and should not be confused with provider defaults.
 
 ## Canonical Input Shape
 
