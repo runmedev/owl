@@ -115,8 +115,9 @@ type GetResult struct {
 }
 
 type DotenvVariable struct {
-	Key   string
-	Value string
+	Key    string
+	Value  string
+	Source model.Source
 }
 
 type EnvBinding struct {
@@ -364,8 +365,12 @@ func (op LoadOperation) Apply(context.Context, model.EffectiveState) (model.Effe
 	}
 	timestamp := operationTimestamp(firstTime(op.Timestamp, op.Input.Timestamp))
 	values := make(map[string]string, len(op.Input.Dotenv))
+	sources := make(map[string]model.Source, len(op.Input.Dotenv))
 	for _, variable := range op.Input.Dotenv {
 		values[variable.Key] = variable.Value
+		if variable.Source.Name != "" {
+			sources[variable.Key] = variable.Source
+		}
 	}
 	declarations := declarationsFromContracts(op.Input.Contracts)
 	source := op.Input.DotenvSource
@@ -374,6 +379,7 @@ func (op LoadOperation) Apply(context.Context, model.EffectiveState) (model.Effe
 	}
 	return dotenv.IngestDotenv(values, dotenv.DotenvIngestOptions{
 		Source:       source,
+		Sources:      sources,
 		Declarations: declarations,
 		Clock:        func() time.Time { return timestamp },
 	}), nil
@@ -650,20 +656,6 @@ func readSource(name string, r io.Reader) (sourceInput, error) {
 	return sourceInput{name: name, raw: raw}, nil
 }
 
-func joinRaw(inputs []SourceBytes) []byte {
-	var b strings.Builder
-	for _, input := range inputs {
-		if len(input.Raw) == 0 {
-			continue
-		}
-		_, _ = b.Write(input.Raw)
-		if !strings.HasSuffix(string(input.Raw), "\n") {
-			_ = b.WriteByte('\n')
-		}
-	}
-	return []byte(b.String())
-}
-
 func sourceFor(inputs []SourceBytes, fallback string, kind string) model.Source {
 	if len(inputs) == 0 {
 		return model.Source{Name: fallback, Kind: kind}
@@ -679,10 +671,16 @@ func LoadInputFromSourceBytes(envs, specs []SourceBytes) (LoadInput, error) {
 		DotenvSource: sourceFor(envs, ".env", "dotenv"),
 	}
 
-	envRaw := joinRaw(envs)
-	values, err := dotenv.ParseDotenvValues(envRaw)
-	if err != nil {
-		return LoadInput{}, err
+	values := make(map[string]DotenvVariable)
+	for _, env := range envs {
+		source := model.Source{Name: env.Name, Kind: "dotenv"}
+		parsed, err := dotenv.ParseDotenvValues(env.Raw)
+		if err != nil {
+			return LoadInput{}, err
+		}
+		for key, value := range parsed {
+			values[key] = DotenvVariable{Key: key, Value: value, Source: source}
+		}
 	}
 	keys := make([]string, 0, len(values))
 	for key := range values {
@@ -690,7 +688,7 @@ func LoadInputFromSourceBytes(envs, specs []SourceBytes) (LoadInput, error) {
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
-		load.Dotenv = append(load.Dotenv, DotenvVariable{Key: key, Value: values[key]})
+		load.Dotenv = append(load.Dotenv, values[key])
 	}
 
 	var order uint

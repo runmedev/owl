@@ -31,8 +31,9 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 	dotenvVariableInput := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "DotenvVariableInput",
 		Fields: graphql.InputObjectConfigFieldMap{
-			"key":   &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-			"value": &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"key":    &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
+			"value":  &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"source": &graphql.InputObjectFieldConfig{Type: sourceInput},
 		},
 	})
 	dotenvInput := graphql.NewInputObject(graphql.InputObjectConfig{
@@ -645,8 +646,9 @@ func decodeDotenvInput(raw interface{}) store.LoadInput {
 			continue
 		}
 		input.Dotenv = append(input.Dotenv, store.DotenvVariable{
-			Key:   stringValue(variable["key"]),
-			Value: stringValue(variable["value"]),
+			Key:    stringValue(variable["key"]),
+			Value:  stringValue(variable["value"]),
+			Source: decodeSource(variable["source"]),
 		})
 	}
 	return input

@@ -169,6 +169,9 @@ Rules:
 - duplicate dotenv keys are hard errors.
 - inferred keys are normalized to uppercase snake case.
 - explicit keys are preserved exactly.
+- snapshot source labels describe the observed value source: process-inherited
+  values use `[process]`, and dotenv file values use the concrete file path
+  such as `.env` or `.env.local`.
 - observed keys that are not declared by config or spec remain `core/opaque`;
   Owl does not ambiently promote key names into `universe/*` types during
   snapshot/check.

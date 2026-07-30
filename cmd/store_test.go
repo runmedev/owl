@@ -83,9 +83,9 @@ func TestStoreSnapshotRendersExplicitItemsByDefault(t *testing.T) {
 
 	client := &fakeStoreClient{
 		snapshot: &SnapshotResult{Envs: []SnapshotEnv{
-			{Name: "ZZZ_SYSTEM", Value: "[hidden]", Type: "core/opaque", Source: "(system)", Visibility: "hidden"},
+			{Name: "ZZZ_SYSTEM", Value: "[hidden]", Type: "core/opaque", Source: "[process]", Visibility: "hidden"},
 			{Name: "API_KEY", Value: "[masked]", Type: "core/secret", Source: ".env", Explicit: true, Visibility: "masked"},
-			{Name: "AAA_SYSTEM", Value: "[hidden]", Type: "core/opaque", Source: "(system)", Visibility: "hidden"},
+			{Name: "AAA_SYSTEM", Value: "[hidden]", Type: "core/opaque", Source: "[process]", Visibility: "hidden"},
 			{Name: "API_URL", Value: "https://api.example.com", Type: "core/plain", Source: ".env", Explicit: true, Visibility: "literal"},
 		}},
 	}
@@ -113,9 +113,9 @@ func TestStoreSnapshotAllRendersInheritedAfterExplicit(t *testing.T) {
 
 	client := &fakeStoreClient{
 		snapshot: &SnapshotResult{Envs: []SnapshotEnv{
-			{Name: "ZZZ_SYSTEM", Value: "[hidden]", Type: "core/opaque", Source: "(system)", Visibility: "hidden"},
+			{Name: "ZZZ_SYSTEM", Value: "[hidden]", Type: "core/opaque", Source: "[process]", Visibility: "hidden"},
 			{Name: "API_KEY", Value: "[masked]", Type: "core/secret", Source: ".env", Explicit: true, Visibility: "masked"},
-			{Name: "AAA_SYSTEM", Value: "[hidden]", Type: "core/opaque", Source: "(system)", Visibility: "hidden"},
+			{Name: "AAA_SYSTEM", Value: "[hidden]", Type: "core/opaque", Source: "[process]", Visibility: "hidden"},
 			{Name: "API_URL", Value: "https://api.example.com", Type: "core/plain", Source: ".env", Explicit: true, Visibility: "literal"},
 		}},
 	}

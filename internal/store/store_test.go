@@ -197,7 +197,7 @@ func TestPrimitiveValueDiagnostics(t *testing.T) {
 func TestStoreWithDotenv(t *testing.T) {
 	t.Parallel()
 
-	s, err := NewStore(WithDotenv("[system]", strings.NewReader("REDIS_HOST=localhost\nREDIS_PORT=6379\n")))
+	s, err := NewStore(WithDotenv("[process]", strings.NewReader("REDIS_HOST=localhost\nREDIS_PORT=6379\n")))
 	require.NoError(t, err)
 
 	snapshot, err := s.Snapshot(SnapshotPolicy{Reveal: true})
@@ -206,6 +206,28 @@ func TestStoreWithDotenv(t *testing.T) {
 
 	assert.Equal(t, model.TypeCoreOpaque, byName["REDIS_HOST"].Type)
 	assert.Equal(t, `core/opaque("default").redis.host`, byName["REDIS_HOST"].Field.String())
+	assert.Equal(t, "[process]", byName["REDIS_HOST"].Source.Name)
+}
+
+func TestStorePreservesDotenvValueSource(t *testing.T) {
+	t.Parallel()
+
+	s, err := NewStore(
+		WithDotenv("[process]", strings.NewReader("PROCESS_ONLY=from-process\nDUPLICATE_KEY=from-process\n")),
+		WithDotenv(".env", strings.NewReader("FILE_ONLY=from-file\nDUPLICATE_KEY=from-file\n")),
+	)
+	require.NoError(t, err)
+
+	snapshot, err := s.Snapshot(SnapshotPolicy{Reveal: true})
+	require.NoError(t, err)
+	byName := snapshotByName(snapshot)
+
+	assert.Equal(t, "from-process", byName["PROCESS_ONLY"].Value)
+	assert.Equal(t, "[process]", byName["PROCESS_ONLY"].Source.Name)
+	assert.Equal(t, "from-file", byName["FILE_ONLY"].Value)
+	assert.Equal(t, ".env", byName["FILE_ONLY"].Source.Name)
+	assert.Equal(t, "from-file", byName["DUPLICATE_KEY"].Value)
+	assert.Equal(t, ".env", byName["DUPLICATE_KEY"].Source.Name)
 }
 
 func TestStoreRecordsFactOperationsOnly(t *testing.T) {
@@ -218,7 +240,7 @@ func TestStoreRecordsFactOperationsOnly(t *testing.T) {
 	require.Len(t, records, 1)
 	assert.Equal(t, OperationRecordLoad, records[0].Kind)
 	assert.Equal(t, ".env", records[0].Load.DotenvSource.Name)
-	assert.Equal(t, []DotenvVariable{{Key: "API_URL", Value: "https://api.example.com"}}, records[0].Load.Dotenv)
+	assert.Equal(t, []DotenvVariable{{Key: "API_URL", Value: "https://api.example.com", Source: model.Source{Name: ".env", Kind: "dotenv"}}}, records[0].Load.Dotenv)
 
 	_, err = s.Apply(context.Background(), UpdateOperation{
 		Source: model.Source{Name: "[update]", Kind: "dotenv"},

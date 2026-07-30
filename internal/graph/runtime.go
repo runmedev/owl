@@ -209,10 +209,14 @@ func (r *Runtime) do(ctx context.Context, query string, vars map[string]interfac
 func marshalInput(input LoadInput) map[string]interface{} {
 	variables := make([]map[string]interface{}, 0, len(input.Dotenv))
 	for _, variable := range input.Dotenv {
-		variables = append(variables, map[string]interface{}{
+		item := map[string]interface{}{
 			"key":   variable.Key,
 			"value": variable.Value,
-		})
+		}
+		if source := marshalSource(variable.Source); source != nil {
+			item["source"] = source
+		}
+		variables = append(variables, item)
 	}
 	contracts := make([]map[string]interface{}, 0, len(input.Contracts))
 	for _, contract := range input.Contracts {
@@ -274,10 +278,14 @@ func marshalDotenvInput(input LoadInput) map[string]interface{} {
 	}
 	variables := make([]map[string]interface{}, 0, len(input.Dotenv))
 	for _, variable := range input.Dotenv {
-		variables = append(variables, map[string]interface{}{
+		item := map[string]interface{}{
 			"key":   variable.Key,
 			"value": variable.Value,
-		})
+		}
+		if source := marshalSource(variable.Source); source != nil {
+			item["source"] = source
+		}
+		variables = append(variables, item)
 	}
 	dotenv := map[string]interface{}{"variables": variables}
 	if source := marshalSource(input.DotenvSource); source != nil {

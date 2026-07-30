@@ -44,6 +44,10 @@ The core ownership boundaries are:
 - Keep Owl project commands flatter than Runme's store command shape when that
   better fits Owl; do not add command nesting just for symmetry.
 - Env var names are projection keys. Typed fields are semantic state.
+- Snapshot source labels describe observed value provenance. Process-inherited
+  values use `[process]`; dotenv file values use the concrete file path such as
+  `.env`; config/spec sources are declaration origins, not observed-value
+  sources.
 - Undeclared observed dotenv variables become `core/opaque`.
 - Do not implicitly promote observed env keys into `universe/*` types during
   snapshot/check. Project config and specs are the source of semantic truth;

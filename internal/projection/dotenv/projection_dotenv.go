@@ -10,6 +10,7 @@ import (
 
 type DotenvIngestOptions struct {
 	Source       model.Source
+	Sources      map[string]model.Source
 	Actor        string
 	Clock        model.Clock
 	OperationIDs model.OperationIDGenerator
@@ -81,8 +82,12 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 		now := clock()
 		opID := opIDs()
 		value := values[key]
+		valueSource := source
+		if keySource, ok := opts.Sources[key]; ok && keySource.Name != "" {
+			valueSource = keySource
+		}
 		fieldRef, confidence, diagnostic := dotenvFieldRef(key)
-		origin := source
+		origin := valueSource
 		explicit := false
 		order := uint(0)
 		preserveKey := confidence == model.BindingConfidenceOpaque
@@ -110,7 +115,7 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 				FieldRef: fieldRef,
 				Owner:    model.DiagnosticOwnerProjection,
 			})
-			state.Bindings = append(state.Bindings, newBinding(opID, key, fieldRef, description, source, origin, confidence, explicit, order, preserveKey, false, now))
+			state.Bindings = append(state.Bindings, newBinding(opID, key, fieldRef, description, valueSource, origin, confidence, explicit, order, preserveKey, false, now))
 			seenKeys[key] = struct{}{}
 			continue
 		}
@@ -131,7 +136,7 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 			Sensitivity:     sensitivity,
 			Exposure:        exposure,
 			Origin:          origin,
-			Source:          source,
+			Source:          valueSource,
 			CreatedAt:       now,
 			UpdatedAt:       now,
 			LastOperationID: opID,
@@ -140,13 +145,13 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 		if declaration, ok := declarationsByKey[key]; ok {
 			required = declaration.Required
 		}
-		state.Bindings = append(state.Bindings, newBinding(opID, key, fieldRef, description, source, origin, confidence, explicit, order, preserveKey, required, now))
+		state.Bindings = append(state.Bindings, newBinding(opID, key, fieldRef, description, valueSource, origin, confidence, explicit, order, preserveKey, required, now))
 		state.Operations = append(state.Operations, model.OperationMetadata{
 			ID:           opID,
 			Kind:         model.OperationKindLoad,
 			Timestamp:    now,
 			Actor:        opts.Actor,
-			Source:       source,
+			Source:       valueSource,
 			ProjectionID: model.ProjectionDotenv,
 		})
 	}
