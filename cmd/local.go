@@ -45,12 +45,12 @@ func NewLocalCommands() []*cobra.Command {
 		ClientFactory: func(cmd *cobra.Command) (StoreClient, error) {
 			return NewLocalStoreClient(options), nil
 		},
-		ConfigureSnapshotCommand: configureLocalFlags,
-		ConfigureSourceCommand:   configureLocalFlags,
-		ConfigureCheckCommand:    configureLocalFlags,
-		ConfigureTypeCommand:     configureTypeFlags,
-		InsecureAllowed:          func() bool { return true },
-		AddSnapshotInsecureFlag:  true,
+		ConfigureSnapshotCommand:   configureLocalFlags,
+		ConfigureSourceCommand:     configureLocalFlags,
+		ConfigureCheckCommand:      configureLocalFlags,
+		ConfigureTypeCommand:       configureTypeFlags,
+		InsecureModeEnabled:        func() bool { return true },
+		DefineSnapshotInsecureFlag: true,
 	}
 
 	commands := NewStoreCommands(opts)

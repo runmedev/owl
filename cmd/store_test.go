@@ -169,8 +169,8 @@ func TestStoreSnapshotRevealRequiresInsecurePermission(t *testing.T) {
 		ClientFactory: func(*cobra.Command) (StoreClient, error) {
 			return client, nil
 		},
-		InsecureAllowed:         func() bool { return false },
-		AddSnapshotInsecureFlag: true,
+		InsecureModeEnabled:        func() bool { return false },
+		DefineSnapshotInsecureFlag: true,
 	})
 	cmd.SetArgs([]string{"snapshot", "--reveal", "--insecure"})
 
@@ -192,8 +192,8 @@ func TestStoreSnapshotRevealRequiresInsecureFlag(t *testing.T) {
 		ClientFactory: func(*cobra.Command) (StoreClient, error) {
 			return client, nil
 		},
-		InsecureAllowed:         func() bool { return true },
-		AddSnapshotInsecureFlag: true,
+		InsecureModeEnabled:        func() bool { return true },
+		DefineSnapshotInsecureFlag: true,
 	})
 	cmd.SetArgs([]string{"snapshot", "--reveal"})
 
@@ -215,8 +215,8 @@ func TestStoreSnapshotInsecureWithoutRevealPassesSafeRequest(t *testing.T) {
 		ClientFactory: func(*cobra.Command) (StoreClient, error) {
 			return client, nil
 		},
-		InsecureAllowed:         func() bool { return true },
-		AddSnapshotInsecureFlag: true,
+		InsecureModeEnabled:        func() bool { return true },
+		DefineSnapshotInsecureFlag: true,
 	})
 
 	var out bytes.Buffer
@@ -230,7 +230,7 @@ func TestStoreSnapshotInsecureWithoutRevealPassesSafeRequest(t *testing.T) {
 	assert.Contains(t, out.String(), "[masked]")
 }
 
-func TestStoreSnapshotRevealPassesRequestWhenInsecureAllowed(t *testing.T) {
+func TestStoreSnapshotRevealPassesRequestWhenInsecureModeEnabled(t *testing.T) {
 	t.Parallel()
 
 	client := &fakeStoreClient{
@@ -242,8 +242,8 @@ func TestStoreSnapshotRevealPassesRequestWhenInsecureAllowed(t *testing.T) {
 		ClientFactory: func(*cobra.Command) (StoreClient, error) {
 			return client, nil
 		},
-		InsecureAllowed:         func() bool { return true },
-		AddSnapshotInsecureFlag: true,
+		InsecureModeEnabled:        func() bool { return true },
+		DefineSnapshotInsecureFlag: true,
 	})
 
 	var out bytes.Buffer
