@@ -45,11 +45,12 @@ func NewLocalCommands() []*cobra.Command {
 		ClientFactory: func(cmd *cobra.Command) (StoreClient, error) {
 			return NewLocalStoreClient(options), nil
 		},
-		ConfigureSnapshotCommand: configureLocalFlags,
-		ConfigureSourceCommand:   configureLocalFlags,
-		ConfigureCheckCommand:    configureLocalFlags,
-		ConfigureTypeCommand:     configureTypeFlags,
-		InsecureAllowed:          func() bool { return true },
+		ConfigureSnapshotCommand:   configureLocalFlags,
+		ConfigureSourceCommand:     configureLocalFlags,
+		ConfigureCheckCommand:      configureLocalFlags,
+		ConfigureTypeCommand:       configureTypeFlags,
+		InsecureModeEnabled:        func() bool { return true },
+		DefineSnapshotInsecureFlag: true,
 	}
 
 	commands := NewStoreCommands(opts)
@@ -67,7 +68,7 @@ func (c *LocalStoreClient) Snapshot(_ context.Context, req SnapshotRequest) (*Sn
 		return nil, err
 	}
 
-	items, err := store.Snapshot(owl.SnapshotPolicy{Reveal: req.Reveal})
+	items, err := store.Snapshot(owl.SnapshotPolicy{Reveal: req.Reveal && req.Insecure})
 	if err != nil {
 		return nil, err
 	}

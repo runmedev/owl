@@ -58,6 +58,42 @@ func TestLocalStoreClientUsesV2StoreSemantics(t *testing.T) {
 	assert.Contains(t, check.Diagnostics[len(check.Diagnostics)-1], "error dotenv.unresolved-required MISSING_TOKEN")
 }
 
+func TestLocalStoreClientSnapshotRequiresRevealAndInsecureForPlaintext(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	envFile := filepath.Join(dir, ".env")
+	specFile := filepath.Join(dir, ".env.example")
+	require.NoError(t, os.WriteFile(envFile, []byte("API_KEY=secret\nDATABASE_URL=postgres://example\n"), 0o600))
+	require.NoError(t, os.WriteFile(specFile, []byte("API_KEY=\"API key\" # Secret!\nDATABASE_URL=\"Database URL\" # Opaque\n"), 0o600))
+
+	client := NewLocalStoreClient(LocalStoreOptions{
+		EnvFiles:   []string{envFile},
+		SpecFiles:  []string{specFile},
+		ProcessEnv: []string{},
+	})
+
+	revealOnly, err := client.Snapshot(context.Background(), SnapshotRequest{Reveal: true})
+	require.NoError(t, err)
+	revealOnlyByName := snapshotByName(revealOnly.Envs)
+	assert.Equal(t, "[masked]", revealOnlyByName["API_KEY"].Value)
+	assert.Equal(t, "[hidden]", revealOnlyByName["DATABASE_URL"].Value)
+
+	insecureOnly, err := client.Snapshot(context.Background(), SnapshotRequest{Insecure: true})
+	require.NoError(t, err)
+	insecureOnlyByName := snapshotByName(insecureOnly.Envs)
+	assert.Equal(t, "[masked]", insecureOnlyByName["API_KEY"].Value)
+	assert.Equal(t, "[hidden]", insecureOnlyByName["DATABASE_URL"].Value)
+
+	revealed, err := client.Snapshot(context.Background(), SnapshotRequest{Reveal: true, Insecure: true})
+	require.NoError(t, err)
+	revealedByName := snapshotByName(revealed.Envs)
+	assert.Equal(t, "secret", revealedByName["API_KEY"].Value)
+	assert.Equal(t, "postgres://example", revealedByName["DATABASE_URL"].Value)
+	assert.Equal(t, "literal", revealedByName["API_KEY"].Visibility)
+	assert.Equal(t, "literal", revealedByName["DATABASE_URL"].Visibility)
+}
+
 func TestLocalStoreClientSeedsProcessEnvBaseline(t *testing.T) {
 	t.Parallel()
 

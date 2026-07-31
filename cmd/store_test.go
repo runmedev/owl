@@ -169,9 +169,10 @@ func TestStoreSnapshotRevealRequiresInsecurePermission(t *testing.T) {
 		ClientFactory: func(*cobra.Command) (StoreClient, error) {
 			return client, nil
 		},
-		InsecureAllowed: func() bool { return false },
+		InsecureModeEnabled:        func() bool { return false },
+		DefineSnapshotInsecureFlag: true,
 	})
-	cmd.SetArgs([]string{"snapshot", "--reveal"})
+	cmd.SetArgs([]string{"snapshot", "--reveal", "--insecure"})
 
 	err := cmd.Execute()
 	require.Error(t, err)
@@ -179,7 +180,7 @@ func TestStoreSnapshotRevealRequiresInsecurePermission(t *testing.T) {
 	assert.False(t, client.snapshotCalled)
 }
 
-func TestStoreSnapshotRevealPassesRequestWhenInsecureAllowed(t *testing.T) {
+func TestStoreSnapshotRevealRequiresInsecureFlag(t *testing.T) {
 	t.Parallel()
 
 	client := &fakeStoreClient{
@@ -191,16 +192,68 @@ func TestStoreSnapshotRevealPassesRequestWhenInsecureAllowed(t *testing.T) {
 		ClientFactory: func(*cobra.Command) (StoreClient, error) {
 			return client, nil
 		},
-		InsecureAllowed: func() bool { return true },
+		InsecureModeEnabled:        func() bool { return true },
+		DefineSnapshotInsecureFlag: true,
+	})
+	cmd.SetArgs([]string{"snapshot", "--reveal"})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must be run in insecure mode")
+	assert.False(t, client.snapshotCalled)
+}
+
+func TestStoreSnapshotInsecureWithoutRevealPassesSafeRequest(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeStoreClient{
+		snapshot: &SnapshotResult{Envs: []SnapshotEnv{
+			{Name: "API_KEY", Value: "[masked]", Type: "core/secret", Source: ".env", Visibility: "masked"},
+		}},
+	}
+	cmd := NewStoreCommand(StoreCommandOptions{
+		ClientFactory: func(*cobra.Command) (StoreClient, error) {
+			return client, nil
+		},
+		InsecureModeEnabled:        func() bool { return true },
+		DefineSnapshotInsecureFlag: true,
 	})
 
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"snapshot", "--reveal", "--all"})
+	cmd.SetArgs([]string{"snapshot", "--insecure", "--all"})
+
+	require.NoError(t, cmd.Execute())
+	assert.False(t, client.snapshotReq.Reveal)
+	assert.True(t, client.snapshotReq.Insecure)
+	assert.Contains(t, out.String(), "[masked]")
+}
+
+func TestStoreSnapshotRevealPassesRequestWhenInsecureModeEnabled(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeStoreClient{
+		snapshot: &SnapshotResult{Envs: []SnapshotEnv{
+			{Name: "API_KEY", Value: "secret", Type: "core/secret", Source: ".env", Visibility: "literal"},
+		}},
+	}
+	cmd := NewStoreCommand(StoreCommandOptions{
+		ClientFactory: func(*cobra.Command) (StoreClient, error) {
+			return client, nil
+		},
+		InsecureModeEnabled:        func() bool { return true },
+		DefineSnapshotInsecureFlag: true,
+	})
+
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"snapshot", "--reveal", "--insecure", "--all"})
 
 	require.NoError(t, cmd.Execute())
 	assert.True(t, client.snapshotReq.Reveal)
+	assert.True(t, client.snapshotReq.Insecure)
 	assert.Contains(t, out.String(), "secret")
 	assert.Contains(t, out.String(), "literal")
 }

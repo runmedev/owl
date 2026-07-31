@@ -21,20 +21,22 @@ type StoreClient interface {
 }
 
 type StoreCommandOptions struct {
-	ClientFactory            func(*cobra.Command) (StoreClient, error)
-	ConfigureSnapshotCommand func(*cobra.Command)
-	ConfigureSourceCommand   func(*cobra.Command)
-	ConfigureCheckCommand    func(*cobra.Command)
-	ConfigureTypeCommand     func(*cobra.Command)
-	ConfigureProjectCommand  func(*cobra.Command)
-	Hidden                   bool
-	InsecureAllowed          func() bool
+	ClientFactory              func(*cobra.Command) (StoreClient, error)
+	ConfigureSnapshotCommand   func(*cobra.Command)
+	ConfigureSourceCommand     func(*cobra.Command)
+	ConfigureCheckCommand      func(*cobra.Command)
+	ConfigureTypeCommand       func(*cobra.Command)
+	ConfigureProjectCommand    func(*cobra.Command)
+	Hidden                     bool
+	InsecureModeEnabled        func() bool
+	DefineSnapshotInsecureFlag bool
 }
 
 type SnapshotRequest struct {
-	Limit  int
-	Reveal bool
-	All    bool
+	Limit    int
+	Reveal   bool
+	All      bool
+	Insecure bool
 }
 
 type SnapshotResult struct {
@@ -107,8 +109,8 @@ type TypeProposal struct {
 }
 
 func NewStoreCommand(opts StoreCommandOptions) *cobra.Command {
-	if opts.InsecureAllowed == nil {
-		opts.InsecureAllowed = func() bool { return false }
+	if opts.InsecureModeEnabled == nil {
+		opts.InsecureModeEnabled = func() bool { return false }
 	}
 
 	cmd := cobra.Command{
@@ -124,8 +126,8 @@ func NewStoreCommand(opts StoreCommandOptions) *cobra.Command {
 }
 
 func NewStoreCommands(opts StoreCommandOptions) []*cobra.Command {
-	if opts.InsecureAllowed == nil {
-		opts.InsecureAllowed = func() bool { return false }
+	if opts.InsecureModeEnabled == nil {
+		opts.InsecureModeEnabled = func() bool { return false }
 	}
 
 	return []*cobra.Command{
@@ -145,7 +147,10 @@ func newSnapshotCommand(opts StoreCommandOptions) *cobra.Command {
 		Short:  "Takes a snapshot of the smart env store",
 		Long:   "Inspects environment variables and returns a snapshot of the smart env store.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if req.Reveal && !opts.InsecureAllowed() {
+			if !opts.DefineSnapshotInsecureFlag && opts.InsecureModeEnabled() {
+				req.Insecure = true
+			}
+			if req.Reveal && (!req.Insecure || !opts.InsecureModeEnabled()) {
 				return errors.New("must be run in insecure mode to prevent misuse; enable by adding --insecure flag")
 			}
 
@@ -172,6 +177,9 @@ func newSnapshotCommand(opts StoreCommandOptions) *cobra.Command {
 	cmd.Flags().IntVar(&req.Limit, "limit", 50, "Limit the number of lines")
 	cmd.Flags().BoolVarP(&req.All, "all", "A", false, "Show all lines")
 	cmd.Flags().BoolVarP(&req.Reveal, "reveal", "r", false, "Reveal hidden values")
+	if opts.DefineSnapshotInsecureFlag {
+		cmd.Flags().BoolVar(&req.Insecure, "insecure", false, "Explicitly allow revealing hidden values")
+	}
 	if opts.ConfigureSnapshotCommand != nil {
 		opts.ConfigureSnapshotCommand(&cmd)
 	}
