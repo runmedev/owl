@@ -40,7 +40,7 @@ func TestV2PublicAPI(t *testing.T) {
 
 	keys, err := store.SensitiveKeys()
 	require.NoError(t, err)
-	assert.Equal(t, []string{"API_KEY", "REDIS_PASSWORD"}, keys)
+	assert.Equal(t, []string{"API_KEY"}, keys)
 
 	envelope, err := store.StateEnvelope(context.Background())
 	require.NoError(t, err)
@@ -122,6 +122,35 @@ func TestPublicAPIVisibilityAndExposure(t *testing.T) {
 	assert.Equal(t, "postgres://example", revealedByName["DATABASE_URL"].Value)
 	assert.Equal(t, owl.VisibilityLiteral, revealedByName["DATABASE_URL"].Visibility)
 	assert.Equal(t, owl.ExposureOpaque, revealedByName["DATABASE_URL"].Exposure)
+}
+
+func TestPublicAPIUndeclaredOpaqueKeysStayHidden(t *testing.T) {
+	t.Parallel()
+
+	store, err := owl.NewStore(
+		owl.WithDotenv("[process]", strings.NewReader("OPENAI_API_KEY=sk-example\nSOMETHING_TOKEN=token-value\nREDIS_PASSWORD=hunter2\n")),
+	)
+	require.NoError(t, err)
+
+	snapshot, err := store.Snapshot(owl.SnapshotPolicy{})
+	require.NoError(t, err)
+	byName := snapshotByName(snapshot)
+
+	for _, name := range []string{"OPENAI_API_KEY", "SOMETHING_TOKEN", "REDIS_PASSWORD"} {
+		assert.Equal(t, "[hidden]", byName[name].Value)
+		assert.Empty(t, byName[name].OriginalValue)
+		assert.Equal(t, owl.TypeCoreOpaque, byName[name].Type)
+		assert.Equal(t, owl.VisibilityHidden, byName[name].Visibility)
+		assert.Equal(t, owl.ExposureOpaque, byName[name].Exposure)
+		assert.Equal(t, "[process]", byName[name].Source.Name)
+	}
+
+	revealed, err := store.Snapshot(owl.SnapshotPolicy{Reveal: true})
+	require.NoError(t, err)
+	revealedByName := snapshotByName(revealed)
+	assert.Equal(t, "sk-example", revealedByName["OPENAI_API_KEY"].Value)
+	assert.Equal(t, "token-value", revealedByName["SOMETHING_TOKEN"].Value)
+	assert.Equal(t, "hunter2", revealedByName["REDIS_PASSWORD"].Value)
 }
 
 func TestPublicAPIObservedEmptyValuesArePresent(t *testing.T) {

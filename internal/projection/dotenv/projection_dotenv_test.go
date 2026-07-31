@@ -46,7 +46,7 @@ func TestIngestDotenvDefaultsUndeclaredKeysToOpaque(t *testing.T) {
 
 	password := model.FieldRef{TypeID: model.TypeCoreOpaque, Instance: "default", Field: "redis.password"}
 	require.Contains(t, state.Values, password)
-	assert.Equal(t, model.SensitivitySensitive, state.Values[password].Sensitivity)
+	assert.Equal(t, model.SensitivityUnknown, state.Values[password].Sensitivity)
 
 	databaseURL := model.FieldRef{TypeID: model.TypeCoreOpaque, Instance: "default", Field: "database.url"}
 	require.Contains(t, state.Values, databaseURL)
@@ -56,7 +56,7 @@ func TestIngestDotenvDefaultsUndeclaredKeysToOpaque(t *testing.T) {
 
 	token := model.FieldRef{TypeID: model.TypeCoreOpaque, Instance: "default", Field: "custom.service.token"}
 	require.Contains(t, state.Values, token)
-	assert.Equal(t, model.SensitivitySensitive, state.Values[token].Sensitivity)
+	assert.Equal(t, model.SensitivityUnknown, state.Values[token].Sensitivity)
 	assert.Empty(t, state.Diagnostics)
 }
 
@@ -77,11 +77,12 @@ func TestRenderDotenv_SafeAndInsecure(t *testing.T) {
 
 	safe := renderedByKey(RenderDotenv(state, model.RenderPolicy{}))
 	assert.Equal(t, "[hidden]", safe["REDIS_HOST"].Value)
-	assert.Equal(t, "[masked]", safe["REDIS_PASSWORD"].Value)
-	assert.Equal(t, model.VisibilityMasked, safe["REDIS_PASSWORD"].Visibility)
+	assert.Equal(t, "[hidden]", safe["REDIS_PASSWORD"].Value)
+	assert.Equal(t, model.VisibilityHidden, safe["REDIS_PASSWORD"].Visibility)
 	assert.Equal(t, "[hidden]", safe["DATABASE_URL"].Value)
 	assert.Equal(t, model.VisibilityHidden, safe["DATABASE_URL"].Visibility)
-	assert.Equal(t, "[masked]", safe["CUSTOM_SERVICE_TOKEN"].Value)
+	assert.Equal(t, "[hidden]", safe["CUSTOM_SERVICE_TOKEN"].Value)
+	assert.Equal(t, model.VisibilityHidden, safe["CUSTOM_SERVICE_TOKEN"].Visibility)
 
 	insecure := renderedByKey(RenderDotenv(state, model.RenderPolicy{Insecure: true}))
 	assert.Equal(t, "secret-redis", insecure["REDIS_PASSWORD"].Value)
