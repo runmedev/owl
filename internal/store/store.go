@@ -13,6 +13,7 @@ import (
 	"github.com/runmedev/owl/internal/projection/dotenv"
 	"github.com/runmedev/owl/internal/registry"
 	"github.com/runmedev/owl/internal/resolver"
+	"github.com/runmedev/owl/internal/resolver/builtin"
 )
 
 type Store struct {
@@ -119,6 +120,16 @@ type DotenvVariable struct {
 	Key    string
 	Value  string
 	Source model.Source
+}
+
+type ResolveSourcesInput struct {
+	Process      []DotenvVariable
+	Dotenv       []DotenvVariable
+	Policy       resolver.Policy
+	Chain        resolver.ChainConfig
+	Timestamp    time.Time
+	Clock        model.Clock
+	NewAttemptID func() model.ResolverAttemptID
 }
 
 type EnvBinding struct {
@@ -382,6 +393,46 @@ func (s *Store) Apply(ctx context.Context, op Operation) (model.EffectiveState, 
 	}
 	s.state = state
 	return state, nil
+}
+
+func (s *Store) ResolveSources(ctx context.Context, input ResolveSourcesInput) (resolver.RunResult, error) {
+	if _, err := s.Apply(ctx, IntegrityOperation{Types: s.types}); err != nil {
+		return resolver.RunResult{}, err
+	}
+	clock := input.Clock
+	if clock == nil && !input.Timestamp.IsZero() {
+		clock = func() time.Time { return input.Timestamp }
+	}
+	runner := resolver.Runner{
+		Resolvers: []resolver.Resolver{
+			builtin.ProcessResolver(catalogsFromVariables(input.Process, model.Source{Name: "[process]", Kind: "process"})...),
+			builtin.DotenvResolver(catalogsFromVariables(input.Dotenv, model.Source{Name: ".env", Kind: "dotenv"})...),
+		},
+		NewAttemptID: input.NewAttemptID,
+		Clock:        clock,
+	}
+	result, err := runner.Resolve(ctx, resolver.RunRequest{
+		State:  s.state,
+		Policy: input.Policy,
+		Chain:  input.Chain,
+	})
+	if err != nil {
+		return result, err
+	}
+	for _, attempt := range result.Attempts {
+		if _, err := s.Apply(ctx, RecordResolverAttemptOperation{Attempt: attempt}); err != nil {
+			return result, err
+		}
+	}
+	for _, proposal := range result.Proposals {
+		if _, err := s.Apply(ctx, ApplyResolverProposalOperation{Proposal: proposal, Timestamp: input.Timestamp}); err != nil {
+			return result, err
+		}
+	}
+	if _, err := s.Apply(ctx, IntegrityOperation{Types: s.types}); err != nil {
+		return result, err
+	}
+	return result, nil
 }
 
 func (op LoadOperation) Apply(context.Context, model.EffectiveState) (model.EffectiveState, error) {
@@ -843,6 +894,25 @@ func sourceBytesFromInputs(inputs []sourceInput) []SourceBytes {
 		result = append(result, SourceBytes{Name: input.name, Raw: input.raw})
 	}
 	return result
+}
+
+func catalogsFromVariables(variables []DotenvVariable, fallback model.Source) []builtin.Catalog {
+	positions := make(map[model.Source]int)
+	var catalogs []builtin.Catalog
+	for _, variable := range variables {
+		source := variable.Source
+		if source.Name == "" && source.Kind == "" {
+			source = fallback
+		}
+		index, ok := positions[source]
+		if !ok {
+			index = len(catalogs)
+			positions[source] = index
+			catalogs = append(catalogs, builtin.Catalog{Source: source, Values: make(map[model.ProjectionKey]string)})
+		}
+		catalogs[index].Values[model.ProjectionKey(variable.Key)] = variable.Value
+	}
+	return catalogs
 }
 
 func declarationsFromContracts(contracts []EnvContract) []dotenv.FieldDeclaration {

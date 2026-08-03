@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -389,6 +390,116 @@ func TestStoreProposalApplicationLeavesInvalidValuesForIntegrity(t *testing.T) {
 	assert.Equal(t, model.UnresolvedReasonInvalid, after.UnresolvedFrontier.Needs[0].Reason)
 }
 
+func TestStoreResolveSourcesAppliesDotenvResolverProposals(t *testing.T) {
+	t.Parallel()
+
+	timestamp := time.Date(2026, 8, 3, 23, 45, 0, 0, time.UTC)
+	s, err := NewStore(WithEnvSpec(".env.example", strings.NewReader("API_KEY=\"API key\" # Secret!\n")))
+	require.NoError(t, err)
+	require.Len(t, s.State().UnresolvedFrontier.Needs, 1)
+
+	result, err := s.ResolveSources(context.Background(), ResolveSourcesInput{
+		Dotenv: []DotenvVariable{{
+			Key:    "API_KEY",
+			Value:  "resolved-secret",
+			Source: model.Source{Name: ".env", Kind: "dotenv"},
+		}},
+		Timestamp:    timestamp,
+		NewAttemptID: storeAttemptIDGenerator(),
+	})
+	require.NoError(t, err)
+
+	require.Len(t, result.Attempts, 2)
+	assert.Equal(t, model.ResolverID("core/process"), result.Attempts[0].ResolverID)
+	assert.Equal(t, model.ResolverAttemptNotFound, result.Attempts[0].Outcome)
+	assert.Equal(t, model.ResolverID("core/dotenv"), result.Attempts[1].ResolverID)
+	assert.Equal(t, model.ResolverAttemptResolved, result.Attempts[1].Outcome)
+	require.Len(t, result.Proposals, 1)
+
+	state := s.State()
+	require.Empty(t, state.UnresolvedFrontier.Needs)
+	value := state.Values[result.Proposals[0].FieldRef]
+	assert.Equal(t, "resolved-secret", value.Resolved)
+	assert.Equal(t, model.Source{Name: ".env", Kind: "dotenv"}, value.Source)
+	assert.Equal(t, model.OperationID("resolve:attempt-000002"), value.LastOperationID)
+
+	records := s.OperationRecords()
+	require.Len(t, records, 4)
+	assert.Equal(t, OperationRecordResolverAttempt, records[1].Kind)
+	assert.Equal(t, OperationRecordResolverAttempt, records[2].Kind)
+	assert.Equal(t, OperationRecordApplyResolverProposal, records[3].Kind)
+}
+
+func TestStoreResolveSourcesUsesProcessBeforeDotenv(t *testing.T) {
+	t.Parallel()
+
+	s, err := NewStore(WithEnvSpec(".env.example", strings.NewReader("API_KEY=\"API key\" # Secret!\n")))
+	require.NoError(t, err)
+
+	result, err := s.ResolveSources(context.Background(), ResolveSourcesInput{
+		Process: []DotenvVariable{{
+			Key:    "API_KEY",
+			Value:  "from-process",
+			Source: model.Source{Name: "[process]", Kind: "process"},
+		}},
+		Dotenv: []DotenvVariable{{
+			Key:    "API_KEY",
+			Value:  "from-dotenv",
+			Source: model.Source{Name: ".env", Kind: "dotenv"},
+		}},
+		NewAttemptID: storeAttemptIDGenerator(),
+	})
+	require.NoError(t, err)
+
+	require.Len(t, result.Attempts, 1)
+	assert.Equal(t, model.ResolverID("core/process"), result.Attempts[0].ResolverID)
+	assert.Equal(t, model.ResolverAttemptResolved, result.Attempts[0].Outcome)
+	require.Len(t, result.Proposals, 1)
+	assert.Equal(t, model.Source{Name: "[process]", Kind: "process"}, result.Proposals[0].Value.Source)
+
+	state := s.State()
+	value := state.Values[result.Proposals[0].FieldRef]
+	assert.Equal(t, "from-process", value.Resolved)
+	assert.Equal(t, model.Source{Name: "[process]", Kind: "process"}, value.Source)
+}
+
+func TestStoreResolveSourcesKeepsInvalidResolvedValueProvenance(t *testing.T) {
+	t.Parallel()
+
+	ref := model.FieldRef{TypeID: model.TypeUniverseRedis, Instance: "queues", Field: "port"}
+	state := model.NewEffectiveState()
+	state.Bindings = []model.Binding{{
+		FieldRef:     ref,
+		ProjectionID: model.ProjectionDotenv,
+		Key:          "REDIS_PORT",
+		Explicit:     true,
+		Required:     true,
+	}}
+	s := NewState(state, registry.NewBuiltInRegistry())
+
+	result, err := s.ResolveSources(context.Background(), ResolveSourcesInput{
+		Dotenv: []DotenvVariable{{
+			Key:    "REDIS_PORT",
+			Value:  "not-a-port",
+			Source: model.Source{Name: ".env.local", Kind: "dotenv"},
+		}},
+		NewAttemptID: storeAttemptIDGenerator(),
+	})
+	require.NoError(t, err)
+
+	require.Len(t, result.Attempts, 2)
+	assert.Equal(t, model.ResolverAttemptResolved, result.Attempts[1].Outcome)
+	state = s.State()
+	value := state.Values[ref]
+	assert.Equal(t, "not-a-port", value.Resolved)
+	assert.Equal(t, model.Source{Name: ".env.local", Kind: "dotenv"}, value.Source)
+	require.NotEmpty(t, state.Diagnostics)
+	assert.Equal(t, "type.invalid-port", state.Diagnostics[0].Code)
+	require.Len(t, state.UnresolvedFrontier.Needs, 1)
+	assert.Equal(t, model.UnresolvedReasonInvalid, state.UnresolvedFrontier.Needs[0].Reason)
+	assert.Equal(t, []model.ResolverAttemptID{"attempt-000001", "attempt-000002"}, state.UnresolvedFrontier.Needs[0].ResolverAttemptIDs)
+}
+
 func TestBuildUnresolvedFrontierIncludesExplicitOptionalAndRequiredNeeds(t *testing.T) {
 	t.Parallel()
 
@@ -532,4 +643,12 @@ func typeProposalsByKey(items []TypeProposal) map[string]TypeProposal {
 		result[item.Key] = item
 	}
 	return result
+}
+
+func storeAttemptIDGenerator() func() model.ResolverAttemptID {
+	var next int
+	return func() model.ResolverAttemptID {
+		next++
+		return model.ResolverAttemptID(fmt.Sprintf("attempt-%06d", next))
+	}
 }
