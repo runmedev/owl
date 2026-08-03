@@ -7,31 +7,28 @@ import (
 )
 
 func BuildUnresolvedFrontier(state model.EffectiveState) model.UnresolvedFrontier {
-	attemptIDs := resolverAttemptIDsByTarget(state.ResolverAttempts)
+	return frontierBuilder{
+		state:      state,
+		attemptIDs: resolverAttemptIDsByTarget(state.ResolverAttempts),
+	}.build()
+}
+
+type frontierBuilder struct {
+	state      model.EffectiveState
+	attemptIDs map[frontierTarget][]model.ResolverAttemptID
+}
+
+func (b frontierBuilder) build() model.UnresolvedFrontier {
 	var needs []model.UnresolvedNeed
-	for _, binding := range state.Bindings {
+	for _, binding := range b.state.Bindings {
 		if !binding.Explicit {
 			continue
 		}
-		value, found := state.Values[binding.FieldRef]
-		reason, unresolved := unresolvedReason(binding, value, found, state.Diagnostics)
+		need, unresolved := b.needFor(binding)
 		if !unresolved {
 			continue
 		}
-		needs = append(needs, model.UnresolvedNeed{
-			ID:                 model.NewUnresolvedNeedID(binding.FieldRef, binding.Key, reason),
-			FieldRef:           binding.FieldRef,
-			ProjectionKey:      binding.Key,
-			Required:           binding.Required,
-			Blocking:           binding.Required,
-			Reason:             reason,
-			Description:        binding.Description,
-			Sensitivity:        sensitivityForNeed(binding, value, found),
-			Exposure:           exposureForNeed(binding, value, found),
-			Source:             binding.Source,
-			Origin:             binding.Origin,
-			ResolverAttemptIDs: append([]model.ResolverAttemptID{}, attemptIDs[frontierTarget{field: binding.FieldRef, key: binding.Key}]...),
-		})
+		needs = append(needs, need)
 	}
 	sort.SliceStable(needs, func(i, j int) bool {
 		if needs[i].Blocking != needs[j].Blocking {
@@ -43,6 +40,65 @@ func BuildUnresolvedFrontier(state model.EffectiveState) model.UnresolvedFrontie
 		return needs[i].FieldRef.String() < needs[j].FieldRef.String()
 	})
 	return model.UnresolvedFrontier{Needs: needs}
+}
+
+func (b frontierBuilder) needFor(binding model.Binding) (model.UnresolvedNeed, bool) {
+	value, found := b.state.Values[binding.FieldRef]
+	reason, unresolved := b.reasonFor(binding, value, found)
+	if !unresolved {
+		return model.UnresolvedNeed{}, false
+	}
+	return model.UnresolvedNeed{
+		ID:                 model.NewUnresolvedNeedID(binding.FieldRef, binding.Key, reason),
+		FieldRef:           binding.FieldRef,
+		ProjectionKey:      binding.Key,
+		Required:           binding.Required,
+		Blocking:           binding.Required,
+		Reason:             reason,
+		Description:        binding.Description,
+		Sensitivity:        b.sensitivityFor(binding, value, found),
+		Exposure:           b.exposureFor(binding, value, found),
+		Source:             binding.Source,
+		Origin:             binding.Origin,
+		ResolverAttemptIDs: b.attemptIDsFor(binding),
+	}, true
+}
+
+func (b frontierBuilder) reasonFor(binding model.Binding, value model.Value, found bool) (model.UnresolvedReason, bool) {
+	if !found || value.Visibility == model.VisibilityUnresolved {
+		return model.UnresolvedReasonMissing, true
+	}
+	for _, diagnostic := range b.state.Diagnostics {
+		if diagnostic.Severity != model.DiagnosticError {
+			continue
+		}
+		if diagnostic.FieldRef != binding.FieldRef && diagnostic.Key != string(binding.Key) {
+			continue
+		}
+		return model.UnresolvedReasonInvalid, true
+	}
+	return "", false
+}
+
+func (b frontierBuilder) sensitivityFor(binding model.Binding, value model.Value, found bool) model.Sensitivity {
+	if found && value.Sensitivity != "" {
+		return value.Sensitivity
+	}
+	return inferSensitivityForField(binding.FieldRef)
+}
+
+func (b frontierBuilder) exposureFor(binding model.Binding, value model.Value, found bool) model.Exposure {
+	if found && value.Exposure != "" {
+		return value.Exposure
+	}
+	return inferExposureForField(binding.FieldRef)
+}
+
+func (b frontierBuilder) attemptIDsFor(binding model.Binding) []model.ResolverAttemptID {
+	return append([]model.ResolverAttemptID{}, b.attemptIDs[frontierTarget{
+		field: binding.FieldRef,
+		key:   binding.Key,
+	}]...)
 }
 
 type frontierTarget struct {
@@ -60,34 +116,4 @@ func resolverAttemptIDsByTarget(attempts []model.ResolverAttempt) map[frontierTa
 		result[target] = append(result[target], attempt.ID)
 	}
 	return result
-}
-
-func unresolvedReason(binding model.Binding, value model.Value, found bool, diagnostics []model.Diagnostic) (model.UnresolvedReason, bool) {
-	if !found || value.Visibility == model.VisibilityUnresolved {
-		return model.UnresolvedReasonMissing, true
-	}
-	for _, diagnostic := range diagnostics {
-		if diagnostic.Severity != model.DiagnosticError {
-			continue
-		}
-		if diagnostic.FieldRef != binding.FieldRef && diagnostic.Key != string(binding.Key) {
-			continue
-		}
-		return model.UnresolvedReasonInvalid, true
-	}
-	return "", false
-}
-
-func sensitivityForNeed(binding model.Binding, value model.Value, found bool) model.Sensitivity {
-	if found && value.Sensitivity != "" {
-		return value.Sensitivity
-	}
-	return inferSensitivityForField(binding.FieldRef)
-}
-
-func exposureForNeed(binding model.Binding, value model.Value, found bool) model.Exposure {
-	if found && value.Exposure != "" {
-		return value.Exposure
-	}
-	return inferExposureForField(binding.FieldRef)
 }

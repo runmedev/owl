@@ -427,35 +427,39 @@ func marshalUnresolvedFrontier(frontier model.UnresolvedFrontier) map[string]int
 func marshalResolverAttempts(attempts []model.ResolverAttempt) []map[string]interface{} {
 	items := make([]map[string]interface{}, 0, len(attempts))
 	for _, attempt := range attempts {
-		diagnostics := make([]map[string]interface{}, 0, len(attempt.Diagnostics))
-		for _, diagnostic := range attempt.Diagnostics {
-			diagnostics = append(diagnostics, map[string]interface{}{
-				"severity": string(diagnostic.Severity),
-				"code":     diagnostic.Code,
-				"message":  diagnostic.Message,
-				"details":  append([]string{}, diagnostic.Details...),
-				"key":      diagnostic.Key,
-				"field":    marshalFieldRef(diagnostic.FieldRef),
-				"owner":    string(diagnostic.Owner),
-			})
-		}
-		item := map[string]interface{}{
-			"id":            string(attempt.ID),
-			"resolverID":    string(attempt.ResolverID),
-			"field":         marshalFieldRef(attempt.FieldRef),
-			"projectionKey": string(attempt.ProjectionKey),
-			"outcome":       string(attempt.Outcome),
-			"message":       attempt.Message,
-			"startedAt":     timeString(attempt.StartedAt),
-			"finishedAt":    timeString(attempt.FinishedAt),
-			"diagnostics":   diagnostics,
-		}
-		if source := marshalSource(attempt.Source); source != nil {
-			item["source"] = source
-		}
-		items = append(items, item)
+		items = append(items, marshalResolverAttempt(attempt))
 	}
 	return items
+}
+
+func marshalResolverAttempt(attempt model.ResolverAttempt) map[string]interface{} {
+	diagnostics := make([]map[string]interface{}, 0, len(attempt.Diagnostics))
+	for _, diagnostic := range attempt.Diagnostics {
+		diagnostics = append(diagnostics, map[string]interface{}{
+			"severity": string(diagnostic.Severity),
+			"code":     diagnostic.Code,
+			"message":  diagnostic.Message,
+			"details":  append([]string{}, diagnostic.Details...),
+			"key":      diagnostic.Key,
+			"field":    marshalFieldRef(diagnostic.FieldRef),
+			"owner":    string(diagnostic.Owner),
+		})
+	}
+	item := map[string]interface{}{
+		"id":            string(attempt.ID),
+		"resolverID":    string(attempt.ResolverID),
+		"field":         marshalFieldRef(attempt.FieldRef),
+		"projectionKey": string(attempt.ProjectionKey),
+		"outcome":       string(attempt.Outcome),
+		"message":       attempt.Message,
+		"startedAt":     timeString(attempt.StartedAt),
+		"finishedAt":    timeString(attempt.FinishedAt),
+		"diagnostics":   diagnostics,
+	}
+	if source := marshalSource(attempt.Source); source != nil {
+		item["source"] = source
+	}
+	return item
 }
 
 func marshalFieldRef(ref model.FieldRef) map[string]interface{} {

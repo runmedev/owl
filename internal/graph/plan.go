@@ -7,7 +7,6 @@ import (
 	"github.com/graphql-go/graphql/language/ast"
 	"github.com/graphql-go/graphql/language/printer"
 
-	"github.com/runmedev/owl/internal/model"
 	"github.com/runmedev/owl/internal/store"
 )
 
@@ -130,34 +129,8 @@ func stateEnvelopeTerminal() *ast.Field {
 							field("preserveKey", nil, nil),
 							field("required", nil, nil),
 						}})),
-						field("resolverAttempts", nil, ast.NewSelectionSet(&ast.SelectionSet{Selections: []ast.Selection{
-							field("id", nil, nil),
-							field("resolverID", nil, nil),
-							field("field", nil, fieldRefSelection()),
-							field("projectionKey", nil, nil),
-							field("outcome", nil, nil),
-							field("message", nil, nil),
-							field("source", nil, sourceSelection()),
-							field("startedAt", nil, nil),
-							field("finishedAt", nil, nil),
-							field("diagnostics", nil, diagnosticSelection()),
-						}})),
-						field("unresolvedFrontier", nil, ast.NewSelectionSet(&ast.SelectionSet{Selections: []ast.Selection{
-							field("needs", nil, ast.NewSelectionSet(&ast.SelectionSet{Selections: []ast.Selection{
-								field("id", nil, nil),
-								field("field", nil, fieldRefSelection()),
-								field("projectionKey", nil, nil),
-								field("required", nil, nil),
-								field("blocking", nil, nil),
-								field("reason", nil, nil),
-								field("description", nil, nil),
-								field("sensitivity", nil, nil),
-								field("exposure", nil, nil),
-								field("source", nil, sourceSelection()),
-								field("origin", nil, sourceSelection()),
-								field("resolverAttemptIDs", nil, nil),
-							}})),
-						}})),
+						field("resolverAttempts", nil, resolverAttemptSelection()),
+						field("unresolvedFrontier", nil, unresolvedFrontierSelection()),
 						field("diagnostics", nil, diagnosticSelection()),
 					}})),
 					field("provenance", nil, ast.NewSelectionSet(&ast.SelectionSet{Selections: []ast.Selection{
@@ -197,34 +170,42 @@ func diagnosticSelection() *ast.SelectionSet {
 	}})
 }
 
-func marshalResolverAttempt(attempt model.ResolverAttempt) map[string]interface{} {
-	result := map[string]interface{}{
-		"id":            string(attempt.ID),
-		"resolverID":    string(attempt.ResolverID),
-		"field":         map[string]interface{}{"typeID": string(attempt.FieldRef.TypeID), "instance": attempt.FieldRef.Instance, "field": attempt.FieldRef.Field},
-		"projectionKey": string(attempt.ProjectionKey),
-		"outcome":       string(attempt.Outcome),
-		"message":       attempt.Message,
-		"startedAt":     timeString(attempt.StartedAt),
-		"finishedAt":    timeString(attempt.FinishedAt),
-	}
-	if attempt.Source.Name != "" || attempt.Source.Kind != "" {
-		result["source"] = map[string]interface{}{"name": attempt.Source.Name, "kind": attempt.Source.Kind}
-	}
-	diagnostics := make([]map[string]interface{}, 0, len(attempt.Diagnostics))
-	for _, diagnostic := range attempt.Diagnostics {
-		diagnostics = append(diagnostics, map[string]interface{}{
-			"severity": string(diagnostic.Severity),
-			"code":     diagnostic.Code,
-			"message":  diagnostic.Message,
-			"details":  append([]string{}, diagnostic.Details...),
-			"key":      diagnostic.Key,
-			"field":    map[string]interface{}{"typeID": string(diagnostic.FieldRef.TypeID), "instance": diagnostic.FieldRef.Instance, "field": diagnostic.FieldRef.Field},
-			"owner":    string(diagnostic.Owner),
-		})
-	}
-	result["diagnostics"] = diagnostics
-	return result
+func resolverAttemptSelection() *ast.SelectionSet {
+	return ast.NewSelectionSet(&ast.SelectionSet{Selections: []ast.Selection{
+		field("id", nil, nil),
+		field("resolverID", nil, nil),
+		field("field", nil, fieldRefSelection()),
+		field("projectionKey", nil, nil),
+		field("outcome", nil, nil),
+		field("message", nil, nil),
+		field("source", nil, sourceSelection()),
+		field("startedAt", nil, nil),
+		field("finishedAt", nil, nil),
+		field("diagnostics", nil, diagnosticSelection()),
+	}})
+}
+
+func unresolvedFrontierSelection() *ast.SelectionSet {
+	return ast.NewSelectionSet(&ast.SelectionSet{Selections: []ast.Selection{
+		field("needs", nil, unresolvedNeedSelection()),
+	}})
+}
+
+func unresolvedNeedSelection() *ast.SelectionSet {
+	return ast.NewSelectionSet(&ast.SelectionSet{Selections: []ast.Selection{
+		field("id", nil, nil),
+		field("field", nil, fieldRefSelection()),
+		field("projectionKey", nil, nil),
+		field("required", nil, nil),
+		field("blocking", nil, nil),
+		field("reason", nil, nil),
+		field("description", nil, nil),
+		field("sensitivity", nil, nil),
+		field("exposure", nil, nil),
+		field("source", nil, sourceSelection()),
+		field("origin", nil, sourceSelection()),
+		field("resolverAttemptIDs", nil, nil),
+	}})
 }
 
 func operationMetadataSelection() *ast.SelectionSet {
