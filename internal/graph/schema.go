@@ -93,6 +93,29 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"diagnostics":   &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(diagnosticInput))},
 		},
 	})
+	unresolvedNeedInput := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "UnresolvedNeedInput",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"id":                 &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"field":              &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(fieldRefInput)},
+			"projectionKey":      &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"required":           &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
+			"blocking":           &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
+			"reason":             &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"description":        &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"sensitivity":        &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"exposure":           &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"source":             &graphql.InputObjectFieldConfig{Type: sourceInput},
+			"origin":             &graphql.InputObjectFieldConfig{Type: sourceInput},
+			"resolverAttemptIDs": &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.String)},
+		},
+	})
+	unresolvedFrontierInput := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "UnresolvedFrontierInput",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"needs": &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(unresolvedNeedInput))},
+		},
+	})
 	stateValueInput := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "StateValueInput",
 		Fields: graphql.InputObjectConfigFieldMap{
@@ -128,10 +151,11 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 	effectiveStateInput := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "EffectiveStateInput",
 		Fields: graphql.InputObjectConfigFieldMap{
-			"values":           &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(stateValueInput))},
-			"bindings":         &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(stateBindingInput))},
-			"resolverAttempts": &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(resolverAttemptInput))},
-			"diagnostics":      &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(diagnosticInput))},
+			"values":             &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(stateValueInput))},
+			"bindings":           &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(stateBindingInput))},
+			"resolverAttempts":   &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(resolverAttemptInput))},
+			"unresolvedFrontier": &graphql.InputObjectFieldConfig{Type: unresolvedFrontierInput},
+			"diagnostics":        &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(diagnosticInput))},
 		},
 	})
 	operationMetadataInput := graphql.NewInputObject(graphql.InputObjectConfig{
@@ -283,13 +307,37 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"diagnostics":   &graphql.Field{Type: graphql.NewList(diagnosticType)},
 		},
 	})
+	unresolvedNeedType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "UnresolvedNeed",
+		Fields: graphql.Fields{
+			"id":                 &graphql.Field{Type: graphql.String},
+			"field":              &graphql.Field{Type: fieldRefType},
+			"projectionKey":      &graphql.Field{Type: graphql.String},
+			"required":           &graphql.Field{Type: graphql.Boolean},
+			"blocking":           &graphql.Field{Type: graphql.Boolean},
+			"reason":             &graphql.Field{Type: graphql.String},
+			"description":        &graphql.Field{Type: graphql.String},
+			"sensitivity":        &graphql.Field{Type: graphql.String},
+			"exposure":           &graphql.Field{Type: graphql.String},
+			"source":             &graphql.Field{Type: sourceType},
+			"origin":             &graphql.Field{Type: sourceType},
+			"resolverAttemptIDs": &graphql.Field{Type: graphql.NewList(graphql.String)},
+		},
+	})
+	unresolvedFrontierType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "UnresolvedFrontier",
+		Fields: graphql.Fields{
+			"needs": &graphql.Field{Type: graphql.NewList(unresolvedNeedType)},
+		},
+	})
 	effectiveStateType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "EffectiveState",
 		Fields: graphql.Fields{
-			"values":           &graphql.Field{Type: graphql.NewList(stateValueType)},
-			"bindings":         &graphql.Field{Type: graphql.NewList(stateBindingType)},
-			"resolverAttempts": &graphql.Field{Type: graphql.NewList(resolverAttemptType)},
-			"diagnostics":      &graphql.Field{Type: graphql.NewList(diagnosticType)},
+			"values":             &graphql.Field{Type: graphql.NewList(stateValueType)},
+			"bindings":           &graphql.Field{Type: graphql.NewList(stateBindingType)},
+			"resolverAttempts":   &graphql.Field{Type: graphql.NewList(resolverAttemptType)},
+			"unresolvedFrontier": &graphql.Field{Type: unresolvedFrontierType},
+			"diagnostics":        &graphql.Field{Type: graphql.NewList(diagnosticType)},
 		},
 	})
 	operationMetadataType := graphql.NewObject(graphql.ObjectConfig{
@@ -765,7 +813,45 @@ func decodeEffectiveStateInput(raw interface{}) model.EffectiveState {
 	for _, item := range decodeList(row["resolverAttempts"]) {
 		state.ResolverAttempts = append(state.ResolverAttempts, decodeResolverAttemptInput(item))
 	}
+	state.UnresolvedFrontier = decodeUnresolvedFrontierInput(row["unresolvedFrontier"])
 	return state
+}
+
+func decodeUnresolvedFrontierInput(raw interface{}) model.UnresolvedFrontier {
+	var frontier model.UnresolvedFrontier
+	row, ok := raw.(map[string]interface{})
+	if !ok {
+		return frontier
+	}
+	for _, item := range decodeList(row["needs"]) {
+		needRaw, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		frontier.Needs = append(frontier.Needs, model.UnresolvedNeed{
+			ID:                 model.UnresolvedNeedID(stringValue(needRaw["id"])),
+			FieldRef:           decodeFieldRef(needRaw["field"]),
+			ProjectionKey:      model.ProjectionKey(stringValue(needRaw["projectionKey"])),
+			Required:           boolValue(needRaw["required"]),
+			Blocking:           boolValue(needRaw["blocking"]),
+			Reason:             model.UnresolvedReason(stringValue(needRaw["reason"])),
+			Description:        stringValue(needRaw["description"]),
+			Sensitivity:        model.Sensitivity(stringValue(needRaw["sensitivity"])),
+			Exposure:           model.Exposure(stringValue(needRaw["exposure"])),
+			Source:             decodeSource(needRaw["source"]),
+			Origin:             decodeSource(needRaw["origin"]),
+			ResolverAttemptIDs: decodeResolverAttemptIDs(needRaw["resolverAttemptIDs"]),
+		})
+	}
+	return frontier
+}
+
+func decodeResolverAttemptIDs(raw interface{}) []model.ResolverAttemptID {
+	var result []model.ResolverAttemptID
+	for _, id := range decodeStringList(raw) {
+		result = append(result, model.ResolverAttemptID(id))
+	}
+	return result
 }
 
 func decodeResolverAttemptInput(raw interface{}) model.ResolverAttempt {
@@ -1007,10 +1093,11 @@ func effectiveStateView(state model.EffectiveState) map[string]interface{} {
 		})
 	}
 	return map[string]interface{}{
-		"values":           values,
-		"bindings":         bindings,
-		"resolverAttempts": resolverAttemptViews(state.ResolverAttempts),
-		"diagnostics":      sortedDiagnostics(state.Diagnostics),
+		"values":             values,
+		"bindings":           bindings,
+		"resolverAttempts":   resolverAttemptViews(state.ResolverAttempts),
+		"unresolvedFrontier": unresolvedFrontierView(state.UnresolvedFrontier),
+		"diagnostics":        sortedDiagnostics(state.Diagnostics),
 	}
 }
 
@@ -1035,6 +1122,31 @@ func resolverAttemptView(attempt model.ResolverAttempt) map[string]interface{} {
 		"finishedAt":    timeString(attempt.FinishedAt),
 		"diagnostics":   sortedDiagnostics(attempt.Diagnostics),
 	}
+}
+
+func unresolvedFrontierView(frontier model.UnresolvedFrontier) map[string]interface{} {
+	needs := make([]map[string]interface{}, 0, len(frontier.Needs))
+	for _, need := range frontier.Needs {
+		ids := make([]string, 0, len(need.ResolverAttemptIDs))
+		for _, id := range need.ResolverAttemptIDs {
+			ids = append(ids, string(id))
+		}
+		needs = append(needs, map[string]interface{}{
+			"id":                 string(need.ID),
+			"field":              fieldRefView(need.FieldRef),
+			"projectionKey":      string(need.ProjectionKey),
+			"required":           need.Required,
+			"blocking":           need.Blocking,
+			"reason":             string(need.Reason),
+			"description":        need.Description,
+			"sensitivity":        string(need.Sensitivity),
+			"exposure":           string(need.Exposure),
+			"source":             sourceView(need.Source),
+			"origin":             sourceView(need.Origin),
+			"resolverAttemptIDs": ids,
+		})
+	}
+	return map[string]interface{}{"needs": needs}
 }
 
 func getResultView(result store.GetResult) map[string]interface{} {

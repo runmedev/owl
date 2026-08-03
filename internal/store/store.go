@@ -511,6 +511,7 @@ func (op IntegrityOperation) Apply(_ context.Context, state model.EffectiveState
 	}
 	state.Diagnostics = withoutDiagnosticOwner(state.Diagnostics, model.DiagnosticOwnerValidation)
 	state.Diagnostics = append(state.Diagnostics, CheckStateIntegrity(state, types)...)
+	state.UnresolvedFrontier = BuildUnresolvedFrontier(state)
 	return state, nil
 }
 

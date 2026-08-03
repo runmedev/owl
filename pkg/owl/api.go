@@ -44,6 +44,10 @@ type (
 	ResolverAttemptID      = model.ResolverAttemptID
 	ResolverAttempt        = model.ResolverAttempt
 	ResolverAttemptOutcome = model.ResolverAttemptOutcome
+	UnresolvedNeedID       = model.UnresolvedNeedID
+	UnresolvedReason       = model.UnresolvedReason
+	UnresolvedFrontier     = model.UnresolvedFrontier
+	UnresolvedNeed         = model.UnresolvedNeed
 )
 
 const (
@@ -76,6 +80,9 @@ const (
 	ResolverNetworkUnavailable     = model.ResolverAttemptNetworkUnavailable
 	ResolverInvalidResult          = model.ResolverAttemptInvalidResult
 	ResolverFailed                 = model.ResolverAttemptFailed
+
+	UnresolvedMissing = model.UnresolvedReasonMissing
+	UnresolvedInvalid = model.UnresolvedReasonInvalid
 )
 
 type Store struct {

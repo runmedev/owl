@@ -293,6 +293,127 @@ func TestStoreRecordsResolverAttemptWithoutMutatingValues(t *testing.T) {
 	assert.Equal(t, attempt, records[1].ResolverAttempt)
 }
 
+func TestBuildUnresolvedFrontierIncludesExplicitOptionalAndRequiredNeeds(t *testing.T) {
+	t.Parallel()
+
+	requiredRef := model.FieldRef{TypeID: model.TypeCoreSecret, Instance: "default", Field: "api.key"}
+	optionalRef := model.FieldRef{TypeID: model.TypeCorePlain, Instance: "default", Field: "api.url"}
+	inferredRef := model.FieldRef{TypeID: model.TypeCoreOpaque, Instance: "default", Field: "token"}
+	state := model.NewEffectiveState()
+	state.Bindings = []model.Binding{
+		{
+			FieldRef:    requiredRef,
+			Key:         "API_KEY",
+			Description: "API key",
+			Source:      model.Source{Name: ".env.spec", Kind: "dotenv-spec"},
+			Origin:      model.Source{Name: ".env.spec", Kind: "dotenv-spec"},
+			Explicit:    true,
+			Required:    true,
+		},
+		{
+			FieldRef:    optionalRef,
+			Key:         "API_URL",
+			Description: "API URL",
+			Source:      model.Source{Name: ".env.spec", Kind: "dotenv-spec"},
+			Origin:      model.Source{Name: ".env.spec", Kind: "dotenv-spec"},
+			Explicit:    true,
+		},
+		{
+			FieldRef: inferredRef,
+			Key:      "TOKEN",
+			Explicit: false,
+		},
+	}
+	state.Values[requiredRef] = model.Value{
+		FieldRef:    requiredRef,
+		Visibility:  model.VisibilityUnresolved,
+		Sensitivity: model.SensitivitySensitive,
+		Exposure:    model.ExposureClear,
+	}
+	state.Values[optionalRef] = model.Value{
+		FieldRef:    optionalRef,
+		Visibility:  model.VisibilityUnresolved,
+		Sensitivity: model.SensitivityPlaintext,
+		Exposure:    model.ExposureClear,
+	}
+	state.Values[inferredRef] = model.Value{
+		FieldRef:    inferredRef,
+		Visibility:  model.VisibilityUnresolved,
+		Sensitivity: model.SensitivityUnknown,
+		Exposure:    model.ExposureOpaque,
+	}
+	state.ResolverAttempts = []model.ResolverAttempt{
+		{
+			ID:            "attempt-000001",
+			ResolverID:    "core/dotenv",
+			FieldRef:      requiredRef,
+			ProjectionKey: "API_KEY",
+			Outcome:       model.ResolverAttemptNotFound,
+		},
+	}
+
+	frontier := BuildUnresolvedFrontier(state)
+
+	require.Len(t, frontier.Needs, 2)
+	assert.Equal(t, "API_KEY", string(frontier.Needs[0].ProjectionKey))
+	assert.True(t, frontier.Needs[0].Required)
+	assert.True(t, frontier.Needs[0].Blocking)
+	assert.Equal(t, model.UnresolvedReasonMissing, frontier.Needs[0].Reason)
+	assert.Equal(t, []model.ResolverAttemptID{"attempt-000001"}, frontier.Needs[0].ResolverAttemptIDs)
+	assert.Equal(t, "API_URL", string(frontier.Needs[1].ProjectionKey))
+	assert.False(t, frontier.Needs[1].Required)
+	assert.False(t, frontier.Needs[1].Blocking)
+}
+
+func TestBuildUnresolvedFrontierIncludesInvalidExplicitValuesOnly(t *testing.T) {
+	t.Parallel()
+
+	invalidRef := model.FieldRef{TypeID: model.TypeUniverseRedis, Instance: "queues", Field: "port"}
+	hiddenRef := model.FieldRef{TypeID: model.TypeCoreOpaque, Instance: "default", Field: "database.url"}
+	state := model.NewEffectiveState()
+	state.Bindings = []model.Binding{
+		{
+			FieldRef: invalidRef,
+			Key:      "REDIS_PORT",
+			Explicit: true,
+		},
+		{
+			FieldRef: hiddenRef,
+			Key:      "DATABASE_URL",
+			Explicit: true,
+		},
+	}
+	state.Values[invalidRef] = model.Value{
+		FieldRef:    invalidRef,
+		Resolved:    "not-a-port",
+		Visibility:  model.VisibilityLiteral,
+		Sensitivity: model.SensitivityPlaintext,
+		Exposure:    model.ExposureClear,
+	}
+	state.Values[hiddenRef] = model.Value{
+		FieldRef:    hiddenRef,
+		Resolved:    "postgres://example",
+		Visibility:  model.VisibilityHidden,
+		Sensitivity: model.SensitivityUnknown,
+		Exposure:    model.ExposureOpaque,
+	}
+	state.Diagnostics = []model.Diagnostic{
+		{
+			Severity: model.DiagnosticError,
+			Code:     "type.invalid-port",
+			Key:      "REDIS_PORT",
+			FieldRef: invalidRef,
+			Owner:    model.DiagnosticOwnerValidation,
+		},
+	}
+
+	frontier := BuildUnresolvedFrontier(state)
+
+	require.Len(t, frontier.Needs, 1)
+	assert.Equal(t, "REDIS_PORT", string(frontier.Needs[0].ProjectionKey))
+	assert.Equal(t, model.UnresolvedReasonInvalid, frontier.Needs[0].Reason)
+}
+
 func snapshotByName(items []SnapshotItem) map[string]SnapshotItem {
 	result := make(map[string]SnapshotItem, len(items))
 	for _, item := range items {

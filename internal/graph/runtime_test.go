@@ -140,11 +140,16 @@ func TestRuntimeSchemaUsesVisibilityAndExposureNames(t *testing.T) {
 		`"name": "StateValueInput"`,
 		`"name": "ResolverAttempt"`,
 		`"name": "ResolverAttemptInput"`,
+		`"name": "UnresolvedFrontier"`,
+		`"name": "UnresolvedFrontierInput"`,
+		`"name": "UnresolvedNeed"`,
+		`"name": "UnresolvedNeedInput"`,
 		`"name": "SnapshotItem"`,
 		`"name": "GetResult"`,
 		`"name": "visibility"`,
 		`"name": "exposure"`,
 		`"name": "resolverAttempts"`,
+		`"name": "unresolvedFrontier"`,
 		`"name": "createdAt"`,
 		`"name": "updatedAt"`,
 	} {
@@ -202,6 +207,7 @@ func TestPlanStateEnvelopeQueryStacksOperationRecords(t *testing.T) {
 	assert.Contains(t, plan.Query, "update(dotenv: $update_1)")
 	assert.Contains(t, plan.Query, "delete(keys: $delete_2)")
 	assert.Contains(t, plan.Query, "recordResolverAttempt(attempt: $resolverAttempt_3)")
+	assert.Contains(t, plan.Query, "unresolvedFrontier")
 	assert.NotContains(t, plan.Query, "reconcile")
 	assert.Equal(t, []string{"load", "update", "delete", "recordResolverAttempt", "normalize", "validate", "state", "envelope"}, plan.Path)
 }
@@ -317,6 +323,63 @@ func TestRuntimeMaterializesResolverAttemptsFromOperationRecords(t *testing.T) {
 	assert.Equal(t, "https://api.example.com", got.Value)
 }
 
+func TestRuntimeMaterializesUnresolvedFrontier(t *testing.T) {
+	t.Parallel()
+
+	runtime, err := NewRuntime(nil)
+	require.NoError(t, err)
+
+	envelope, err := runtime.StateEnvelope(context.Background(), store.LoadInput{
+		DotenvSource: model.Source{Name: ".env", Kind: "dotenv"},
+		Dotenv:       []store.DotenvVariable{{Key: "PRESENT_SECRET", Value: "secret"}},
+		Contracts: []store.EnvContract{
+			{
+				Source:     model.Source{Name: "owl.toml", Kind: "owl-config"},
+				Projection: model.ProjectionDotenv,
+				Bindings: []store.EnvBinding{
+					{
+						Key:         "MISSING_SECRET",
+						FieldRef:    model.FieldRef{TypeID: model.TypeCoreSecret, Instance: "default", Field: "missing.secret"},
+						Projection:  model.ProjectionDotenv,
+						Description: "Missing secret",
+						Source:      model.Source{Name: "owl.toml", Kind: "owl-config"},
+						Required:    true,
+						Sensitivity: model.SensitivitySensitive,
+						Exposure:    model.ExposureClear,
+					},
+					{
+						Key:         "OPTIONAL_URL",
+						FieldRef:    model.FieldRef{TypeID: model.TypeCorePlain, Instance: "default", Field: "optional.url"},
+						Projection:  model.ProjectionDotenv,
+						Description: "Optional URL",
+						Source:      model.Source{Name: "owl.toml", Kind: "owl-config"},
+						Sensitivity: model.SensitivityPlaintext,
+						Exposure:    model.ExposureClear,
+					},
+					{
+						Key:        "PRESENT_SECRET",
+						FieldRef:   model.FieldRef{TypeID: model.TypeCoreSecret, Instance: "default", Field: "present.secret"},
+						Projection: model.ProjectionDotenv,
+						Source:     model.Source{Name: "owl.toml", Kind: "owl-config"},
+						Required:   true,
+					},
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	require.Len(t, envelope.State.UnresolvedFrontier.Needs, 2)
+	byKey := unresolvedNeedsByKey(envelope.State.UnresolvedFrontier.Needs)
+	require.Contains(t, byKey, "MISSING_SECRET")
+	assert.True(t, byKey["MISSING_SECRET"].Blocking)
+	assert.Equal(t, model.UnresolvedReasonMissing, byKey["MISSING_SECRET"].Reason)
+	require.Contains(t, byKey, "OPTIONAL_URL")
+	assert.False(t, byKey["OPTIONAL_URL"].Blocking)
+	assert.Equal(t, model.UnresolvedReasonMissing, byKey["OPTIONAL_URL"].Reason)
+	assert.NotContains(t, byKey, "PRESENT_SECRET")
+}
+
 func snapshotByName(items []SnapshotItem) map[string]SnapshotItem {
 	result := make(map[string]SnapshotItem, len(items))
 	for _, item := range items {
@@ -331,4 +394,12 @@ func diagnosticCodes(diagnostics []model.Diagnostic) []string {
 		codes = append(codes, diagnostic.Code)
 	}
 	return codes
+}
+
+func unresolvedNeedsByKey(needs []model.UnresolvedNeed) map[string]model.UnresolvedNeed {
+	result := make(map[string]model.UnresolvedNeed, len(needs))
+	for _, need := range needs {
+		result[string(need.ProjectionKey)] = need
+	}
+	return result
 }

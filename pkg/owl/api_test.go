@@ -345,6 +345,35 @@ func TestPublicAPIStateEnvelopeRoundTripPreservesResolverAttempts(t *testing.T) 
 	assert.Equal(t, "https://api.example.com", got.Value)
 }
 
+func TestPublicAPIStateEnvelopeExposesUnresolvedFrontier(t *testing.T) {
+	t.Parallel()
+
+	store, err := owl.NewStore(
+		owl.WithEnvSpec(".env.spec", strings.NewReader("API_URL=\"API URL\" # Plain\nAPI_KEY=\"API key\" # Secret!\n")),
+	)
+	require.NoError(t, err)
+
+	envelope, err := store.StateEnvelope(context.Background())
+	require.NoError(t, err)
+
+	require.Len(t, envelope.State.UnresolvedFrontier.Needs, 2)
+	byKey := unresolvedNeedsByKey(envelope.State.UnresolvedFrontier.Needs)
+	require.Contains(t, byKey, "API_KEY")
+	assert.True(t, byKey["API_KEY"].Required)
+	assert.True(t, byKey["API_KEY"].Blocking)
+	assert.Equal(t, owl.UnresolvedMissing, byKey["API_KEY"].Reason)
+	require.Contains(t, byKey, "API_URL")
+	assert.False(t, byKey["API_URL"].Required)
+	assert.False(t, byKey["API_URL"].Blocking)
+	assert.Equal(t, owl.UnresolvedMissing, byKey["API_URL"].Reason)
+
+	roundTripped, err := owl.NewStore(owl.WithStateEnvelope(envelope))
+	require.NoError(t, err)
+	next, err := roundTripped.StateEnvelope(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, envelope.State.UnresolvedFrontier, next.State.UnresolvedFrontier)
+}
+
 func TestPublicAPIUpdatesMaterializeFromOperationLog(t *testing.T) {
 	t.Parallel()
 
@@ -624,4 +653,12 @@ func diagnosticCodes(diagnostics []owl.Diagnostic) []string {
 		codes = append(codes, diagnostic.Code)
 	}
 	return codes
+}
+
+func unresolvedNeedsByKey(needs []owl.UnresolvedNeed) map[string]owl.UnresolvedNeed {
+	result := make(map[string]owl.UnresolvedNeed, len(needs))
+	for _, need := range needs {
+		result[string(need.ProjectionKey)] = need
+	}
+	return result
 }

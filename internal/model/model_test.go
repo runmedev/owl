@@ -30,3 +30,14 @@ func TestResolverAttemptSerializesWithoutValuePayload(t *testing.T) {
 	assert.NotContains(t, string(raw), "Proposed")
 	assert.NotContains(t, string(raw), "Value")
 }
+
+func TestNewUnresolvedNeedIDIsDeterministic(t *testing.T) {
+	t.Parallel()
+
+	ref := FieldRef{TypeID: TypeUniverseRedis, Instance: "queues", Field: "password"}
+
+	assert.Equal(t,
+		UnresolvedNeedID(`need:universe/redis("queues").password:REDIS_PASSWORD:missing`),
+		NewUnresolvedNeedID(ref, "REDIS_PASSWORD", UnresolvedReasonMissing),
+	)
+}

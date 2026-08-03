@@ -142,6 +142,22 @@ func stateEnvelopeTerminal() *ast.Field {
 							field("finishedAt", nil, nil),
 							field("diagnostics", nil, diagnosticSelection()),
 						}})),
+						field("unresolvedFrontier", nil, ast.NewSelectionSet(&ast.SelectionSet{Selections: []ast.Selection{
+							field("needs", nil, ast.NewSelectionSet(&ast.SelectionSet{Selections: []ast.Selection{
+								field("id", nil, nil),
+								field("field", nil, fieldRefSelection()),
+								field("projectionKey", nil, nil),
+								field("required", nil, nil),
+								field("blocking", nil, nil),
+								field("reason", nil, nil),
+								field("description", nil, nil),
+								field("sensitivity", nil, nil),
+								field("exposure", nil, nil),
+								field("source", nil, sourceSelection()),
+								field("origin", nil, sourceSelection()),
+								field("resolverAttemptIDs", nil, nil),
+							}})),
+						}})),
 						field("diagnostics", nil, diagnosticSelection()),
 					}})),
 					field("provenance", nil, ast.NewSelectionSet(&ast.SelectionSet{Selections: []ast.Selection{
