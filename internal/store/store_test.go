@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -255,6 +256,41 @@ func TestStoreRecordsFactOperationsOnly(t *testing.T) {
 	assert.Equal(t, OperationRecordUpdate, records[1].Kind)
 	assert.Equal(t, OperationRecordDelete, records[2].Kind)
 	assert.Equal(t, []string{"API_URL"}, records[2].Delete.Keys)
+}
+
+func TestStoreRecordsResolverAttemptWithoutMutatingValues(t *testing.T) {
+	t.Parallel()
+
+	s, err := NewStore(WithDotenv(".env", strings.NewReader("API_URL=https://api.example.com\n")))
+	require.NoError(t, err)
+	before := s.State()
+	startedAt := time.Date(2026, 8, 3, 16, 0, 0, 0, time.UTC)
+	finishedAt := startedAt.Add(time.Second)
+
+	attempt := model.ResolverAttempt{
+		ID:            "attempt-000001",
+		ResolverID:    "core/dotenv",
+		FieldRef:      model.FieldRef{TypeID: model.TypeCoreSecret, Instance: "default", Field: "api.key"},
+		ProjectionKey: "API_KEY",
+		Outcome:       model.ResolverAttemptNotFound,
+		Message:       "dotenv value was not present",
+		Source:        model.Source{Name: ".env", Kind: "dotenv"},
+		StartedAt:     startedAt,
+		FinishedAt:    finishedAt,
+	}
+
+	after, err := s.Apply(context.Background(), RecordResolverAttemptOperation{Attempt: attempt})
+	require.NoError(t, err)
+
+	assert.Equal(t, before.Values, after.Values)
+	assert.Equal(t, before.Bindings, after.Bindings)
+	require.Len(t, after.ResolverAttempts, 1)
+	assert.Equal(t, attempt, after.ResolverAttempts[0])
+
+	records := s.OperationRecords()
+	require.Len(t, records, 2)
+	assert.Equal(t, OperationRecordResolverAttempt, records[1].Kind)
+	assert.Equal(t, attempt, records[1].ResolverAttempt)
 }
 
 func snapshotByName(items []SnapshotItem) map[string]SnapshotItem {

@@ -175,20 +175,30 @@ func (op DeleteOperation) Record() OperationRecord {
 	return OperationRecord{Kind: OperationRecordDelete, Timestamp: op.Timestamp, Delete: op}
 }
 
+type RecordResolverAttemptOperation struct {
+	Attempt model.ResolverAttempt
+}
+
+func (op RecordResolverAttemptOperation) Record() OperationRecord {
+	return OperationRecord{Kind: OperationRecordResolverAttempt, Timestamp: op.Attempt.FinishedAt, ResolverAttempt: op.Attempt}
+}
+
 type OperationRecordKind string
 
 const (
-	OperationRecordLoad   OperationRecordKind = "load"
-	OperationRecordUpdate OperationRecordKind = "update"
-	OperationRecordDelete OperationRecordKind = "delete"
+	OperationRecordLoad            OperationRecordKind = "load"
+	OperationRecordUpdate          OperationRecordKind = "update"
+	OperationRecordDelete          OperationRecordKind = "delete"
+	OperationRecordResolverAttempt OperationRecordKind = "resolver_attempt"
 )
 
 type OperationRecord struct {
-	Kind      OperationRecordKind
-	Timestamp time.Time
-	Load      LoadInput
-	Update    UpdateOperation
-	Delete    DeleteOperation
+	Kind            OperationRecordKind
+	Timestamp       time.Time
+	Load            LoadInput
+	Update          UpdateOperation
+	Delete          DeleteOperation
+	ResolverAttempt model.ResolverAttempt
 }
 
 type NormalizeOperation struct{}
@@ -264,6 +274,11 @@ func timestampRecordedOperation(record OperationRecord) (OperationRecord, Operat
 	case OperationRecordDelete:
 		record.Delete.Timestamp = record.Timestamp
 		return record, record.Delete
+	case OperationRecordResolverAttempt:
+		if record.ResolverAttempt.FinishedAt.IsZero() {
+			record.ResolverAttempt.FinishedAt = record.Timestamp
+		}
+		return record, RecordResolverAttemptOperation{Attempt: record.ResolverAttempt}
 	default:
 		return record, NormalizeOperation{}
 	}
@@ -474,6 +489,11 @@ func (op DeleteOperation) Apply(_ context.Context, state model.EffectiveState) (
 		bindings = append(bindings, binding)
 	}
 	state.Bindings = bindings
+	return state, nil
+}
+
+func (op RecordResolverAttemptOperation) Apply(_ context.Context, state model.EffectiveState) (model.EffectiveState, error) {
+	state.ResolverAttempts = append(state.ResolverAttempts, op.Attempt)
 	return state, nil
 }
 

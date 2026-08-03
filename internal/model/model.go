@@ -82,6 +82,39 @@ type Source struct {
 	Kind string
 }
 
+type ResolverID string
+
+type ResolverAttemptID string
+
+type ResolverAttemptOutcome string
+
+const (
+	ResolverAttemptResolved               ResolverAttemptOutcome = "resolved"
+	ResolverAttemptSkipped                ResolverAttemptOutcome = "skipped"
+	ResolverAttemptNotApplicable          ResolverAttemptOutcome = "not_applicable"
+	ResolverAttemptNotFound               ResolverAttemptOutcome = "not_found"
+	ResolverAttemptDeniedByOwlPolicy      ResolverAttemptOutcome = "denied_by_owl_policy"
+	ResolverAttemptDeniedByBackend        ResolverAttemptOutcome = "denied_by_backend"
+	ResolverAttemptIdentityMissing        ResolverAttemptOutcome = "identity_missing"
+	ResolverAttemptInteractionUnavailable ResolverAttemptOutcome = "interaction_unavailable"
+	ResolverAttemptNetworkUnavailable     ResolverAttemptOutcome = "network_unavailable"
+	ResolverAttemptInvalidResult          ResolverAttemptOutcome = "invalid_result"
+	ResolverAttemptFailed                 ResolverAttemptOutcome = "failed"
+)
+
+type ResolverAttempt struct {
+	ID            ResolverAttemptID
+	ResolverID    ResolverID
+	FieldRef      FieldRef
+	ProjectionKey ProjectionKey
+	Outcome       ResolverAttemptOutcome
+	Message       string
+	Source        Source
+	StartedAt     time.Time
+	FinishedAt    time.Time
+	Diagnostics   []Diagnostic
+}
+
 type OperationID string
 
 type OperationKind string
@@ -146,10 +179,11 @@ type Diagnostic struct {
 }
 
 type EffectiveState struct {
-	Values      map[FieldRef]Value
-	Bindings    []Binding
-	Operations  []OperationMetadata
-	Diagnostics []Diagnostic
+	Values           map[FieldRef]Value
+	Bindings         []Binding
+	ResolverAttempts []ResolverAttempt
+	Operations       []OperationMetadata
+	Diagnostics      []Diagnostic
 }
 
 func NewEffectiveState() EffectiveState {

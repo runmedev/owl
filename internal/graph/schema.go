@@ -78,6 +78,21 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"owner":    &graphql.InputObjectFieldConfig{Type: graphql.String},
 		},
 	})
+	resolverAttemptInput := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "ResolverAttemptInput",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"id":            &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"resolverID":    &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
+			"field":         &graphql.InputObjectFieldConfig{Type: fieldRefInput},
+			"projectionKey": &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"outcome":       &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
+			"message":       &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"source":        &graphql.InputObjectFieldConfig{Type: sourceInput},
+			"startedAt":     &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"finishedAt":    &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"diagnostics":   &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(diagnosticInput))},
+		},
+	})
 	stateValueInput := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "StateValueInput",
 		Fields: graphql.InputObjectConfigFieldMap{
@@ -113,9 +128,10 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 	effectiveStateInput := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "EffectiveStateInput",
 		Fields: graphql.InputObjectConfigFieldMap{
-			"values":      &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(stateValueInput))},
-			"bindings":    &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(stateBindingInput))},
-			"diagnostics": &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(diagnosticInput))},
+			"values":           &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(stateValueInput))},
+			"bindings":         &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(stateBindingInput))},
+			"resolverAttempts": &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(resolverAttemptInput))},
+			"diagnostics":      &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(diagnosticInput))},
 		},
 	})
 	operationMetadataInput := graphql.NewInputObject(graphql.InputObjectConfig{
@@ -252,12 +268,28 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"required":    &graphql.Field{Type: graphql.Boolean},
 		},
 	})
+	resolverAttemptType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "ResolverAttempt",
+		Fields: graphql.Fields{
+			"id":            &graphql.Field{Type: graphql.String},
+			"resolverID":    &graphql.Field{Type: graphql.String},
+			"field":         &graphql.Field{Type: fieldRefType},
+			"projectionKey": &graphql.Field{Type: graphql.String},
+			"outcome":       &graphql.Field{Type: graphql.String},
+			"message":       &graphql.Field{Type: graphql.String},
+			"source":        &graphql.Field{Type: sourceType},
+			"startedAt":     &graphql.Field{Type: graphql.String},
+			"finishedAt":    &graphql.Field{Type: graphql.String},
+			"diagnostics":   &graphql.Field{Type: graphql.NewList(diagnosticType)},
+		},
+	})
 	effectiveStateType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "EffectiveState",
 		Fields: graphql.Fields{
-			"values":      &graphql.Field{Type: graphql.NewList(stateValueType)},
-			"bindings":    &graphql.Field{Type: graphql.NewList(stateBindingType)},
-			"diagnostics": &graphql.Field{Type: graphql.NewList(diagnosticType)},
+			"values":           &graphql.Field{Type: graphql.NewList(stateValueType)},
+			"bindings":         &graphql.Field{Type: graphql.NewList(stateBindingType)},
+			"resolverAttempts": &graphql.Field{Type: graphql.NewList(resolverAttemptType)},
+			"diagnostics":      &graphql.Field{Type: graphql.NewList(diagnosticType)},
 		},
 	})
 	operationMetadataType := graphql.NewObject(graphql.ObjectConfig{
@@ -522,6 +554,22 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 						return Context{State: state, Types: gctx.Types}, nil
 					},
 				},
+				"recordResolverAttempt": &graphql.Field{
+					Type: environmentType,
+					Args: graphql.FieldConfigArgument{
+						"attempt": &graphql.ArgumentConfig{Type: graphql.NewNonNull(resolverAttemptInput)},
+					},
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						gctx := p.Source.(Context)
+						attempt := decodeResolverAttemptInput(p.Args["attempt"])
+						s := store.NewState(gctx.State, gctx.Types)
+						state, err := s.Apply(contextFromParams(p), store.RecordResolverAttemptOperation{Attempt: attempt})
+						if err != nil {
+							return nil, err
+						}
+						return Context{State: state, Types: gctx.Types}, nil
+					},
+				},
 				"normalize": &graphql.Field{
 					Type: environmentType,
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -714,7 +762,49 @@ func decodeEffectiveStateInput(raw interface{}) model.EffectiveState {
 			Owner:    model.DiagnosticOwner(stringValue(diagnosticRaw["owner"])),
 		})
 	}
+	for _, item := range decodeList(row["resolverAttempts"]) {
+		state.ResolverAttempts = append(state.ResolverAttempts, decodeResolverAttemptInput(item))
+	}
 	return state
+}
+
+func decodeResolverAttemptInput(raw interface{}) model.ResolverAttempt {
+	attemptRaw, ok := raw.(map[string]interface{})
+	if !ok {
+		return model.ResolverAttempt{}
+	}
+	return model.ResolverAttempt{
+		ID:            model.ResolverAttemptID(stringValue(attemptRaw["id"])),
+		ResolverID:    model.ResolverID(stringValue(attemptRaw["resolverID"])),
+		FieldRef:      decodeFieldRef(attemptRaw["field"]),
+		ProjectionKey: model.ProjectionKey(stringValue(attemptRaw["projectionKey"])),
+		Outcome:       model.ResolverAttemptOutcome(stringValue(attemptRaw["outcome"])),
+		Message:       stringValue(attemptRaw["message"]),
+		Source:        decodeSource(attemptRaw["source"]),
+		StartedAt:     timeValue(attemptRaw["startedAt"]),
+		FinishedAt:    timeValue(attemptRaw["finishedAt"]),
+		Diagnostics:   decodeDiagnosticsInput(attemptRaw["diagnostics"]),
+	}
+}
+
+func decodeDiagnosticsInput(raw interface{}) []model.Diagnostic {
+	var diagnostics []model.Diagnostic
+	for _, item := range decodeList(raw) {
+		diagnosticRaw, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		diagnostics = append(diagnostics, model.Diagnostic{
+			Severity: model.DiagnosticSeverity(stringValue(diagnosticRaw["severity"])),
+			Code:     stringValue(diagnosticRaw["code"]),
+			Message:  stringValue(diagnosticRaw["message"]),
+			Details:  decodeStringList(diagnosticRaw["details"]),
+			Key:      stringValue(diagnosticRaw["key"]),
+			FieldRef: decodeFieldRef(diagnosticRaw["field"]),
+			Owner:    model.DiagnosticOwner(stringValue(diagnosticRaw["owner"])),
+		})
+	}
+	return diagnostics
 }
 
 func decodeStateProvenanceInput(raw interface{}) store.StateProvenance {
@@ -917,9 +1007,33 @@ func effectiveStateView(state model.EffectiveState) map[string]interface{} {
 		})
 	}
 	return map[string]interface{}{
-		"values":      values,
-		"bindings":    bindings,
-		"diagnostics": sortedDiagnostics(state.Diagnostics),
+		"values":           values,
+		"bindings":         bindings,
+		"resolverAttempts": resolverAttemptViews(state.ResolverAttempts),
+		"diagnostics":      sortedDiagnostics(state.Diagnostics),
+	}
+}
+
+func resolverAttemptViews(attempts []model.ResolverAttempt) []map[string]interface{} {
+	items := make([]map[string]interface{}, 0, len(attempts))
+	for _, attempt := range attempts {
+		items = append(items, resolverAttemptView(attempt))
+	}
+	return items
+}
+
+func resolverAttemptView(attempt model.ResolverAttempt) map[string]interface{} {
+	return map[string]interface{}{
+		"id":            string(attempt.ID),
+		"resolverID":    string(attempt.ResolverID),
+		"field":         fieldRefView(attempt.FieldRef),
+		"projectionKey": string(attempt.ProjectionKey),
+		"outcome":       string(attempt.Outcome),
+		"message":       attempt.Message,
+		"source":        sourceView(attempt.Source),
+		"startedAt":     timeString(attempt.StartedAt),
+		"finishedAt":    timeString(attempt.FinishedAt),
+		"diagnostics":   sortedDiagnostics(attempt.Diagnostics),
 	}
 }
 

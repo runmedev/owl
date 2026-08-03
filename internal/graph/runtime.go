@@ -376,10 +376,42 @@ func marshalEffectiveState(state model.EffectiveState) map[string]interface{} {
 		})
 	}
 	return map[string]interface{}{
-		"values":      values,
-		"bindings":    bindings,
-		"diagnostics": diagnostics,
+		"values":           values,
+		"bindings":         bindings,
+		"resolverAttempts": marshalResolverAttempts(state.ResolverAttempts),
+		"diagnostics":      diagnostics,
 	}
+}
+
+func marshalResolverAttempts(attempts []model.ResolverAttempt) []map[string]interface{} {
+	items := make([]map[string]interface{}, 0, len(attempts))
+	for _, attempt := range attempts {
+		diagnostics := make([]map[string]interface{}, 0, len(attempt.Diagnostics))
+		for _, diagnostic := range attempt.Diagnostics {
+			diagnostics = append(diagnostics, map[string]interface{}{
+				"severity": string(diagnostic.Severity),
+				"code":     diagnostic.Code,
+				"message":  diagnostic.Message,
+				"details":  append([]string{}, diagnostic.Details...),
+				"key":      diagnostic.Key,
+				"field":    marshalFieldRef(diagnostic.FieldRef),
+				"owner":    string(diagnostic.Owner),
+			})
+		}
+		items = append(items, map[string]interface{}{
+			"id":            string(attempt.ID),
+			"resolverID":    string(attempt.ResolverID),
+			"field":         marshalFieldRef(attempt.FieldRef),
+			"projectionKey": string(attempt.ProjectionKey),
+			"outcome":       string(attempt.Outcome),
+			"message":       attempt.Message,
+			"source":        marshalSource(attempt.Source),
+			"startedAt":     timeString(attempt.StartedAt),
+			"finishedAt":    timeString(attempt.FinishedAt),
+			"diagnostics":   diagnostics,
+		})
+	}
+	return items
 }
 
 func marshalFieldRef(ref model.FieldRef) map[string]interface{} {
@@ -590,6 +622,24 @@ func decodeEffectiveState(raw interface{}) model.EffectiveState {
 		})
 	}
 	state.Diagnostics = decodeDiagnostics(row["diagnostics"])
+	for _, item := range decodeList(row["resolverAttempts"]) {
+		attempt, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		state.ResolverAttempts = append(state.ResolverAttempts, model.ResolverAttempt{
+			ID:            model.ResolverAttemptID(stringValue(attempt["id"])),
+			ResolverID:    model.ResolverID(stringValue(attempt["resolverID"])),
+			FieldRef:      decodeFieldRef(attempt["field"]),
+			ProjectionKey: model.ProjectionKey(stringValue(attempt["projectionKey"])),
+			Outcome:       model.ResolverAttemptOutcome(stringValue(attempt["outcome"])),
+			Message:       stringValue(attempt["message"]),
+			Source:        decodeSource(attempt["source"]),
+			StartedAt:     timeValue(attempt["startedAt"]),
+			FinishedAt:    timeValue(attempt["finishedAt"]),
+			Diagnostics:   decodeDiagnostics(attempt["diagnostics"]),
+		})
+	}
 	return state
 }
 

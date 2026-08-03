@@ -23,23 +23,27 @@ type (
 	GetResult      = store.GetResult
 	CheckResult    = store.CheckResult
 
-	TypeID             = model.TypeID
-	FieldRef           = model.FieldRef
-	ConfigInput        = model.ConfigInput
-	NeedInput          = model.NeedInput
-	DotenvProjection   = model.DotenvProjectionInput
-	DotenvFieldBinding = model.DotenvFieldBindingInput
-	Source             = model.Source
-	DotenvVariable     = store.DotenvVariable
-	EnvContract        = store.EnvContract
-	EnvBinding         = store.EnvBinding
-	StateEnvelope      = store.StateEnvelope
-	StateProvenance    = store.StateProvenance
-	Visibility         = model.Visibility
-	Exposure           = model.Exposure
-	Diagnostic         = model.Diagnostic
-	DiagnosticSeverity = model.DiagnosticSeverity
-	OperationMetadata  = model.OperationMetadata
+	TypeID                 = model.TypeID
+	FieldRef               = model.FieldRef
+	ConfigInput            = model.ConfigInput
+	NeedInput              = model.NeedInput
+	DotenvProjection       = model.DotenvProjectionInput
+	DotenvFieldBinding     = model.DotenvFieldBindingInput
+	Source                 = model.Source
+	DotenvVariable         = store.DotenvVariable
+	EnvContract            = store.EnvContract
+	EnvBinding             = store.EnvBinding
+	StateEnvelope          = store.StateEnvelope
+	StateProvenance        = store.StateProvenance
+	Visibility             = model.Visibility
+	Exposure               = model.Exposure
+	Diagnostic             = model.Diagnostic
+	DiagnosticSeverity     = model.DiagnosticSeverity
+	OperationMetadata      = model.OperationMetadata
+	ResolverID             = model.ResolverID
+	ResolverAttemptID      = model.ResolverAttemptID
+	ResolverAttempt        = model.ResolverAttempt
+	ResolverAttemptOutcome = model.ResolverAttemptOutcome
 )
 
 const (
@@ -60,6 +64,18 @@ const (
 	DiagnosticInfo    = model.DiagnosticInfo
 	DiagnosticWarning = model.DiagnosticWarning
 	DiagnosticError   = model.DiagnosticError
+
+	ResolverResolved               = model.ResolverAttemptResolved
+	ResolverSkipped                = model.ResolverAttemptSkipped
+	ResolverNotApplicable          = model.ResolverAttemptNotApplicable
+	ResolverNotFound               = model.ResolverAttemptNotFound
+	ResolverDeniedByOwlPolicy      = model.ResolverAttemptDeniedByOwlPolicy
+	ResolverDeniedByBackend        = model.ResolverAttemptDeniedByBackend
+	ResolverIdentityMissing        = model.ResolverAttemptIdentityMissing
+	ResolverInteractionUnavailable = model.ResolverAttemptInteractionUnavailable
+	ResolverNetworkUnavailable     = model.ResolverAttemptNetworkUnavailable
+	ResolverInvalidResult          = model.ResolverAttemptInvalidResult
+	ResolverFailed                 = model.ResolverAttemptFailed
 )
 
 type Store struct {

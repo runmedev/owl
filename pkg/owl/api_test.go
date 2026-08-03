@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -294,6 +295,54 @@ func TestPublicAPIStateEnvelopeRoundTrip(t *testing.T) {
 	_, ok, err = roundTripped.Get("API_KEY", owl.GetPolicy{Reveal: true})
 	require.NoError(t, err)
 	assert.False(t, ok)
+}
+
+func TestPublicAPIStateEnvelopeRoundTripPreservesResolverAttempts(t *testing.T) {
+	t.Parallel()
+
+	store, err := owl.NewStore(
+		owl.WithDotenv(".env", strings.NewReader("API_URL=https://api.example.com\n")),
+	)
+	require.NoError(t, err)
+
+	envelope, err := store.StateEnvelope(context.Background())
+	require.NoError(t, err)
+	startedAt := time.Date(2026, 8, 3, 16, 0, 0, 0, time.UTC)
+	attempt := owl.ResolverAttempt{
+		ID:            "attempt-000001",
+		ResolverID:    "core/dotenv",
+		FieldRef:      owl.FieldRef{TypeID: owl.TypeCoreSecret, Instance: "default", Field: "api.key"},
+		ProjectionKey: "API_KEY",
+		Outcome:       owl.ResolverNotFound,
+		Message:       "dotenv value was not present",
+		Source:        owl.Source{Name: ".env", Kind: "dotenv"},
+		StartedAt:     startedAt,
+		FinishedAt:    startedAt.Add(time.Second),
+	}
+	envelope.State.ResolverAttempts = append(envelope.State.ResolverAttempts, attempt)
+
+	roundTripped, err := owl.NewStore(owl.WithStateEnvelope(envelope))
+	require.NoError(t, err)
+	next, err := roundTripped.StateEnvelope(context.Background())
+	require.NoError(t, err)
+
+	require.Len(t, next.State.ResolverAttempts, 1)
+	gotAttempt := next.State.ResolverAttempts[0]
+	assert.Equal(t, attempt.ID, gotAttempt.ID)
+	assert.Equal(t, attempt.ResolverID, gotAttempt.ResolverID)
+	assert.Equal(t, attempt.FieldRef, gotAttempt.FieldRef)
+	assert.Equal(t, attempt.ProjectionKey, gotAttempt.ProjectionKey)
+	assert.Equal(t, attempt.Outcome, gotAttempt.Outcome)
+	assert.Equal(t, attempt.Message, gotAttempt.Message)
+	assert.Equal(t, attempt.Source, gotAttempt.Source)
+	assert.Equal(t, attempt.StartedAt, gotAttempt.StartedAt)
+	assert.Equal(t, attempt.FinishedAt, gotAttempt.FinishedAt)
+	assert.Empty(t, gotAttempt.Diagnostics)
+
+	got, ok, err := roundTripped.Get("API_URL", owl.GetPolicy{Reveal: true})
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, "https://api.example.com", got.Value)
 }
 
 func TestPublicAPIUpdatesMaterializeFromOperationLog(t *testing.T) {
