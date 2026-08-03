@@ -9,6 +9,7 @@ import (
 	"github.com/graphql-go/graphql"
 
 	"github.com/runmedev/owl/internal/model"
+	"github.com/runmedev/owl/internal/resolver"
 	"github.com/runmedev/owl/internal/store"
 )
 
@@ -91,6 +92,26 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"startedAt":     &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"finishedAt":    &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"diagnostics":   &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(diagnosticInput))},
+		},
+	})
+	proposedValueInput := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "ProposedValueInput",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"value":       &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
+			"source":      &graphql.InputObjectFieldConfig{Type: sourceInput},
+			"sensitivity": &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"exposure":    &graphql.InputObjectFieldConfig{Type: graphql.String},
+		},
+	})
+	resolverProposalInput := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "ResolverProposalInput",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"needID":        &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"attemptID":     &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"resolverID":    &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
+			"field":         &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(fieldRefInput)},
+			"projectionKey": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
+			"value":         &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(proposedValueInput)},
 		},
 	})
 	unresolvedNeedInput := graphql.NewInputObject(graphql.InputObjectConfig{
@@ -618,6 +639,26 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 						return Context{State: state, Types: gctx.Types}, nil
 					},
 				},
+				"applyResolverProposal": &graphql.Field{
+					Type: environmentType,
+					Args: graphql.FieldConfigArgument{
+						"proposal":  &graphql.ArgumentConfig{Type: graphql.NewNonNull(resolverProposalInput)},
+						"timestamp": &graphql.ArgumentConfig{Type: graphql.String},
+					},
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						gctx := p.Source.(Context)
+						proposal := decodeResolverProposalInput(p.Args["proposal"])
+						s := store.NewState(gctx.State, gctx.Types)
+						state, err := s.Apply(contextFromParams(p), store.ApplyResolverProposalOperation{
+							Proposal:  proposal,
+							Timestamp: timeValue(p.Args["timestamp"]),
+						})
+						if err != nil {
+							return nil, err
+						}
+						return Context{State: state, Types: gctx.Types}, nil
+					},
+				},
 				"normalize": &graphql.Field{
 					Type: environmentType,
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -1037,6 +1078,34 @@ func stateEnvelopeView(envelope store.StateEnvelope) map[string]interface{} {
 			"sources":    envelope.Provenance.Sources,
 			"operations": operationMetadataViews(envelope.Provenance.Operations),
 		},
+	}
+}
+
+func decodeResolverProposalInput(raw interface{}) resolver.Proposal {
+	proposalRaw, ok := raw.(map[string]interface{})
+	if !ok {
+		return resolver.Proposal{}
+	}
+	return resolver.Proposal{
+		NeedID:        model.UnresolvedNeedID(stringValue(proposalRaw["needID"])),
+		AttemptID:     model.ResolverAttemptID(stringValue(proposalRaw["attemptID"])),
+		ResolverID:    model.ResolverID(stringValue(proposalRaw["resolverID"])),
+		FieldRef:      decodeFieldRef(proposalRaw["field"]),
+		ProjectionKey: model.ProjectionKey(stringValue(proposalRaw["projectionKey"])),
+		Value:         decodeProposedValueInput(proposalRaw["value"]),
+	}
+}
+
+func decodeProposedValueInput(raw interface{}) resolver.ProposedValue {
+	valueRaw, ok := raw.(map[string]interface{})
+	if !ok {
+		return resolver.ProposedValue{}
+	}
+	return resolver.ProposedValue{
+		Value:       stringValue(valueRaw["value"]),
+		Source:      decodeSource(valueRaw["source"]),
+		Sensitivity: model.Sensitivity(stringValue(valueRaw["sensitivity"])),
+		Exposure:    model.Exposure(stringValue(valueRaw["exposure"])),
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/runmedev/owl/internal/model"
 	"github.com/runmedev/owl/internal/registry"
+	"github.com/runmedev/owl/internal/resolver"
 	"github.com/runmedev/owl/internal/store"
 )
 
@@ -457,6 +458,29 @@ func marshalResolverAttempt(attempt model.ResolverAttempt) map[string]interface{
 		"diagnostics":   diagnostics,
 	}
 	if source := marshalSource(attempt.Source); source != nil {
+		item["source"] = source
+	}
+	return item
+}
+
+func marshalResolverProposal(proposal resolver.Proposal) map[string]interface{} {
+	return map[string]interface{}{
+		"needID":        string(proposal.NeedID),
+		"attemptID":     string(proposal.AttemptID),
+		"resolverID":    string(proposal.ResolverID),
+		"field":         marshalFieldRef(proposal.FieldRef),
+		"projectionKey": string(proposal.ProjectionKey),
+		"value":         marshalProposedValue(proposal.Value),
+	}
+}
+
+func marshalProposedValue(value resolver.ProposedValue) map[string]interface{} {
+	item := map[string]interface{}{
+		"value":       value.Value,
+		"sensitivity": string(value.Sensitivity),
+		"exposure":    string(value.Exposure),
+	}
+	if source := marshalSource(value.Source); source != nil {
 		item["source"] = source
 	}
 	return item

@@ -12,6 +12,7 @@ import (
 	"github.com/runmedev/owl/internal/model"
 	"github.com/runmedev/owl/internal/projection/dotenv"
 	"github.com/runmedev/owl/internal/registry"
+	"github.com/runmedev/owl/internal/resolver"
 )
 
 type Store struct {
@@ -183,22 +184,33 @@ func (op RecordResolverAttemptOperation) Record() OperationRecord {
 	return OperationRecord{Kind: OperationRecordResolverAttempt, Timestamp: op.Attempt.FinishedAt, ResolverAttempt: op.Attempt}
 }
 
+type ApplyResolverProposalOperation struct {
+	Proposal  resolver.Proposal
+	Timestamp time.Time
+}
+
+func (op ApplyResolverProposalOperation) Record() OperationRecord {
+	return OperationRecord{Kind: OperationRecordApplyResolverProposal, Timestamp: op.Timestamp, ResolverProposal: op.Proposal}
+}
+
 type OperationRecordKind string
 
 const (
-	OperationRecordLoad            OperationRecordKind = "load"
-	OperationRecordUpdate          OperationRecordKind = "update"
-	OperationRecordDelete          OperationRecordKind = "delete"
-	OperationRecordResolverAttempt OperationRecordKind = "resolver_attempt"
+	OperationRecordLoad                  OperationRecordKind = "load"
+	OperationRecordUpdate                OperationRecordKind = "update"
+	OperationRecordDelete                OperationRecordKind = "delete"
+	OperationRecordResolverAttempt       OperationRecordKind = "resolver_attempt"
+	OperationRecordApplyResolverProposal OperationRecordKind = "apply_resolver_proposal"
 )
 
 type OperationRecord struct {
-	Kind            OperationRecordKind
-	Timestamp       time.Time
-	Load            LoadInput
-	Update          UpdateOperation
-	Delete          DeleteOperation
-	ResolverAttempt model.ResolverAttempt
+	Kind             OperationRecordKind
+	Timestamp        time.Time
+	Load             LoadInput
+	Update           UpdateOperation
+	Delete           DeleteOperation
+	ResolverAttempt  model.ResolverAttempt
+	ResolverProposal resolver.Proposal
 }
 
 type NormalizeOperation struct{}
@@ -279,6 +291,8 @@ func timestampRecordedOperation(record OperationRecord) (OperationRecord, Operat
 			record.ResolverAttempt.FinishedAt = record.Timestamp
 		}
 		return record, RecordResolverAttemptOperation{Attempt: record.ResolverAttempt}
+	case OperationRecordApplyResolverProposal:
+		return record, ApplyResolverProposalOperation{Proposal: record.ResolverProposal, Timestamp: record.Timestamp}
 	default:
 		return record, NormalizeOperation{}
 	}
@@ -494,6 +508,72 @@ func (op DeleteOperation) Apply(_ context.Context, state model.EffectiveState) (
 
 func (op RecordResolverAttemptOperation) Apply(_ context.Context, state model.EffectiveState) (model.EffectiveState, error) {
 	state.ResolverAttempts = append(state.ResolverAttempts, op.Attempt)
+	return state, nil
+}
+
+func (op ApplyResolverProposalOperation) Apply(_ context.Context, state model.EffectiveState) (model.EffectiveState, error) {
+	if state.Values == nil {
+		state.Values = make(map[model.FieldRef]model.Value)
+	}
+	timestamp := operationTimestamp(op.Timestamp)
+	proposal := op.Proposal
+	ref, binding, found := findBinding(state.Bindings, string(proposal.ProjectionKey))
+	if !found {
+		ref = proposal.FieldRef
+		binding = model.Binding{
+			ID:           "resolve:" + string(proposal.ProjectionKey),
+			FieldRef:     ref,
+			ProjectionID: model.ProjectionDotenv,
+			Key:          proposal.ProjectionKey,
+			Source:       proposal.Value.Source,
+			Origin:       proposal.Value.Source,
+			Confidence:   model.BindingConfidenceExplicit,
+			Explicit:     true,
+			PreserveKey:  true,
+			CreatedAt:    timestamp,
+			UpdatedAt:    timestamp,
+		}
+		state.Bindings = append(state.Bindings, binding)
+	}
+
+	source := proposal.Value.Source
+	if source.Name == "" && source.Kind == "" {
+		source = model.Source{Name: string(proposal.ResolverID), Kind: "resolver"}
+	}
+	operationID := resolverProposalOperationID(proposal)
+	value := state.Values[ref]
+	changed := value.Original != proposal.Value.Value ||
+		value.Resolved != proposal.Value.Value ||
+		value.Visibility != model.VisibilityLiteral ||
+		value.Source != source
+	value.FieldRef = ref
+	value.Original = proposal.Value.Value
+	value.Resolved = proposal.Value.Value
+	value.Visibility = model.VisibilityLiteral
+	value.Sensitivity = firstSensitivity(proposal.Value.Sensitivity, value.Sensitivity, inferSensitivityForField(ref))
+	value.Exposure = firstExposure(proposal.Value.Exposure, value.Exposure, inferExposureForField(ref))
+	if value.Origin.Name == "" {
+		value.Origin = binding.Origin
+	}
+	if value.Origin.Name == "" && value.Origin.Kind == "" {
+		value.Origin = source
+	}
+	value.Source = source
+	if changed || value.UpdatedAt.IsZero() {
+		value.UpdatedAt = timestamp
+	}
+	if value.CreatedAt.IsZero() {
+		value.CreatedAt = value.UpdatedAt
+	}
+	value.LastOperationID = operationID
+	state.Values[ref] = value
+	state.Operations = append(state.Operations, model.OperationMetadata{
+		ID:           operationID,
+		Kind:         model.OperationKindResolve,
+		Timestamp:    timestamp,
+		Source:       source,
+		ProjectionID: firstProjection(binding.ProjectionID, model.ProjectionDotenv),
+	})
 	return state, nil
 }
 
@@ -808,6 +888,40 @@ func firstUint(values ...uint) uint {
 		}
 	}
 	return 0
+}
+
+func firstSensitivity(values ...model.Sensitivity) model.Sensitivity {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return model.SensitivityUnknown
+}
+
+func firstExposure(values ...model.Exposure) model.Exposure {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return model.ExposureOpaque
+}
+
+func firstProjection(values ...model.ProjectionID) model.ProjectionID {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func resolverProposalOperationID(proposal resolver.Proposal) model.OperationID {
+	if proposal.AttemptID != "" {
+		return model.OperationID("resolve:" + string(proposal.AttemptID))
+	}
+	return model.OperationID("resolve:" + string(proposal.ProjectionKey))
 }
 
 func findBinding(bindings []model.Binding, key string) (model.FieldRef, model.Binding, bool) {

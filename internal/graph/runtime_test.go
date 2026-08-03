@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/runmedev/owl/internal/model"
+	"github.com/runmedev/owl/internal/resolver"
 	"github.com/runmedev/owl/internal/store"
 )
 
@@ -196,6 +197,21 @@ func TestPlanStateEnvelopeQueryStacksOperationRecords(t *testing.T) {
 				Outcome:       model.ResolverAttemptNotFound,
 			},
 		},
+		{
+			Kind: store.OperationRecordApplyResolverProposal,
+			ResolverProposal: resolver.Proposal{
+				AttemptID:     "attempt-000002",
+				ResolverID:    "core/dotenv",
+				FieldRef:      model.FieldRef{TypeID: model.TypeCoreSecret, Instance: "default", Field: "api.key"},
+				ProjectionKey: "API_KEY",
+				Value: resolver.ProposedValue{
+					Value:       "secret",
+					Source:      model.Source{Name: ".env", Kind: "dotenv"},
+					Sensitivity: model.SensitivitySensitive,
+					Exposure:    model.ExposureClear,
+				},
+			},
+		},
 	})
 	require.NoError(t, err)
 
@@ -203,13 +219,15 @@ func TestPlanStateEnvelopeQueryStacksOperationRecords(t *testing.T) {
 	assert.Contains(t, plan.Query, "$update_1: DotenvInput")
 	assert.Contains(t, plan.Query, "$delete_2: [String!]")
 	assert.Contains(t, plan.Query, "$resolverAttempt_3: ResolverAttemptInput!")
+	assert.Contains(t, plan.Query, "$resolverProposal_4: ResolverProposalInput!")
 	assert.Contains(t, plan.Query, "load(input: $load_0)")
 	assert.Contains(t, plan.Query, "update(dotenv: $update_1)")
 	assert.Contains(t, plan.Query, "delete(keys: $delete_2)")
 	assert.Contains(t, plan.Query, "recordResolverAttempt(attempt: $resolverAttempt_3)")
+	assert.Contains(t, plan.Query, "applyResolverProposal(proposal: $resolverProposal_4")
 	assert.Contains(t, plan.Query, "unresolvedFrontier")
 	assert.NotContains(t, plan.Query, "reconcile")
-	assert.Equal(t, []string{"load", "update", "delete", "recordResolverAttempt", "normalize", "validate", "state", "envelope"}, plan.Path)
+	assert.Equal(t, []string{"load", "update", "delete", "recordResolverAttempt", "applyResolverProposal", "normalize", "validate", "state", "envelope"}, plan.Path)
 }
 
 func TestRuntimeMaterializesStateEnvelopeFromOperationRecords(t *testing.T) {
@@ -321,6 +339,62 @@ func TestRuntimeMaterializesResolverAttemptsFromOperationRecords(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, "https://api.example.com", got.Value)
+}
+
+func TestRuntimeMaterializesResolverProposalsFromOperationRecords(t *testing.T) {
+	t.Parallel()
+
+	runtime, err := NewRuntime(nil)
+	require.NoError(t, err)
+	ref := model.FieldRef{TypeID: model.TypeCoreSecret, Instance: "default", Field: "api.key"}
+	timestamp := time.Date(2026, 8, 3, 20, 30, 0, 0, time.UTC)
+
+	envelope, err := runtime.StateEnvelopeForOperations(context.Background(), []store.OperationRecord{
+		{
+			Kind: store.OperationRecordLoad,
+			Load: store.LoadInput{
+				DotenvSource: model.Source{Name: ".env", Kind: "dotenv"},
+				Contracts: []store.EnvContract{{
+					Source:     model.Source{Name: ".env.example", Kind: "dotenv-spec"},
+					Projection: model.ProjectionDotenv,
+					Bindings: []store.EnvBinding{{
+						Key:        "API_KEY",
+						FieldRef:   ref,
+						Projection: model.ProjectionDotenv,
+						Required:   true,
+					}},
+				}},
+			},
+		},
+		{
+			Kind:      store.OperationRecordApplyResolverProposal,
+			Timestamp: timestamp,
+			ResolverProposal: resolver.Proposal{
+				AttemptID:     "attempt-000001",
+				ResolverID:    "core/dotenv",
+				FieldRef:      ref,
+				ProjectionKey: "API_KEY",
+				Value: resolver.ProposedValue{
+					Value:       "secret",
+					Source:      model.Source{Name: ".env", Kind: "dotenv"},
+					Sensitivity: model.SensitivitySensitive,
+					Exposure:    model.ExposureClear,
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	s := store.NewState(envelope.State, nil)
+	got, ok, err := s.Get("API_KEY", store.GetPolicy{Reveal: true})
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, "secret", got.Value)
+	assert.Empty(t, envelope.State.UnresolvedFrontier.Needs)
+	require.NotEmpty(t, envelope.Provenance.Operations)
+	operation := envelope.Provenance.Operations[len(envelope.Provenance.Operations)-1]
+	assert.Equal(t, model.OperationKindResolve, operation.Kind)
+	assert.Equal(t, timestamp, operation.Timestamp)
 }
 
 func TestRuntimeMaterializesUnresolvedFrontier(t *testing.T) {

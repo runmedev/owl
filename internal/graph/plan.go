@@ -68,6 +68,18 @@ func planStateEnvelopeQuery(records []store.OperationRecord) (plannedQuery, erro
 				argument("attempt", variable(name)),
 			}, next))
 			path = append(path, "recordResolverAttempt")
+		case store.OperationRecordApplyResolverProposal:
+			name := fmt.Sprintf("resolverProposal_%d", index)
+			varDefs = append(varDefs, variableDefinition(name, nonNull(namedType("ResolverProposalInput"))))
+			timestampName := fmt.Sprintf("resolverProposalTimestamp_%d", index)
+			varDefs = append(varDefs, variableDefinition(timestampName, namedType("String")))
+			vars[name] = marshalResolverProposal(record.ResolverProposal)
+			vars[timestampName] = timeString(record.Timestamp)
+			current.Selections = append(current.Selections, field("applyResolverProposal", []*ast.Argument{
+				argument("proposal", variable(name)),
+				argument("timestamp", variable(timestampName)),
+			}, next))
+			path = append(path, "applyResolverProposal")
 		default:
 			return plannedQuery{}, fmt.Errorf("unsupported operation record kind %q", record.Kind)
 		}

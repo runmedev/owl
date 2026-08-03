@@ -11,6 +11,7 @@ import (
 
 	"github.com/runmedev/owl/internal/model"
 	"github.com/runmedev/owl/internal/registry"
+	"github.com/runmedev/owl/internal/resolver"
 )
 
 func TestStoreSnapshotSourceAndCheck(t *testing.T) {
@@ -291,6 +292,101 @@ func TestStoreRecordsResolverAttemptWithoutMutatingValues(t *testing.T) {
 	require.Len(t, records, 2)
 	assert.Equal(t, OperationRecordResolverAttempt, records[1].Kind)
 	assert.Equal(t, attempt, records[1].ResolverAttempt)
+}
+
+func TestStoreAppliesResolverProposalThroughStateOperation(t *testing.T) {
+	t.Parallel()
+
+	s, err := NewStore(WithEnvSpec(".env.example", strings.NewReader("API_KEY=\"API key\" # Secret!\n")))
+	require.NoError(t, err)
+	before := s.State()
+	require.Len(t, before.UnresolvedFrontier.Needs, 1)
+	need := before.UnresolvedFrontier.Needs[0]
+	timestamp := time.Date(2026, 8, 3, 20, 30, 0, 0, time.UTC)
+
+	after, err := s.Apply(context.Background(), ApplyResolverProposalOperation{
+		Timestamp: timestamp,
+		Proposal: resolver.Proposal{
+			NeedID:        need.ID,
+			AttemptID:     "attempt-000001",
+			ResolverID:    "core/dotenv",
+			FieldRef:      need.FieldRef,
+			ProjectionKey: need.ProjectionKey,
+			Value: resolver.ProposedValue{
+				Value:       "resolved-secret",
+				Source:      model.Source{Name: ".env", Kind: "dotenv"},
+				Sensitivity: model.SensitivitySensitive,
+				Exposure:    model.ExposureClear,
+			},
+		},
+	})
+	require.NoError(t, err)
+	after, err = s.Apply(context.Background(), IntegrityOperation{})
+	require.NoError(t, err)
+
+	value := after.Values[need.FieldRef]
+	assert.Equal(t, "resolved-secret", value.Resolved)
+	assert.Equal(t, model.VisibilityLiteral, value.Visibility)
+	assert.Equal(t, model.Source{Name: ".env", Kind: "dotenv"}, value.Source)
+	assert.Equal(t, model.OperationID("resolve:attempt-000001"), value.LastOperationID)
+	assert.Empty(t, after.UnresolvedFrontier.Needs)
+	require.NotEmpty(t, after.Operations)
+	operation := after.Operations[len(after.Operations)-1]
+	assert.Equal(t, model.OperationKindResolve, operation.Kind)
+	assert.Equal(t, model.OperationID("resolve:attempt-000001"), operation.ID)
+	assert.Equal(t, timestamp, operation.Timestamp)
+
+	records := s.OperationRecords()
+	require.Len(t, records, 2)
+	assert.Equal(t, OperationRecordApplyResolverProposal, records[1].Kind)
+	assert.Equal(t, model.ResolverAttemptID("attempt-000001"), records[1].ResolverProposal.AttemptID)
+}
+
+func TestStoreProposalApplicationLeavesInvalidValuesForIntegrity(t *testing.T) {
+	t.Parallel()
+
+	ref := model.FieldRef{TypeID: model.TypeUniverseRedis, Instance: "queues", Field: "port"}
+	state := model.NewEffectiveState()
+	state.Bindings = []model.Binding{{
+		FieldRef:     ref,
+		ProjectionID: model.ProjectionDotenv,
+		Key:          "REDIS_PORT",
+		Explicit:     true,
+		Required:     true,
+	}}
+	state.Values[ref] = model.Value{
+		FieldRef:    ref,
+		Visibility:  model.VisibilityUnresolved,
+		Sensitivity: model.SensitivityPlaintext,
+		Exposure:    model.ExposureClear,
+	}
+	state.UnresolvedFrontier = BuildUnresolvedFrontier(state)
+	s := NewState(state, registry.NewBuiltInRegistry())
+
+	after, err := s.Apply(context.Background(), ApplyResolverProposalOperation{
+		Proposal: resolver.Proposal{
+			NeedID:        state.UnresolvedFrontier.Needs[0].ID,
+			AttemptID:     "attempt-000001",
+			ResolverID:    "core/dotenv",
+			FieldRef:      ref,
+			ProjectionKey: "REDIS_PORT",
+			Value: resolver.ProposedValue{
+				Value:       "not-a-port",
+				Source:      model.Source{Name: ".env", Kind: "dotenv"},
+				Sensitivity: model.SensitivityPlaintext,
+				Exposure:    model.ExposureClear,
+			},
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "not-a-port", after.Values[ref].Resolved)
+
+	after, err = s.Apply(context.Background(), IntegrityOperation{Types: registry.NewBuiltInRegistry()})
+	require.NoError(t, err)
+	require.NotEmpty(t, after.Diagnostics)
+	assert.Equal(t, "type.invalid-port", after.Diagnostics[0].Code)
+	require.Len(t, after.UnresolvedFrontier.Needs, 1)
+	assert.Equal(t, model.UnresolvedReasonInvalid, after.UnresolvedFrontier.Needs[0].Reason)
 }
 
 func TestBuildUnresolvedFrontierIncludesExplicitOptionalAndRequiredNeeds(t *testing.T) {
