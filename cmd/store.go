@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -478,6 +480,9 @@ func readPromptAnswers(r io.Reader, prompt io.Writer, actions []ResolverAction, 
 }
 
 func runCharmPromptInput(r io.Reader, w io.Writer, prompt PromptAction) (string, error) {
+	if !isTerminalReader(r) {
+		return readLinePromptInput(r, w, prompt)
+	}
 	model := newPromptInputModel(prompt)
 	program := tea.NewProgram(model, tea.WithInput(r), tea.WithOutput(w))
 	finished, err := program.Run()
@@ -489,6 +494,33 @@ func runCharmPromptInput(r io.Reader, w io.Writer, prompt PromptAction) (string,
 		return "", errors.New("prompt returned unexpected model")
 	}
 	return next.value, nil
+}
+
+func readLinePromptInput(r io.Reader, w io.Writer, prompt PromptAction) (string, error) {
+	label := prompt.Label
+	if label == "" {
+		label = prompt.ProjectionKey
+	}
+	if _, err := fmt.Fprintf(w, "%s: ", label); err != nil {
+		return "", err
+	}
+	value, err := bufio.NewReader(r).ReadString('\n')
+	if err != nil && err != io.EOF {
+		return "", err
+	}
+	return strings.TrimRight(value, "\r\n"), nil
+}
+
+func isTerminalReader(r io.Reader) bool {
+	file, ok := r.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
 }
 
 type promptInputModel struct {

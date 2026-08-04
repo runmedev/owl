@@ -464,6 +464,20 @@ func TestStoreResolvePromptSubmitsAnswers(t *testing.T) {
 	assert.Equal(t, "resolved 1 prompted values\n", out.String())
 }
 
+func TestCharmPromptFallsBackForPipedInput(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	value, err := runCharmPromptInput(strings.NewReader("secret\n"), &out, PromptAction{
+		ProjectionKey: "API_KEY",
+		Label:         "API key",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "secret", value)
+	assert.Equal(t, "API key: ", out.String())
+}
+
 type fakeStoreClient struct {
 	snapshot           *SnapshotResult
 	source             *SourceResult
