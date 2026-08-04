@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -9,6 +8,8 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
@@ -31,10 +32,13 @@ type StoreCommandOptions struct {
 	ConfigureTypeCommand       func(*cobra.Command)
 	ConfigureResolveCommand    func(*cobra.Command)
 	ConfigureProjectCommand    func(*cobra.Command)
+	PromptInput                PromptInputRunner
 	Hidden                     bool
 	InsecureModeEnabled        func() bool
 	DefineSnapshotInsecureFlag bool
 }
+
+type PromptInputRunner func(io.Reader, io.Writer, PromptAction) (string, error)
 
 type SnapshotRequest struct {
 	Limit    int
@@ -367,7 +371,11 @@ func newResolveCommand(opts StoreCommandOptions) *cobra.Command {
 			if !req.Prompt {
 				return renderResolve(cmd.OutOrStdout(), result)
 			}
-			answers, err := readPromptAnswers(cmd.InOrStdin(), cmd.ErrOrStderr(), result.Actions)
+			promptInput := opts.PromptInput
+			if promptInput == nil {
+				promptInput = runCharmPromptInput
+			}
+			answers, err := readPromptAnswers(cmd.InOrStdin(), cmd.ErrOrStderr(), result.Actions, promptInput)
 			if err != nil {
 				return err
 			}
@@ -451,34 +459,81 @@ func renderResolve(w io.Writer, result *ResolveResult) error {
 	return tw.Flush()
 }
 
-func readPromptAnswers(r io.Reader, prompt io.Writer, actions []ResolverAction) ([]PromptAnswer, error) {
-	reader := bufio.NewReader(r)
+func readPromptAnswers(r io.Reader, prompt io.Writer, actions []ResolverAction, promptInput PromptInputRunner) ([]PromptAnswer, error) {
 	var answers []PromptAnswer
 	for _, action := range actions {
 		if action.Prompt == nil || action.Type != "prompt" {
 			continue
 		}
-		label := action.Prompt.Label
-		if label == "" {
-			label = action.Prompt.ProjectionKey
-		}
-		if _, err := fmt.Fprintf(prompt, "%s: ", label); err != nil {
+		value, err := promptInput(r, prompt, *action.Prompt)
+		if err != nil {
 			return nil, err
 		}
-		value, err := reader.ReadString('\n')
-		if err != nil && err != io.EOF {
-			return nil, err
-		}
-		value = strings.TrimRight(value, "\r\n")
 		if value == "" && !action.Prompt.AllowEmpty {
 			return nil, errors.Errorf("%s cannot be empty", action.Prompt.ProjectionKey)
 		}
 		answers = append(answers, PromptAnswer{NeedID: action.Prompt.NeedID, Value: value})
-		if err == io.EOF {
-			break
-		}
 	}
 	return answers, nil
+}
+
+func runCharmPromptInput(r io.Reader, w io.Writer, prompt PromptAction) (string, error) {
+	model := newPromptInputModel(prompt)
+	program := tea.NewProgram(model, tea.WithInput(r), tea.WithOutput(w))
+	finished, err := program.Run()
+	if err != nil {
+		return "", err
+	}
+	next, ok := finished.(promptInputModel)
+	if !ok {
+		return "", errors.New("prompt returned unexpected model")
+	}
+	return next.value, nil
+}
+
+type promptInputModel struct {
+	label string
+	input textinput.Model
+	value string
+	done  bool
+}
+
+func newPromptInputModel(prompt PromptAction) promptInputModel {
+	label := prompt.Label
+	if label == "" {
+		label = prompt.ProjectionKey
+	}
+	input := textinput.New()
+	input.Prompt = ""
+	input.Placeholder = prompt.Description
+	if prompt.Sensitive {
+		input.EchoMode = textinput.EchoPassword
+		input.EchoCharacter = '*'
+	}
+	input.Focus()
+	return promptInputModel{label: label, input: input}
+}
+
+func (m promptInputModel) Init() tea.Cmd {
+	return textinput.Blink
+}
+
+func (m promptInputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	if key, ok := msg.(tea.KeyMsg); ok && key.Type == tea.KeyEnter {
+		m.value = m.input.Value()
+		m.done = true
+		return m, tea.Quit
+	}
+	return m, cmd
+}
+
+func (m promptInputModel) View() string {
+	if m.done {
+		return ""
+	}
+	return fmt.Sprintf("%s: %s\n", m.label, m.input.View())
 }
 
 func snapshotHasInvalidRows(envs []SnapshotEnv, req SnapshotRequest) bool {

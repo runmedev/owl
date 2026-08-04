@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"io"
 	"strings"
 	"testing"
 
@@ -442,13 +443,16 @@ func TestStoreResolvePromptSubmitsAnswers(t *testing.T) {
 		ClientFactory: func(*cobra.Command) (StoreClient, error) {
 			return client, nil
 		},
+		PromptInput: func(_ io.Reader, _ io.Writer, prompt PromptAction) (string, error) {
+			assert.Equal(t, "need:API_KEY", prompt.NeedID)
+			return "secret", nil
+		},
 	})
 
 	var out bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&stderr)
-	cmd.SetIn(strings.NewReader("secret\n"))
 	cmd.SetArgs([]string{"resolve", "--prompt"})
 
 	require.NoError(t, cmd.Execute())
@@ -456,7 +460,7 @@ func TestStoreResolvePromptSubmitsAnswers(t *testing.T) {
 	require.Len(t, client.promptAnswers, 1)
 	assert.Equal(t, "need:API_KEY", client.promptAnswers[0].NeedID)
 	assert.Equal(t, "secret", client.promptAnswers[0].Value)
-	assert.Contains(t, stderr.String(), "API key:")
+	assert.Empty(t, stderr.String())
 	assert.Equal(t, "resolved 1 prompted values\n", out.String())
 }
 
