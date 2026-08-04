@@ -381,22 +381,106 @@ func TestStoreSourceRequiresInsecureFlag(t *testing.T) {
 	assert.False(t, client.sourceCalled)
 }
 
+func TestStoreResolveRendersAttemptsAndPromptActions(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeStoreClient{
+		resolve: &ResolveResult{
+			Attempts: []ResolverAttempt{{
+				ResolverID:    "core/dotenv",
+				ProjectionKey: "API_KEY",
+				Outcome:       "not_found",
+			}},
+			Actions: []ResolverAction{{
+				Type: "prompt",
+				Prompt: &PromptAction{
+					NeedID:        "need:API_KEY",
+					ProjectionKey: "API_KEY",
+					Label:         "API key",
+				},
+			}},
+		},
+	}
+	cmd := NewStoreCommand(StoreCommandOptions{
+		ClientFactory: func(*cobra.Command) (StoreClient, error) {
+			return client, nil
+		},
+	})
+
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"resolve"})
+
+	require.NoError(t, cmd.Execute())
+	assert.True(t, client.resolveCalled)
+	assert.False(t, client.resolveReq.Prompt)
+	assert.Contains(t, out.String(), "API_KEY")
+	assert.Contains(t, out.String(), "not_found")
+	assert.Contains(t, out.String(), "prompt")
+}
+
+func TestStoreResolvePromptSubmitsAnswers(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeStoreClient{
+		resolve: &ResolveResult{
+			Actions: []ResolverAction{{
+				Type: "prompt",
+				Prompt: &PromptAction{
+					NeedID:        "need:API_KEY",
+					ProjectionKey: "API_KEY",
+					Label:         "API key",
+				},
+			}},
+		},
+		applyPromptAnswers: &ResolveResult{
+			Attempts: []ResolverAttempt{{ResolverID: "core/prompt", ProjectionKey: "API_KEY", Outcome: "resolved"}},
+		},
+	}
+	cmd := NewStoreCommand(StoreCommandOptions{
+		ClientFactory: func(*cobra.Command) (StoreClient, error) {
+			return client, nil
+		},
+	})
+
+	var out bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&stderr)
+	cmd.SetIn(strings.NewReader("secret\n"))
+	cmd.SetArgs([]string{"resolve", "--prompt"})
+
+	require.NoError(t, cmd.Execute())
+	assert.True(t, client.resolveReq.Prompt)
+	require.Len(t, client.promptAnswers, 1)
+	assert.Equal(t, "need:API_KEY", client.promptAnswers[0].NeedID)
+	assert.Equal(t, "secret", client.promptAnswers[0].Value)
+	assert.Contains(t, stderr.String(), "API key:")
+	assert.Equal(t, "resolved 1 prompted values\n", out.String())
+}
+
 type fakeStoreClient struct {
-	snapshot       *SnapshotResult
-	source         *SourceResult
-	check          *CheckResult
-	typeResult     *TypeResult
-	projectResult  *ProjectSpecResult
-	snapshotReq    SnapshotRequest
-	sourceReq      SourceRequest
-	checkReq       CheckRequest
-	typeReq        TypeRequest
-	projectReq     ProjectSpecRequest
-	snapshotCalled bool
-	sourceCalled   bool
-	checkCalled    bool
-	typeCalled     bool
-	projectCalled  bool
+	snapshot           *SnapshotResult
+	source             *SourceResult
+	check              *CheckResult
+	typeResult         *TypeResult
+	resolve            *ResolveResult
+	applyPromptAnswers *ResolveResult
+	projectResult      *ProjectSpecResult
+	snapshotReq        SnapshotRequest
+	sourceReq          SourceRequest
+	checkReq           CheckRequest
+	typeReq            TypeRequest
+	resolveReq         ResolveRequest
+	projectReq         ProjectSpecRequest
+	promptAnswers      []PromptAnswer
+	snapshotCalled     bool
+	sourceCalled       bool
+	checkCalled        bool
+	typeCalled         bool
+	resolveCalled      bool
+	projectCalled      bool
 }
 
 func (c *fakeStoreClient) Snapshot(_ context.Context, req SnapshotRequest) (*SnapshotResult, error) {
@@ -421,6 +505,17 @@ func (c *fakeStoreClient) Type(_ context.Context, req TypeRequest) (*TypeResult,
 	c.typeReq = req
 	c.typeCalled = true
 	return c.typeResult, nil
+}
+
+func (c *fakeStoreClient) Resolve(_ context.Context, req ResolveRequest) (*ResolveResult, error) {
+	c.resolveReq = req
+	c.resolveCalled = true
+	return c.resolve, nil
+}
+
+func (c *fakeStoreClient) ApplyPromptAnswers(_ context.Context, answers []PromptAnswer) (*ResolveResult, error) {
+	c.promptAnswers = append([]PromptAnswer{}, answers...)
+	return c.applyPromptAnswers, nil
 }
 
 func (c *fakeStoreClient) ProjectSpec(_ context.Context, req ProjectSpecRequest) (*ProjectSpecResult, error) {

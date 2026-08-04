@@ -132,6 +132,12 @@ type ResolveSourcesInput struct {
 	NewAttemptID func() model.ResolverAttemptID
 }
 
+type ApplyPromptAnswersInput struct {
+	Answers      []resolver.PromptAnswer
+	Timestamp    time.Time
+	NewAttemptID func() model.ResolverAttemptID
+}
+
 type EnvBinding struct {
 	FieldRef    model.FieldRef
 	Key         string
@@ -407,6 +413,7 @@ func (s *Store) ResolveSources(ctx context.Context, input ResolveSourcesInput) (
 		Resolvers: []resolver.Resolver{
 			builtin.ProcessResolver(catalogsFromVariables(input.Process, model.Source{Name: "[process]", Kind: "process"})...),
 			builtin.DotenvResolver(catalogsFromVariables(input.Dotenv, model.Source{Name: ".env", Kind: "dotenv"})...),
+			builtin.NewPromptResolver(),
 		},
 		NewAttemptID: input.NewAttemptID,
 		Clock:        clock,
@@ -428,6 +435,63 @@ func (s *Store) ResolveSources(ctx context.Context, input ResolveSourcesInput) (
 		if _, err := s.Apply(ctx, ApplyResolverProposalOperation{Proposal: proposal, Timestamp: input.Timestamp}); err != nil {
 			return result, err
 		}
+	}
+	if _, err := s.Apply(ctx, IntegrityOperation{Types: s.types}); err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
+func (s *Store) ApplyPromptAnswers(ctx context.Context, input ApplyPromptAnswersInput) (resolver.RunResult, error) {
+	newAttemptID := input.NewAttemptID
+	if newAttemptID == nil {
+		newAttemptID = promptAttemptIDGenerator(len(s.operations))
+	}
+	timestamp := operationTimestamp(input.Timestamp)
+	needs := needsByID(s.state.UnresolvedFrontier.Needs)
+	var result resolver.RunResult
+	for _, answer := range input.Answers {
+		need, ok := needs[answer.NeedID]
+		attempt := model.ResolverAttempt{
+			ID:         newAttemptID(),
+			ResolverID: builtin.ResolverIDPrompt,
+			Outcome:    model.ResolverAttemptResolved,
+			Source:     model.Source{Name: "[prompt]", Kind: "prompt"},
+			StartedAt:  timestamp,
+			FinishedAt: timestamp,
+		}
+		if !ok {
+			attempt.Outcome = model.ResolverAttemptInvalidResult
+			attempt.Message = "prompt answer references an unknown unresolved need"
+			if _, err := s.Apply(ctx, RecordResolverAttemptOperation{Attempt: attempt}); err != nil {
+				return result, err
+			}
+			result.Attempts = append(result.Attempts, attempt)
+			continue
+		}
+		attempt.FieldRef = need.FieldRef
+		attempt.ProjectionKey = need.ProjectionKey
+		proposal := resolver.Proposal{
+			NeedID:        need.ID,
+			AttemptID:     attempt.ID,
+			ResolverID:    builtin.ResolverIDPrompt,
+			FieldRef:      need.FieldRef,
+			ProjectionKey: need.ProjectionKey,
+			Value: resolver.ProposedValue{
+				Value:       answer.Value,
+				Source:      attempt.Source,
+				Sensitivity: need.Sensitivity,
+				Exposure:    need.Exposure,
+			},
+		}
+		if _, err := s.Apply(ctx, RecordResolverAttemptOperation{Attempt: attempt}); err != nil {
+			return result, err
+		}
+		if _, err := s.Apply(ctx, ApplyResolverProposalOperation{Proposal: proposal, Timestamp: timestamp}); err != nil {
+			return result, err
+		}
+		result.Attempts = append(result.Attempts, attempt)
+		result.Proposals = append(result.Proposals, proposal)
 	}
 	if _, err := s.Apply(ctx, IntegrityOperation{Types: s.types}); err != nil {
 		return result, err
@@ -894,6 +958,22 @@ func sourceBytesFromInputs(inputs []sourceInput) []SourceBytes {
 		result = append(result, SourceBytes{Name: input.name, Raw: input.raw})
 	}
 	return result
+}
+
+func needsByID(needs []model.UnresolvedNeed) map[model.UnresolvedNeedID]model.UnresolvedNeed {
+	result := make(map[model.UnresolvedNeedID]model.UnresolvedNeed, len(needs))
+	for _, need := range needs {
+		result[need.ID] = need
+	}
+	return result
+}
+
+func promptAttemptIDGenerator(offset int) func() model.ResolverAttemptID {
+	var next int
+	return func() model.ResolverAttemptID {
+		next++
+		return model.ResolverAttemptID(fmt.Sprintf("prompt-%06d", offset+next))
+	}
 }
 
 func catalogsFromVariables(variables []DotenvVariable, fallback model.Source) []builtin.Catalog {

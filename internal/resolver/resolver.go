@@ -63,5 +63,26 @@ type NextAction struct {
 }
 
 type PromptAction struct {
+	NeedID          model.UnresolvedNeedID
+	FieldRef        model.FieldRef
+	ProjectionKey   model.ProjectionKey
+	Label           string
+	Description     string
+	Sensitivity     model.Sensitivity
+	Exposure        model.Exposure
+	Required        bool
+	Blocking        bool
+	AllowEmpty      bool
+	ValidationHints []ValidationHint
+}
+
+type ValidationHint struct {
+	TypeID      model.TypeID
+	FieldKind   model.FieldKind
+	Description string
+}
+
+type PromptAnswer struct {
 	NeedID model.UnresolvedNeedID
+	Value  string
 }

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -17,6 +18,8 @@ type StoreClient interface {
 	Source(context.Context, SourceRequest) (*SourceResult, error)
 	Check(context.Context, CheckRequest) (*CheckResult, error)
 	Type(context.Context, TypeRequest) (*TypeResult, error)
+	Resolve(context.Context, ResolveRequest) (*ResolveResult, error)
+	ApplyPromptAnswers(context.Context, []PromptAnswer) (*ResolveResult, error)
 	ProjectSpec(context.Context, ProjectSpecRequest) (*ProjectSpecResult, error)
 }
 
@@ -26,6 +29,7 @@ type StoreCommandOptions struct {
 	ConfigureSourceCommand     func(*cobra.Command)
 	ConfigureCheckCommand      func(*cobra.Command)
 	ConfigureTypeCommand       func(*cobra.Command)
+	ConfigureResolveCommand    func(*cobra.Command)
 	ConfigureProjectCommand    func(*cobra.Command)
 	Hidden                     bool
 	InsecureModeEnabled        func() bool
@@ -88,6 +92,42 @@ type TypeResult struct {
 	Rendered  string
 }
 
+type ResolveRequest struct {
+	Prompt bool
+}
+
+type ResolveResult struct {
+	Attempts []ResolverAttempt
+	Actions  []ResolverAction
+}
+
+type ResolverAttempt struct {
+	ResolverID    string
+	ProjectionKey string
+	Outcome       string
+	Message       string
+}
+
+type ResolverAction struct {
+	Type   string
+	Prompt *PromptAction
+}
+
+type PromptAction struct {
+	NeedID        string
+	ProjectionKey string
+	Label         string
+	Description   string
+	Sensitive     bool
+	Required      bool
+	AllowEmpty    bool
+}
+
+type PromptAnswer struct {
+	NeedID string
+	Value  string
+}
+
 type ProjectSpecRequest struct {
 	ConfigPath string
 	Output     string
@@ -135,6 +175,7 @@ func NewStoreCommands(opts StoreCommandOptions) []*cobra.Command {
 		newSourceCommand(opts),
 		newCheckCommand(opts),
 		newTypeCommand(opts),
+		newResolveCommand(opts),
 	}
 }
 
@@ -306,6 +347,52 @@ func newTypeCommand(opts StoreCommandOptions) *cobra.Command {
 	return &cmd
 }
 
+func newResolveCommand(opts StoreCommandOptions) *cobra.Command {
+	var req ResolveRequest
+
+	cmd := cobra.Command{
+		Hidden: opts.Hidden,
+		Use:    "resolve",
+		Short:  "Resolve missing environment values",
+		Long:   "Resolve missing environment values.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := opts.client(cmd)
+			if err != nil {
+				return err
+			}
+			result, err := client.Resolve(cmd.Context(), req)
+			if err != nil {
+				return err
+			}
+			if !req.Prompt {
+				return renderResolve(cmd.OutOrStdout(), result)
+			}
+			answers, err := readPromptAnswers(cmd.InOrStdin(), cmd.ErrOrStderr(), result.Actions)
+			if err != nil {
+				return err
+			}
+			if len(answers) == 0 {
+				return renderResolve(cmd.OutOrStdout(), result)
+			}
+			applied, err := client.ApplyPromptAnswers(cmd.Context(), answers)
+			if err != nil {
+				return err
+			}
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "resolved %d prompted values\n", len(applied.Attempts)); err != nil {
+				return err
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVar(&req.Prompt, "prompt", false, "Prompt interactively for unresolved values")
+	if opts.ConfigureResolveCommand != nil {
+		opts.ConfigureResolveCommand(&cmd)
+	}
+
+	return &cmd
+}
+
 func (opts StoreCommandOptions) client(cmd *cobra.Command) (StoreClient, error) {
 	if opts.ClientFactory == nil {
 		return nil, errors.New("store client factory is required")
@@ -341,6 +428,57 @@ func renderSnapshot(w io.Writer, result *SnapshotResult, req SnapshotRequest) er
 	}
 
 	return tw.Flush()
+}
+
+func renderResolve(w io.Writer, result *ResolveResult) error {
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	if _, err := fmt.Fprintln(tw, "KEY\tRESOLVER\tOUTCOME\tMESSAGE"); err != nil {
+		return err
+	}
+	for _, attempt := range result.Attempts {
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", attempt.ProjectionKey, attempt.ResolverID, attempt.Outcome, attempt.Message); err != nil {
+			return err
+		}
+	}
+	for _, action := range result.Actions {
+		if action.Prompt == nil {
+			continue
+		}
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", action.Prompt.ProjectionKey, "core/prompt", action.Type, action.Prompt.Label); err != nil {
+			return err
+		}
+	}
+	return tw.Flush()
+}
+
+func readPromptAnswers(r io.Reader, prompt io.Writer, actions []ResolverAction) ([]PromptAnswer, error) {
+	reader := bufio.NewReader(r)
+	var answers []PromptAnswer
+	for _, action := range actions {
+		if action.Prompt == nil || action.Type != "prompt" {
+			continue
+		}
+		label := action.Prompt.Label
+		if label == "" {
+			label = action.Prompt.ProjectionKey
+		}
+		if _, err := fmt.Fprintf(prompt, "%s: ", label); err != nil {
+			return nil, err
+		}
+		value, err := reader.ReadString('\n')
+		if err != nil && err != io.EOF {
+			return nil, err
+		}
+		value = strings.TrimRight(value, "\r\n")
+		if value == "" && !action.Prompt.AllowEmpty {
+			return nil, errors.Errorf("%s cannot be empty", action.Prompt.ProjectionKey)
+		}
+		answers = append(answers, PromptAnswer{NeedID: action.Prompt.NeedID, Value: value})
+		if err == io.EOF {
+			break
+		}
+	}
+	return answers, nil
 }
 
 func snapshotHasInvalidRows(envs []SnapshotEnv, req SnapshotRequest) bool {

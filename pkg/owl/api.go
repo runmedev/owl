@@ -2,13 +2,17 @@ package owl
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/runmedev/owl/internal/graph"
 	"github.com/runmedev/owl/internal/model"
 	"github.com/runmedev/owl/internal/registry"
 	"github.com/runmedev/owl/internal/requirements"
+	"github.com/runmedev/owl/internal/resolver"
+	"github.com/runmedev/owl/internal/resolver/builtin"
 	"github.com/runmedev/owl/internal/store"
 )
 
@@ -22,6 +26,13 @@ type (
 	TypeProposal   = store.TypeProposal
 	GetResult      = store.GetResult
 	CheckResult    = store.CheckResult
+	ResolvePolicy  = resolver.Policy
+	ChainConfig    = resolver.ChainConfig
+	ResolverConfig = resolver.ResolverConfig
+	ResolveResult  = resolver.RunResult
+	ResolverAction = resolver.NextAction
+	PromptAction   = resolver.PromptAction
+	PromptAnswer   = resolver.PromptAnswer
 
 	TypeID                 = model.TypeID
 	FieldRef               = model.FieldRef
@@ -48,6 +59,8 @@ type (
 	UnresolvedReason       = model.UnresolvedReason
 	UnresolvedFrontier     = model.UnresolvedFrontier
 	UnresolvedNeed         = model.UnresolvedNeed
+	ResolverProposal       = resolver.Proposal
+	ProposedValue          = resolver.ProposedValue
 )
 
 const (
@@ -117,6 +130,13 @@ type ExecutionInfo struct {
 	KnownID     string
 	KnownName   string
 	ExecContext string
+}
+
+type ResolveInput struct {
+	Process []DotenvVariable
+	Dotenv  []DotenvVariable
+	Policy  ResolvePolicy
+	Chain   ChainConfig
 }
 
 func ContextWithExecutionInfo(ctx context.Context, info ExecutionInfo) context.Context {
@@ -286,6 +306,106 @@ func (s *Store) Check() CheckResult {
 	return store.NewState(s.state, s.types).Check()
 }
 
+func (s *Store) ResolverAttempts() []ResolverAttempt {
+	return append([]ResolverAttempt{}, s.state.ResolverAttempts...)
+}
+
+func (s *Store) UnresolvedFrontier() UnresolvedFrontier {
+	return UnresolvedFrontier{Needs: append([]UnresolvedNeed{}, s.state.UnresolvedFrontier.Needs...)}
+}
+
+func (s *Store) Resolve(ctx context.Context, input ResolveInput) (ResolveResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	runner := resolver.Runner{
+		Resolvers: []resolver.Resolver{
+			builtin.ProcessResolver(catalogsFromVariables(input.Process, Source{Name: "[process]", Kind: "process"})...),
+			builtin.DotenvResolver(catalogsFromVariables(input.Dotenv, Source{Name: ".env", Kind: "dotenv"})...),
+			builtin.NewPromptResolver(),
+		},
+		NewAttemptID: publicAttemptIDGenerator(len(s.operations)),
+		Clock:        s.clock,
+	}
+	result, err := runner.Resolve(ctx, resolver.RunRequest{
+		State:  s.state,
+		Policy: input.Policy,
+		Chain:  input.Chain,
+	})
+	if err != nil {
+		return result, err
+	}
+	if err := s.recordResolverResult(ctx, result); err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
+func (s *Store) ApplyPromptAnswers(ctx context.Context, answers []PromptAnswer) (ResolveResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	timestamp := s.clock()
+	needs := needsByID(s.state.UnresolvedFrontier.Needs)
+	newAttemptID := publicAttemptIDGenerator(len(s.operations))
+	var result ResolveResult
+	for _, answer := range answers {
+		need, ok := needs[answer.NeedID]
+		attempt := ResolverAttempt{
+			ID:         newAttemptID(),
+			ResolverID: builtin.ResolverIDPrompt,
+			Outcome:    ResolverResolved,
+			Source:     Source{Name: "[prompt]", Kind: "prompt"},
+			StartedAt:  timestamp,
+			FinishedAt: timestamp,
+		}
+		if !ok {
+			attempt.Outcome = ResolverInvalidResult
+			attempt.Message = "prompt answer references an unknown unresolved need"
+			result.Attempts = append(result.Attempts, attempt)
+			s.operations = append(s.operations, store.OperationRecord{
+				Kind:            store.OperationRecordResolverAttempt,
+				Timestamp:       timestamp,
+				ResolverAttempt: attempt,
+			})
+			continue
+		}
+		attempt.FieldRef = need.FieldRef
+		attempt.ProjectionKey = need.ProjectionKey
+		proposal := ResolverProposal{
+			NeedID:        need.ID,
+			AttemptID:     attempt.ID,
+			ResolverID:    builtin.ResolverIDPrompt,
+			FieldRef:      need.FieldRef,
+			ProjectionKey: need.ProjectionKey,
+			Value: ProposedValue{
+				Value:       answer.Value,
+				Source:      attempt.Source,
+				Sensitivity: need.Sensitivity,
+				Exposure:    need.Exposure,
+			},
+		}
+		result.Attempts = append(result.Attempts, attempt)
+		result.Proposals = append(result.Proposals, proposal)
+		s.operations = append(s.operations,
+			store.OperationRecord{
+				Kind:            store.OperationRecordResolverAttempt,
+				Timestamp:       timestamp,
+				ResolverAttempt: attempt,
+			},
+			store.OperationRecord{
+				Kind:             store.OperationRecordApplyResolverProposal,
+				Timestamp:        timestamp,
+				ResolverProposal: proposal,
+			},
+		)
+	}
+	if err := s.materialize(ctx); err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
 func (s *Store) LoadDotenv(source Source, vars []DotenvVariable) error {
 	return s.applyDotenv(source, vars, nil)
 }
@@ -411,4 +531,70 @@ func sourceFromContext(ctx context.Context, fallback Source) Source {
 		name = "[" + info.ExecContext + "]"
 	}
 	return Source{Name: name, Kind: "execution"}
+}
+
+func (s *Store) recordResolverResult(ctx context.Context, result ResolveResult) error {
+	timestamp := s.clock()
+	for _, attempt := range result.Attempts {
+		s.operations = append(s.operations, store.OperationRecord{
+			Kind:            store.OperationRecordResolverAttempt,
+			Timestamp:       firstTime(attempt.FinishedAt, timestamp),
+			ResolverAttempt: attempt,
+		})
+	}
+	for _, proposal := range result.Proposals {
+		s.operations = append(s.operations, store.OperationRecord{
+			Kind:             store.OperationRecordApplyResolverProposal,
+			Timestamp:        timestamp,
+			ResolverProposal: proposal,
+		})
+	}
+	if len(result.Attempts) == 0 && len(result.Proposals) == 0 {
+		return nil
+	}
+	return s.materialize(ctx)
+}
+
+func catalogsFromVariables(variables []DotenvVariable, fallback Source) []builtin.Catalog {
+	positions := make(map[Source]int)
+	var catalogs []builtin.Catalog
+	for _, variable := range variables {
+		source := variable.Source
+		if source.Name == "" && source.Kind == "" {
+			source = fallback
+		}
+		index, ok := positions[source]
+		if !ok {
+			index = len(catalogs)
+			positions[source] = index
+			catalogs = append(catalogs, builtin.Catalog{Source: source, Values: make(map[model.ProjectionKey]string)})
+		}
+		catalogs[index].Values[model.ProjectionKey(variable.Key)] = variable.Value
+	}
+	return catalogs
+}
+
+func needsByID(needs []UnresolvedNeed) map[UnresolvedNeedID]UnresolvedNeed {
+	result := make(map[UnresolvedNeedID]UnresolvedNeed, len(needs))
+	for _, need := range needs {
+		result[need.ID] = need
+	}
+	return result
+}
+
+func publicAttemptIDGenerator(offset int) func() ResolverAttemptID {
+	var next int
+	return func() ResolverAttemptID {
+		next++
+		return ResolverAttemptID(fmt.Sprintf("attempt-%06d", offset+next))
+	}
+}
+
+func firstTime(values ...time.Time) time.Time {
+	for _, value := range values {
+		if !value.IsZero() {
+			return value
+		}
+	}
+	return time.Time{}
 }

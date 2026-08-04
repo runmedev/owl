@@ -11,6 +11,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/runmedev/owl/internal/model"
+	"github.com/runmedev/owl/internal/projection/dotenv"
 	"github.com/runmedev/owl/internal/requirements"
 	"github.com/runmedev/owl/pkg/owl"
 )
@@ -23,7 +25,8 @@ type LocalStoreOptions struct {
 }
 
 type LocalStoreClient struct {
-	options LocalStoreOptions
+	options   LocalStoreOptions
+	lastStore *owl.Store
 }
 
 var processEnviron = os.Environ
@@ -49,6 +52,7 @@ func NewLocalCommands() []*cobra.Command {
 		ConfigureSourceCommand:     configureLocalFlags,
 		ConfigureCheckCommand:      configureLocalFlags,
 		ConfigureTypeCommand:       configureTypeFlags,
+		ConfigureResolveCommand:    configureLocalFlags,
 		InsecureModeEnabled:        func() bool { return true },
 		DefineSnapshotInsecureFlag: true,
 	}
@@ -150,6 +154,49 @@ func (c *LocalStoreClient) Type(_ context.Context, req TypeRequest) (*TypeResult
 	}, nil
 }
 
+func (c *LocalStoreClient) Resolve(ctx context.Context, req ResolveRequest) (*ResolveResult, error) {
+	store, err := c.store()
+	if err != nil {
+		return nil, err
+	}
+	c.lastStore = store
+	process, dotenvVars, err := c.resolverVariables()
+	if err != nil {
+		return nil, err
+	}
+	result, err := store.Resolve(ctx, owl.ResolveInput{
+		Process: process,
+		Dotenv:  dotenvVars,
+		Policy:  owl.ResolvePolicy{AllowInteraction: req.Prompt},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resolveResultFromOwl(result), nil
+}
+
+func (c *LocalStoreClient) ApplyPromptAnswers(ctx context.Context, answers []PromptAnswer) (*ResolveResult, error) {
+	if c.lastStore == nil {
+		store, err := c.store()
+		if err != nil {
+			return nil, err
+		}
+		c.lastStore = store
+	}
+	owlAnswers := make([]owl.PromptAnswer, 0, len(answers))
+	for _, answer := range answers {
+		owlAnswers = append(owlAnswers, owl.PromptAnswer{
+			NeedID: owl.UnresolvedNeedID(answer.NeedID),
+			Value:  answer.Value,
+		})
+	}
+	result, err := c.lastStore.ApplyPromptAnswers(ctx, owlAnswers)
+	if err != nil {
+		return nil, err
+	}
+	return resolveResultFromOwl(result), nil
+}
+
 func (c *LocalStoreClient) store() (*owl.Store, error) {
 	return c.storeWithOptions(false, true)
 }
@@ -214,6 +261,53 @@ func (c *LocalStoreClient) storeWithOptions(allowMissingSpec bool, loadConfig bo
 	}
 
 	return owl.NewStore(opts...)
+}
+
+func (c *LocalStoreClient) resolverVariables() ([]owl.DotenvVariable, []owl.DotenvVariable, error) {
+	process := make([]owl.DotenvVariable, 0)
+	for _, item := range c.processEnv() {
+		key, value, ok := strings.Cut(item, "=")
+		if !ok || !isDotenvKey(key) {
+			continue
+		}
+		process = append(process, owl.DotenvVariable{
+			Key:    key,
+			Value:  value,
+			Source: owl.Source{Name: "[process]", Kind: "process"},
+		})
+	}
+	sort.SliceStable(process, func(i, j int) bool {
+		return process[i].Key < process[j].Key
+	})
+
+	var dotenvVars []owl.DotenvVariable
+	envFiles, err := filesOrDefaults(c.options.EnvFiles, ".env")
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, file := range envFiles {
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			return nil, nil, err
+		}
+		parsed, err := dotenv.ParseDotenvValues(raw)
+		if err != nil {
+			return nil, nil, err
+		}
+		keys := make([]string, 0, len(parsed))
+		for key := range parsed {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			dotenvVars = append(dotenvVars, owl.DotenvVariable{
+				Key:    key,
+				Value:  parsed[key],
+				Source: owl.Source{Name: file, Kind: "dotenv"},
+			})
+		}
+	}
+	return process, dotenvVars, nil
 }
 
 func (c *LocalStoreClient) processEnv() []string {
@@ -518,6 +612,35 @@ func diagnosticStrings(diagnostics []owl.Diagnostic, details bool) []string {
 		result = append(result, diagnosticString(diagnostic, details))
 	}
 	return result
+}
+
+func resolveResultFromOwl(result owl.ResolveResult) *ResolveResult {
+	attempts := make([]ResolverAttempt, 0, len(result.Attempts))
+	for _, attempt := range result.Attempts {
+		attempts = append(attempts, ResolverAttempt{
+			ResolverID:    string(attempt.ResolverID),
+			ProjectionKey: string(attempt.ProjectionKey),
+			Outcome:       string(attempt.Outcome),
+			Message:       attempt.Message,
+		})
+	}
+	actions := make([]ResolverAction, 0, len(result.Actions))
+	for _, action := range result.Actions {
+		item := ResolverAction{Type: string(action.Type)}
+		if action.Prompt != nil {
+			item.Prompt = &PromptAction{
+				NeedID:        string(action.Prompt.NeedID),
+				ProjectionKey: string(action.Prompt.ProjectionKey),
+				Label:         action.Prompt.Label,
+				Description:   action.Prompt.Description,
+				Sensitive:     action.Prompt.Sensitivity == model.SensitivitySensitive,
+				Required:      action.Prompt.Required,
+				AllowEmpty:    action.Prompt.AllowEmpty,
+			}
+		}
+		actions = append(actions, item)
+	}
+	return &ResolveResult{Attempts: attempts, Actions: actions}
 }
 
 func diagnosticString(diagnostic owl.Diagnostic, details bool) string {
