@@ -409,11 +409,9 @@ func TestStoreResolveSourcesAppliesDotenvResolverProposals(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.Len(t, result.Attempts, 2)
-	assert.Equal(t, model.ResolverID("core/process"), result.Attempts[0].ResolverID)
-	assert.Equal(t, model.ResolverAttemptNotFound, result.Attempts[0].Outcome)
-	assert.Equal(t, model.ResolverID("core/dotenv"), result.Attempts[1].ResolverID)
-	assert.Equal(t, model.ResolverAttemptResolved, result.Attempts[1].Outcome)
+	require.Len(t, result.Attempts, 1)
+	assert.Equal(t, model.ResolverID("core/dotenv"), result.Attempts[0].ResolverID)
+	assert.Equal(t, model.ResolverAttemptResolved, result.Attempts[0].Outcome)
 	require.Len(t, result.Proposals, 1)
 
 	state := s.State()
@@ -421,16 +419,15 @@ func TestStoreResolveSourcesAppliesDotenvResolverProposals(t *testing.T) {
 	value := state.Values[result.Proposals[0].FieldRef]
 	assert.Equal(t, "resolved-secret", value.Resolved)
 	assert.Equal(t, model.Source{Name: ".env", Kind: "dotenv"}, value.Source)
-	assert.Equal(t, model.OperationID("resolve:attempt-000002"), value.LastOperationID)
+	assert.Equal(t, model.OperationID("resolve:attempt-000001"), value.LastOperationID)
 
 	records := s.OperationRecords()
-	require.Len(t, records, 4)
+	require.Len(t, records, 3)
 	assert.Equal(t, OperationRecordResolverAttempt, records[1].Kind)
-	assert.Equal(t, OperationRecordResolverAttempt, records[2].Kind)
-	assert.Equal(t, OperationRecordApplyResolverProposal, records[3].Kind)
+	assert.Equal(t, OperationRecordApplyResolverProposal, records[2].Kind)
 }
 
-func TestStoreResolveSourcesUsesProcessBeforeDotenv(t *testing.T) {
+func TestStoreResolveSourcesUsesDotenvBeforeProcess(t *testing.T) {
 	t.Parallel()
 
 	s, err := NewStore(WithEnvSpec(".env.example", strings.NewReader("API_KEY=\"API key\" # Secret!\n")))
@@ -452,15 +449,15 @@ func TestStoreResolveSourcesUsesProcessBeforeDotenv(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Len(t, result.Attempts, 1)
-	assert.Equal(t, model.ResolverID("core/process"), result.Attempts[0].ResolverID)
+	assert.Equal(t, model.ResolverID("core/dotenv"), result.Attempts[0].ResolverID)
 	assert.Equal(t, model.ResolverAttemptResolved, result.Attempts[0].Outcome)
 	require.Len(t, result.Proposals, 1)
-	assert.Equal(t, model.Source{Name: "[process]", Kind: "process"}, result.Proposals[0].Value.Source)
+	assert.Equal(t, model.Source{Name: ".env", Kind: "dotenv"}, result.Proposals[0].Value.Source)
 
 	state := s.State()
 	value := state.Values[result.Proposals[0].FieldRef]
-	assert.Equal(t, "from-process", value.Resolved)
-	assert.Equal(t, model.Source{Name: "[process]", Kind: "process"}, value.Source)
+	assert.Equal(t, "from-dotenv", value.Resolved)
+	assert.Equal(t, model.Source{Name: ".env", Kind: "dotenv"}, value.Source)
 }
 
 func TestStoreResolveSourcesKeepsInvalidResolvedValueProvenance(t *testing.T) {
@@ -487,8 +484,8 @@ func TestStoreResolveSourcesKeepsInvalidResolvedValueProvenance(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.Len(t, result.Attempts, 2)
-	assert.Equal(t, model.ResolverAttemptResolved, result.Attempts[1].Outcome)
+	require.Len(t, result.Attempts, 1)
+	assert.Equal(t, model.ResolverAttemptResolved, result.Attempts[0].Outcome)
 	state = s.State()
 	value := state.Values[ref]
 	assert.Equal(t, "not-a-port", value.Resolved)
@@ -497,7 +494,7 @@ func TestStoreResolveSourcesKeepsInvalidResolvedValueProvenance(t *testing.T) {
 	assert.Equal(t, "type.invalid-port", state.Diagnostics[0].Code)
 	require.Len(t, state.UnresolvedFrontier.Needs, 1)
 	assert.Equal(t, model.UnresolvedReasonInvalid, state.UnresolvedFrontier.Needs[0].Reason)
-	assert.Equal(t, []model.ResolverAttemptID{"attempt-000001", "attempt-000002"}, state.UnresolvedFrontier.Needs[0].ResolverAttemptIDs)
+	assert.Equal(t, []model.ResolverAttemptID{"attempt-000001"}, state.UnresolvedFrontier.Needs[0].ResolverAttemptIDs)
 }
 
 func TestBuildUnresolvedFrontierIncludesExplicitOptionalAndRequiredNeeds(t *testing.T) {

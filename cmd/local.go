@@ -1,43 +1,45 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"os"
-	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/runmedev/owl/internal/model"
-	"github.com/runmedev/owl/internal/projection/dotenv"
 	"github.com/runmedev/owl/internal/requirements"
+	"github.com/runmedev/owl/internal/seed"
 	"github.com/runmedev/owl/pkg/owl"
 )
 
 type LocalStoreOptions struct {
-	EnvFiles   []string
-	SpecFiles  []string
-	ConfigPath string
-	ProcessEnv []string
+	EnvFiles     []string
+	SpecFiles    []string
+	ConfigPath   string
+	ProcessEnv   []string
+	Direnv       seed.DirenvPolicy
+	DirenvDir    string
+	DirenvRunner seed.DirenvExportRunner
 }
 
 type LocalStoreClient struct {
-	options   LocalStoreOptions
-	lastStore *owl.Store
+	options               LocalStoreOptions
+	lastStore             *owl.Store
+	lastSourceDiagnostics []owl.Diagnostic
 }
 
 var processEnviron = os.Environ
 
 func NewLocalCommands() []*cobra.Command {
-	var options LocalStoreOptions
+	options := LocalStoreOptions{Direnv: seed.DirenvEnabledWarn}
 
 	configureLocalFlags := func(cmd *cobra.Command) {
 		cmd.Flags().StringArrayVar(&options.EnvFiles, "env-file", nil, "Env file to load")
 		cmd.Flags().StringArrayVar(&options.SpecFiles, "spec-file", nil, "Env spec file to load")
 		cmd.Flags().StringVar(&options.ConfigPath, "config", "", "Owl config file to load")
+		cmd.Flags().Var(&options.Direnv, "direnv", "Direnv policy: disabled, enabled_warn, enabled_error")
 	}
 	configureTypeFlags := func(cmd *cobra.Command) {
 		cmd.Flags().StringArrayVar(&options.EnvFiles, "env-file", nil, "Env file to load")
@@ -107,7 +109,7 @@ func (c *LocalStoreClient) Check(ctx context.Context, req CheckRequest) (*CheckR
 	}
 	return &CheckResult{
 		OK:          check.OK,
-		Diagnostics: diagnosticStrings(check.Diagnostics, req.Details),
+		Diagnostics: append(diagnosticStrings(c.lastSourceDiagnostics, req.Details), diagnosticStrings(check.Diagnostics, req.Details)...),
 		Checked:     len(items),
 	}, nil
 }
@@ -118,7 +120,7 @@ func (c *LocalStoreClient) Type(_ context.Context, req TypeRequest) (*TypeResult
 	}
 	options := c.options
 	options.SpecFiles = []string{req.SpecPath}
-	store, err := NewLocalStoreClient(options).storeWithOptions(true, false, true)
+	store, err := seed.NewRawValueStore(seedOptions(options), true)
 	if err != nil {
 		return nil, err
 	}
@@ -155,18 +157,14 @@ func (c *LocalStoreClient) Type(_ context.Context, req TypeRequest) (*TypeResult
 }
 
 func (c *LocalStoreClient) Resolve(ctx context.Context, req ResolveRequest) (*ResolveResult, error) {
-	store, err := c.baseStore()
+	store, sources, err := c.baseStoreWithSources(ctx)
 	if err != nil {
 		return nil, err
 	}
 	c.lastStore = store
-	process, dotenvVars, err := c.resolverVariables()
-	if err != nil {
-		return nil, err
-	}
 	result, err := store.Resolve(ctx, owl.ResolveInput{
-		Process: process,
-		Dotenv:  dotenvVars,
+		Process: sources.ProcessResolverInput(),
+		Dotenv:  sources.DotenvResolverInput(),
 		Policy:  owl.ResolvePolicy{AllowInteraction: req.Interactive},
 	})
 	if err != nil {
@@ -177,7 +175,7 @@ func (c *LocalStoreClient) Resolve(ctx context.Context, req ResolveRequest) (*Re
 
 func (c *LocalStoreClient) ApplyPromptAnswers(ctx context.Context, answers []PromptAnswer) (*ResolveResult, error) {
 	if c.lastStore == nil {
-		store, err := c.baseStore()
+		store, err := c.baseStore(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -197,32 +195,31 @@ func (c *LocalStoreClient) ApplyPromptAnswers(ctx context.Context, answers []Pro
 	return resolveResultFromOwl(result), nil
 }
 
-func (c *LocalStoreClient) baseStore() (*owl.Store, error) {
-	store, err := c.storeWithOptions(false, true, false)
+func (c *LocalStoreClient) baseStore(ctx context.Context) (*owl.Store, error) {
+	store, _, err := c.baseStoreWithSources(ctx)
+	return store, err
+}
+
+func (c *LocalStoreClient) baseStoreWithSources(ctx context.Context) (*owl.Store, seed.Catalog, error) {
+	result, err := seed.NewStore(ctx, seedOptions(c.options))
 	if err != nil {
-		return nil, err
+		return nil, seed.Catalog{}, err
 	}
-	if err := c.loadInheritedSourceValues(store); err != nil {
-		return nil, err
-	}
-	return store, nil
+	c.lastSourceDiagnostics = result.Diagnostics
+	return result.Store, result.Catalog, nil
 }
 
 func (c *LocalStoreClient) resolvedStore(ctx context.Context, interactive bool) (*owl.Store, error) {
 	if interactive && c.lastStore != nil {
 		return c.lastStore, nil
 	}
-	store, err := c.baseStore()
-	if err != nil {
-		return nil, err
-	}
-	process, dotenvVars, err := c.resolverVariables()
+	store, sources, err := c.baseStoreWithSources(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if _, err := store.Resolve(ctx, owl.ResolveInput{
-		Process: process,
-		Dotenv:  dotenvVars,
+		Process: sources.ProcessResolverInput(),
+		Dotenv:  sources.DotenvResolverInput(),
 		Policy:  owl.ResolvePolicy{AllowInteraction: interactive},
 	}); err != nil {
 		return nil, err
@@ -230,233 +227,23 @@ func (c *LocalStoreClient) resolvedStore(ctx context.Context, interactive bool) 
 	return store, nil
 }
 
-func (c *LocalStoreClient) storeWithOptions(allowMissingSpec bool, loadConfig bool, loadValues bool) (*owl.Store, error) {
-	var opts []owl.StoreOption
-
-	var configPath string
-	if loadConfig {
-		path, err := resolveConfigPath(c.options.ConfigPath, false)
-		if err != nil {
-			return nil, err
-		}
-		configPath = path
-		if configPath != "" {
-			input, err := requirements.ReadConfigFile(configPath)
-			if err != nil {
-				return nil, err
-			}
-			opts = append(opts, owl.WithConfig(input))
-		}
+func seedOptions(options LocalStoreOptions) seed.Options {
+	return seed.Options{
+		EnvFiles:     options.EnvFiles,
+		SpecFiles:    options.SpecFiles,
+		ConfigPath:   options.ConfigPath,
+		Observed:     []seed.ObservedSource{{Source: owl.Source{Name: "[process]", Kind: "process"}, Environ: processEnvForOptions(options)}},
+		WorkDir:      options.DirenvDir,
+		Direnv:       options.Direnv,
+		DirenvRunner: options.DirenvRunner,
 	}
-
-	if configPath != "" {
-		if err := validateNoHumanDotenvSpecs(c.options.SpecFiles); err != nil {
-			return nil, err
-		}
-	}
-
-	specFiles, err := filesOrDefaults(c.options.SpecFiles, ".env.sample", ".env.example", ".env.spec")
-	if err != nil {
-		return nil, err
-	}
-	for _, file := range specFiles {
-		raw, err := os.ReadFile(file)
-		if allowMissingSpec && errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		if configPath != "" {
-			if isGeneratedDotenvSpec(raw) {
-				continue
-			}
-			return nil, errors.New("dotenv spec file exists beside Owl config; move it aside or regenerate it with owl project spec --write")
-		}
-		opts = append(opts, owl.WithEnvSpec(file, bytes.NewReader(raw)))
-	}
-
-	if loadValues {
-		envFiles, err := filesOrDefaults(c.options.EnvFiles, ".env")
-		if err != nil {
-			return nil, err
-		}
-		opts = append(opts, owl.WithDotenv("[process]", strings.NewReader(processEnvDotenv(c.processEnv()))))
-		for _, file := range envFiles {
-			raw, err := os.ReadFile(file)
-			if err != nil {
-				return nil, err
-			}
-			opts = append(opts, owl.WithDotenv(file, bytes.NewReader(raw)))
-		}
-	}
-
-	return owl.NewStore(opts...)
 }
 
-func (c *LocalStoreClient) loadInheritedSourceValues(store *owl.Store) error {
-	explicit, err := explicitSnapshotKeys(store)
-	if err != nil {
-		return err
-	}
-	process, dotenvVars, err := c.resolverVariables()
-	if err != nil {
-		return err
-	}
-	if err := loadInheritedVariables(store, process, explicit); err != nil {
-		return err
-	}
-	return loadInheritedVariables(store, dotenvVars, explicit)
-}
-
-func explicitSnapshotKeys(store *owl.Store) (map[string]struct{}, error) {
-	items, err := store.Snapshot(owl.SnapshotPolicy{})
-	if err != nil {
-		return nil, err
-	}
-	keys := make(map[string]struct{}, len(items))
-	for _, item := range items {
-		if item.Explicit {
-			keys[item.Name] = struct{}{}
-		}
-	}
-	return keys, nil
-}
-
-func loadInheritedVariables(store *owl.Store, vars []owl.DotenvVariable, explicit map[string]struct{}) error {
-	type sourceVars struct {
-		source owl.Source
-		vars   []owl.DotenvVariable
-	}
-	positions := make(map[owl.Source]int)
-	groups := make([]sourceVars, 0)
-	for _, variable := range vars {
-		if _, ok := explicit[variable.Key]; ok {
-			continue
-		}
-		source := variable.Source
-		index, ok := positions[source]
-		if !ok {
-			index = len(groups)
-			positions[source] = index
-			groups = append(groups, sourceVars{source: source})
-		}
-		groups[index].vars = append(groups[index].vars, variable)
-	}
-	for _, group := range groups {
-		if err := store.LoadDotenv(group.source, group.vars); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (c *LocalStoreClient) resolverVariables() ([]owl.DotenvVariable, []owl.DotenvVariable, error) {
-	process := make([]owl.DotenvVariable, 0)
-	for _, item := range c.processEnv() {
-		key, value, ok := strings.Cut(item, "=")
-		if !ok || !isDotenvKey(key) {
-			continue
-		}
-		process = append(process, owl.DotenvVariable{
-			Key:    key,
-			Value:  value,
-			Source: owl.Source{Name: "[process]", Kind: "process"},
-		})
-	}
-	sort.SliceStable(process, func(i, j int) bool {
-		return process[i].Key < process[j].Key
-	})
-
-	var dotenvVars []owl.DotenvVariable
-	envFiles, err := filesOrDefaults(c.options.EnvFiles, ".env")
-	if err != nil {
-		return nil, nil, err
-	}
-	for _, file := range envFiles {
-		raw, err := os.ReadFile(file)
-		if err != nil {
-			return nil, nil, err
-		}
-		parsed, err := dotenv.ParseDotenvValues(raw)
-		if err != nil {
-			return nil, nil, err
-		}
-		keys := make([]string, 0, len(parsed))
-		for key := range parsed {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			dotenvVars = append(dotenvVars, owl.DotenvVariable{
-				Key:    key,
-				Value:  parsed[key],
-				Source: owl.Source{Name: file, Kind: "dotenv"},
-			})
-		}
-	}
-	return process, dotenvVars, nil
-}
-
-func (c *LocalStoreClient) processEnv() []string {
-	if c.options.ProcessEnv != nil {
-		return c.options.ProcessEnv
+func processEnvForOptions(options LocalStoreOptions) []string {
+	if options.ProcessEnv != nil {
+		return options.ProcessEnv
 	}
 	return processEnviron()
-}
-
-func processEnvDotenv(envs []string) string {
-	envs = append([]string{}, envs...)
-	sort.Strings(envs)
-	var b strings.Builder
-	for _, env := range envs {
-		key, value, ok := strings.Cut(env, "=")
-		if !ok || !isDotenvKey(key) {
-			continue
-		}
-		_, _ = b.WriteString(key)
-		_ = b.WriteByte('=')
-		_, _ = b.WriteString(strconv.Quote(value))
-		_ = b.WriteByte('\n')
-	}
-	return b.String()
-}
-
-func isDotenvKey(key string) bool {
-	if key == "" {
-		return false
-	}
-	for i, r := range key {
-		switch {
-		case r == '_':
-		case r >= 'A' && r <= 'Z':
-		case r >= 'a' && r <= 'z':
-		case i > 0 && r >= '0' && r <= '9':
-		default:
-			return false
-		}
-	}
-	return true
-}
-
-func validateNoHumanDotenvSpecs(specFiles []string) error {
-	files := specFiles
-	if len(files) == 0 {
-		files = []string{".env.sample", ".env.example", ".env.spec"}
-	}
-	for _, file := range files {
-		raw, err := os.ReadFile(file)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return err
-		}
-		if !isGeneratedDotenvSpec(raw) {
-			return errors.New("dotenv spec file exists beside Owl config; move it aside or regenerate it with owl project spec --write")
-		}
-	}
-	return nil
 }
 
 func (c *LocalStoreClient) ProjectSpec(_ context.Context, req ProjectSpecRequest) (*ProjectSpecResult, error) {

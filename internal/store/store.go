@@ -411,8 +411,8 @@ func (s *Store) ResolveSources(ctx context.Context, input ResolveSourcesInput) (
 	}
 	runner := resolver.Runner{
 		Resolvers: []resolver.Resolver{
-			builtin.ProcessResolver(catalogsFromVariables(input.Process, model.Source{Name: "[process]", Kind: "process"})...),
 			builtin.DotenvResolver(catalogsFromVariables(input.Dotenv, model.Source{Name: ".env", Kind: "dotenv"})...),
+			builtin.ProcessResolver(catalogsFromVariables(input.Process, model.Source{Name: "[process]", Kind: "process"})...),
 			builtin.NewPromptResolver(),
 		},
 		NewAttemptID: input.NewAttemptID,
