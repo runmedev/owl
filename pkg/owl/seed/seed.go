@@ -444,6 +444,9 @@ func direnvCommandEnv(unsetKeys map[string]struct{}) []string {
 	for _, item := range os.Environ() {
 		key, _, ok := strings.Cut(item, "=")
 		if ok {
+			if strings.HasPrefix(key, "DIRENV_") {
+				continue
+			}
 			if _, unset := unsetKeys[key]; unset {
 				continue
 			}
