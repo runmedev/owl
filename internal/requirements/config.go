@@ -15,8 +15,9 @@ type ConfigCompiler struct {
 	types  registry.TypeProvider
 	source model.Source
 
-	order    uint
-	seenKeys map[string]model.FieldRef
+	order          uint
+	seenKeys       map[string]model.FieldRef
+	instanceCounts map[model.TypeID]int
 }
 
 func NewConfigCompiler(types registry.TypeProvider, source model.Source) *ConfigCompiler {
@@ -30,9 +31,10 @@ func NewConfigCompiler(types registry.TypeProvider, source model.Source) *Config
 		types = registry.NewBuiltInRegistry()
 	}
 	return &ConfigCompiler{
-		types:    types,
-		source:   source,
-		seenKeys: map[string]model.FieldRef{},
+		types:          types,
+		source:         source,
+		seenKeys:       map[string]model.FieldRef{},
+		instanceCounts: map[model.TypeID]int{},
 	}
 }
 
@@ -45,6 +47,12 @@ func (c *ConfigCompiler) Compile(input model.ConfigInput) ([]store.EnvContract, 
 		return nil, nil
 	}
 
+	instanceCounts, err := c.countInstances(input)
+	if err != nil {
+		return nil, err
+	}
+	c.instanceCounts = instanceCounts
+
 	contracts := make([]store.EnvContract, 0, len(input.Needs))
 	for i, need := range input.Needs {
 		contract, err := c.compileNeed(fmt.Sprintf("needs[%d]", i), need)
@@ -54,6 +62,38 @@ func (c *ConfigCompiler) Compile(input model.ConfigInput) ([]store.EnvContract, 
 		contracts = append(contracts, contract)
 	}
 	return contracts, nil
+}
+
+func (c *ConfigCompiler) countInstances(input model.ConfigInput) (map[model.TypeID]int, error) {
+	instances := map[model.TypeID]map[string]struct{}{}
+	for i, need := range input.Needs {
+		path := fmt.Sprintf("needs[%d]", i)
+		typeRef := strings.TrimSpace(string(need.Type))
+		if typeRef == "" {
+			return nil, fmt.Errorf("%s.type: type is required", path)
+		}
+		instance := strings.TrimSpace(need.Instance)
+		if instance == "" {
+			return nil, fmt.Errorf("%s.instance: instance is required", path)
+		}
+		typeDef, ok, err := c.types.ResolveTypeRef(typeRef)
+		if err != nil {
+			return nil, fmt.Errorf("%s.type: %w", path, err)
+		}
+		if !ok {
+			return nil, fmt.Errorf("%s.type: unknown type %q", path, typeRef)
+		}
+		if instances[typeDef.ID] == nil {
+			instances[typeDef.ID] = map[string]struct{}{}
+		}
+		instances[typeDef.ID][instance] = struct{}{}
+	}
+
+	counts := make(map[model.TypeID]int, len(instances))
+	for typeID, typeInstances := range instances {
+		counts[typeID] = len(typeInstances)
+	}
+	return counts, nil
 }
 
 func (c *ConfigCompiler) compileNeed(path string, need model.NeedInput) (store.EnvContract, error) {
@@ -106,12 +146,22 @@ func (c *ConfigCompiler) compileBinding(path string, typeDef model.TypeDef, inst
 		Key:         key,
 		Projection:  model.ProjectionDotenv,
 		Required:    fieldDef.Required,
-		Description: fieldDef.Description,
+		Description: c.describeField(typeDef.ID, instance, fieldDef.Description),
 		Source:      c.source,
 		Order:       c.order,
 		Sensitivity: fieldDef.Sensitivity,
 		Exposure:    fieldDef.Exposure,
 	}, nil
+}
+
+func (c *ConfigCompiler) describeField(typeID model.TypeID, instance string, description string) string {
+	if c.instanceCounts[typeID] <= 1 {
+		return description
+	}
+	if description == "" {
+		return instance
+	}
+	return fmt.Sprintf("%s (%s)", description, instance)
 }
 
 func (c *ConfigCompiler) dotenvFieldKeys(path string, need model.NeedInput, typeDef model.TypeDef) (map[string]string, error) {

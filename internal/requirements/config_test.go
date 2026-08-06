@@ -60,6 +60,34 @@ func TestContractsFromConfigUsesPreferredKeysForDefaultInstance(t *testing.T) {
 	assert.Contains(t, byKey, "REDIS_PASSWORD")
 }
 
+func TestContractsFromConfigQualifiesDescriptionsForMultipleInstances(t *testing.T) {
+	t.Parallel()
+
+	contracts, err := ContractsFromConfig(model.ConfigInput{
+		Needs: []model.NeedInput{
+			{
+				ID:       "redis.default",
+				Type:     model.TypeUniverseRedis,
+				Instance: "default",
+			},
+			{
+				ID:       "redis.queues",
+				Type:     model.TypeUniverseRedis,
+				Instance: "queues",
+			},
+		},
+	}, model.Source{Name: "owl.toml"}, registry.NewBuiltInRegistry())
+	require.NoError(t, err)
+	require.Len(t, contracts, 2)
+
+	defaultByKey := bindingsByKey(contracts[0].Bindings)
+	assert.Equal(t, "Redis server hostname (default)", defaultByKey["REDIS_HOST"].Description)
+
+	queuesByKey := bindingsByKey(contracts[1].Bindings)
+	assert.Equal(t, "Redis server hostname (queues)", queuesByKey["QUEUES_REDIS_HOST"].Description)
+	assert.Equal(t, "Redis password (queues)", queuesByKey["QUEUES_REDIS_PASSWORD"].Description)
+}
+
 func TestContractsFromConfigAppliesDotenvOverrides(t *testing.T) {
 	t.Parallel()
 
