@@ -66,8 +66,8 @@ func NewLocalStoreClient(options LocalStoreOptions) *LocalStoreClient {
 	return &LocalStoreClient{options: options}
 }
 
-func (c *LocalStoreClient) Snapshot(_ context.Context, req SnapshotRequest) (*SnapshotResult, error) {
-	store, err := c.store()
+func (c *LocalStoreClient) Snapshot(ctx context.Context, req SnapshotRequest) (*SnapshotResult, error) {
+	store, err := c.resolvedStore(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -80,8 +80,8 @@ func (c *LocalStoreClient) Snapshot(_ context.Context, req SnapshotRequest) (*Sn
 	return &SnapshotResult{Envs: snapshotEnvsFromItems(items)}, nil
 }
 
-func (c *LocalStoreClient) Source(_ context.Context, req SourceRequest) (*SourceResult, error) {
-	store, err := c.store()
+func (c *LocalStoreClient) Source(ctx context.Context, req SourceRequest) (*SourceResult, error) {
+	store, err := c.resolvedStore(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -94,8 +94,8 @@ func (c *LocalStoreClient) Source(_ context.Context, req SourceRequest) (*Source
 	return &SourceResult{Envs: envs}, nil
 }
 
-func (c *LocalStoreClient) Check(_ context.Context, req CheckRequest) (*CheckResult, error) {
-	store, err := c.store()
+func (c *LocalStoreClient) Check(ctx context.Context, req CheckRequest) (*CheckResult, error) {
+	store, err := c.resolvedStore(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +118,7 @@ func (c *LocalStoreClient) Type(_ context.Context, req TypeRequest) (*TypeResult
 	}
 	options := c.options
 	options.SpecFiles = []string{req.SpecPath}
-	store, err := NewLocalStoreClient(options).storeWithOptions(true, false)
+	store, err := NewLocalStoreClient(options).storeWithOptions(true, false, true)
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +155,7 @@ func (c *LocalStoreClient) Type(_ context.Context, req TypeRequest) (*TypeResult
 }
 
 func (c *LocalStoreClient) Resolve(ctx context.Context, req ResolveRequest) (*ResolveResult, error) {
-	store, err := c.store()
+	store, err := c.baseStore()
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +177,7 @@ func (c *LocalStoreClient) Resolve(ctx context.Context, req ResolveRequest) (*Re
 
 func (c *LocalStoreClient) ApplyPromptAnswers(ctx context.Context, answers []PromptAnswer) (*ResolveResult, error) {
 	if c.lastStore == nil {
-		store, err := c.store()
+		store, err := c.baseStore()
 		if err != nil {
 			return nil, err
 		}
@@ -197,11 +197,30 @@ func (c *LocalStoreClient) ApplyPromptAnswers(ctx context.Context, answers []Pro
 	return resolveResultFromOwl(result), nil
 }
 
-func (c *LocalStoreClient) store() (*owl.Store, error) {
-	return c.storeWithOptions(false, true)
+func (c *LocalStoreClient) baseStore() (*owl.Store, error) {
+	return c.storeWithOptions(false, true, false)
 }
 
-func (c *LocalStoreClient) storeWithOptions(allowMissingSpec bool, loadConfig bool) (*owl.Store, error) {
+func (c *LocalStoreClient) resolvedStore(ctx context.Context) (*owl.Store, error) {
+	store, err := c.baseStore()
+	if err != nil {
+		return nil, err
+	}
+	process, dotenvVars, err := c.resolverVariables()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := store.Resolve(ctx, owl.ResolveInput{
+		Process: process,
+		Dotenv:  dotenvVars,
+		Policy:  owl.ResolvePolicy{AllowInteraction: false},
+	}); err != nil {
+		return nil, err
+	}
+	return store, nil
+}
+
+func (c *LocalStoreClient) storeWithOptions(allowMissingSpec bool, loadConfig bool, loadValues bool) (*owl.Store, error) {
 	var opts []owl.StoreOption
 
 	var configPath string
@@ -247,17 +266,19 @@ func (c *LocalStoreClient) storeWithOptions(allowMissingSpec bool, loadConfig bo
 		opts = append(opts, owl.WithEnvSpec(file, bytes.NewReader(raw)))
 	}
 
-	envFiles, err := filesOrDefaults(c.options.EnvFiles, ".env")
-	if err != nil {
-		return nil, err
-	}
-	opts = append(opts, owl.WithDotenv("[process]", strings.NewReader(processEnvDotenv(c.processEnv()))))
-	for _, file := range envFiles {
-		raw, err := os.ReadFile(file)
+	if loadValues {
+		envFiles, err := filesOrDefaults(c.options.EnvFiles, ".env")
 		if err != nil {
 			return nil, err
 		}
-		opts = append(opts, owl.WithDotenv(file, bytes.NewReader(raw)))
+		opts = append(opts, owl.WithDotenv("[process]", strings.NewReader(processEnvDotenv(c.processEnv()))))
+		for _, file := range envFiles {
+			raw, err := os.ReadFile(file)
+			if err != nil {
+				return nil, err
+			}
+			opts = append(opts, owl.WithDotenv(file, bytes.NewReader(raw)))
+		}
 	}
 
 	return owl.NewStore(opts...)

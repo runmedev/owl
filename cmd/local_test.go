@@ -33,8 +33,10 @@ func TestLocalStoreClientUsesV2StoreSemantics(t *testing.T) {
 	byName := snapshotByName(snapshot.Envs)
 
 	assert.Equal(t, "https://api.example.com", byName["API_URL"].Value)
+	assert.Equal(t, envFile, byName["API_URL"].Source)
 	assert.Equal(t, "core/plain", byName["API_URL"].Type)
 	assert.Equal(t, "[masked]", byName["API_KEY"].Value)
+	assert.Equal(t, envFile, byName["API_KEY"].Source)
 	assert.Equal(t, "core/secret", byName["API_KEY"].Type)
 	assert.Equal(t, "masked", byName["API_KEY"].Visibility)
 	assert.Equal(t, "[hidden]", byName["DATABASE_URL"].Value)
@@ -56,6 +58,13 @@ func TestLocalStoreClientUsesV2StoreSemantics(t *testing.T) {
 	assert.False(t, check.OK)
 	require.NotEmpty(t, check.Diagnostics)
 	assert.Contains(t, check.Diagnostics[len(check.Diagnostics)-1], "error dotenv.unresolved-required MISSING_TOKEN")
+
+	resolved, err := client.resolvedStore(context.Background())
+	require.NoError(t, err)
+	attempts := resolved.ResolverAttempts()
+	require.NotEmpty(t, attempts)
+	assert.Equal(t, owl.ResolverID("core/process"), attempts[0].ResolverID)
+	assert.Equal(t, owl.ResolverID("core/dotenv"), attempts[1].ResolverID)
 }
 
 func TestLocalStoreClientSnapshotRequiresRevealAndInsecureForPlaintext(t *testing.T) {
@@ -141,7 +150,7 @@ type = "github.com/runmedev/owl/types/universe/anthropic"
 	assert.Equal(t, "universe/anthropic", env.Type)
 }
 
-func TestLocalStoreClientEnvFileOverridesProcessEnvBaseline(t *testing.T) {
+func TestLocalStoreClientSnapshotUsesProcessBeforeDotenvResolver(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -158,7 +167,9 @@ func TestLocalStoreClientEnvFileOverridesProcessEnvBaseline(t *testing.T) {
 
 	snapshot, err := client.Snapshot(context.Background(), SnapshotRequest{})
 	require.NoError(t, err)
-	assert.Equal(t, "from-file", snapshotByName(snapshot.Envs)["OWL_PROCESS_OVERRIDE"].Value)
+	env := snapshotByName(snapshot.Envs)["OWL_PROCESS_OVERRIDE"]
+	assert.Equal(t, "from-process", env.Value)
+	assert.Equal(t, "[process]", env.Source)
 }
 
 func TestLocalStoreClientAutoloadsV1SpecDefaultsInOrder(t *testing.T) {
