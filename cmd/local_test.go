@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/runmedev/owl/pkg/owl"
+	"github.com/runmedev/owl/pkg/owl/seed"
 )
 
 func TestLocalStoreClientUsesV2StoreSemantics(t *testing.T) {
@@ -242,7 +243,7 @@ func TestLocalStoreClientSnapshotUsesDirenvBeforeEnvFilesAndProcess(t *testing.T
 		EnvFiles:   []string{envFile, localEnvFile},
 		SpecFiles:  []string{specFile},
 		ProcessEnv: []string{"OWL_DIRENV_OVERRIDE=from-process"},
-		Direnv:     DirenvEnabledWarn,
+		Direnv:     seed.DirenvEnabledWarn,
 		DirenvDir:  dir,
 		DirenvRunner: func(_ context.Context, gotDir string) (map[string]string, error) {
 			calls++
@@ -266,7 +267,7 @@ func TestLocalStoreClientSnapshotKeepsUntypedDirenvValuesHidden(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, ".envrc"), []byte("export OWL_DIRENV_UNTYPED=secret-ish\n"), 0o600))
 	client := NewLocalStoreClient(LocalStoreOptions{
 		ProcessEnv: []string{},
-		Direnv:     DirenvEnabledWarn,
+		Direnv:     seed.DirenvEnabledWarn,
 		DirenvDir:  dir,
 		DirenvRunner: func(context.Context, string) (map[string]string, error) {
 			return map[string]string{"OWL_DIRENV_UNTYPED": "secret-ish"}, nil
@@ -293,7 +294,7 @@ func TestLocalStoreClientSnapshotMasksContractTypedDirenvSecret(t *testing.T) {
 	client := NewLocalStoreClient(LocalStoreOptions{
 		SpecFiles:  []string{specFile},
 		ProcessEnv: []string{},
-		Direnv:     DirenvEnabledWarn,
+		Direnv:     seed.DirenvEnabledWarn,
 		DirenvDir:  dir,
 		DirenvRunner: func(context.Context, string) (map[string]string, error) {
 			return map[string]string{"OWL_DIRENV_TOKEN": "secret"}, nil
@@ -316,7 +317,7 @@ func TestLocalStoreClientDirenvWarnRecordsDiagnosticAndContinues(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, ".envrc"), []byte("bad\n"), 0o600))
 	client := NewLocalStoreClient(LocalStoreOptions{
 		ProcessEnv: []string{},
-		Direnv:     DirenvEnabledWarn,
+		Direnv:     seed.DirenvEnabledWarn,
 		DirenvDir:  dir,
 		DirenvRunner: func(context.Context, string) (map[string]string, error) {
 			return nil, assert.AnError
@@ -337,7 +338,7 @@ func TestLocalStoreClientDirenvErrorFails(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, ".envrc"), []byte("bad\n"), 0o600))
 	client := NewLocalStoreClient(LocalStoreOptions{
 		ProcessEnv: []string{},
-		Direnv:     DirenvEnabledError,
+		Direnv:     seed.DirenvEnabledError,
 		DirenvDir:  dir,
 		DirenvRunner: func(context.Context, string) (map[string]string, error) {
 			return nil, assert.AnError
@@ -353,7 +354,7 @@ func TestLocalStoreClientDirenvDisabledSkipsRunner(t *testing.T) {
 
 	client := NewLocalStoreClient(LocalStoreOptions{
 		ProcessEnv: []string{},
-		Direnv:     DirenvDisabled,
+		Direnv:     seed.DirenvDisabled,
 		DirenvRunner: func(context.Context, string) (map[string]string, error) {
 			t.Fatal("direnv runner should not run when disabled")
 			return nil, nil
@@ -396,20 +397,6 @@ func TestLocalStoreClientAutoloadsV1SpecDefaultsInOrder(t *testing.T) {
 	assert.Equal(t, "Example key", byName["EXAMPLE_KEY"].Description)
 	assert.Equal(t, "from-spec", byName["SPEC_KEY"].Value)
 	assert.Equal(t, "Spec key", byName["SPEC_KEY"].Description)
-}
-
-func TestProcessEnvDotenvQuotesValuesAndSkipsInvalidKeys(t *testing.T) {
-	t.Parallel()
-
-	rendered := processEnvDotenv([]string{
-		"OWL_SIMPLE=value",
-		"OWL_QUOTED=value with spaces\nand newline",
-		"BAD-KEY=skipped",
-	})
-
-	assert.Contains(t, rendered, "OWL_SIMPLE=\"value\"\n")
-	assert.Contains(t, rendered, "OWL_QUOTED=\"value with spaces\\nand newline\"\n")
-	assert.NotContains(t, rendered, "BAD-KEY")
 }
 
 func TestLocalStoreClientTypeProposesMissingPrimitiveTypes(t *testing.T) {
