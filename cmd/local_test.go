@@ -225,6 +225,145 @@ func TestLocalStoreClientSnapshotUsesLaterEnvFilesBeforeEarlierEnvFiles(t *testi
 	assert.Equal(t, localEnvFile, env.Source)
 }
 
+func TestLocalStoreClientSnapshotUsesDirenvBeforeEnvFilesAndProcess(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	envFile := filepath.Join(dir, ".env")
+	localEnvFile := filepath.Join(dir, ".env.local")
+	specFile := filepath.Join(dir, ".env.example")
+	require.NoError(t, os.WriteFile(envFile, []byte("OWL_DIRENV_OVERRIDE=from-env\n"), 0o600))
+	require.NoError(t, os.WriteFile(localEnvFile, []byte("OWL_DIRENV_OVERRIDE=from-env-local\n"), 0o600))
+	require.NoError(t, os.WriteFile(specFile, []byte("OWL_DIRENV_OVERRIDE=\"Direnv override\" # Plain!\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".envrc"), []byte("export OWL_DIRENV_OVERRIDE=from-direnv\n"), 0o600))
+
+	var calls int
+	client := NewLocalStoreClient(LocalStoreOptions{
+		EnvFiles:   []string{envFile, localEnvFile},
+		SpecFiles:  []string{specFile},
+		ProcessEnv: []string{"OWL_DIRENV_OVERRIDE=from-process"},
+		Direnv:     DirenvEnabledWarn,
+		DirenvDir:  dir,
+		DirenvRunner: func(_ context.Context, gotDir string) (map[string]string, error) {
+			calls++
+			assert.Equal(t, dir, gotDir)
+			return map[string]string{"OWL_DIRENV_OVERRIDE": "from-direnv"}, nil
+		},
+	})
+
+	snapshot, err := client.Snapshot(context.Background(), SnapshotRequest{})
+	require.NoError(t, err)
+	env := snapshotByName(snapshot.Envs)["OWL_DIRENV_OVERRIDE"]
+	assert.Equal(t, "from-direnv", env.Value)
+	assert.Equal(t, ".envrc", env.Source)
+	assert.Equal(t, 1, calls)
+}
+
+func TestLocalStoreClientSnapshotKeepsUntypedDirenvValuesHidden(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".envrc"), []byte("export OWL_DIRENV_UNTYPED=secret-ish\n"), 0o600))
+	client := NewLocalStoreClient(LocalStoreOptions{
+		ProcessEnv: []string{},
+		Direnv:     DirenvEnabledWarn,
+		DirenvDir:  dir,
+		DirenvRunner: func(context.Context, string) (map[string]string, error) {
+			return map[string]string{"OWL_DIRENV_UNTYPED": "secret-ish"}, nil
+		},
+	})
+
+	snapshot, err := client.Snapshot(context.Background(), SnapshotRequest{All: true})
+	require.NoError(t, err)
+	env := snapshotByName(snapshot.Envs)["OWL_DIRENV_UNTYPED"]
+	assert.Equal(t, "[hidden]", env.Value)
+	assert.Equal(t, ".envrc", env.Source)
+	assert.Equal(t, "core/opaque", env.Type)
+	assert.Equal(t, "hidden", env.Visibility)
+}
+
+func TestLocalStoreClientSnapshotMasksContractTypedDirenvSecret(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	specFile := filepath.Join(dir, ".env.example")
+	require.NoError(t, os.WriteFile(specFile, []byte("OWL_DIRENV_TOKEN=\"Direnv token\" # Secret!\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".envrc"), []byte("export OWL_DIRENV_TOKEN=secret\n"), 0o600))
+
+	client := NewLocalStoreClient(LocalStoreOptions{
+		SpecFiles:  []string{specFile},
+		ProcessEnv: []string{},
+		Direnv:     DirenvEnabledWarn,
+		DirenvDir:  dir,
+		DirenvRunner: func(context.Context, string) (map[string]string, error) {
+			return map[string]string{"OWL_DIRENV_TOKEN": "secret"}, nil
+		},
+	})
+
+	snapshot, err := client.Snapshot(context.Background(), SnapshotRequest{})
+	require.NoError(t, err)
+	env := snapshotByName(snapshot.Envs)["OWL_DIRENV_TOKEN"]
+	assert.Equal(t, "[masked]", env.Value)
+	assert.Equal(t, ".envrc", env.Source)
+	assert.Equal(t, "core/secret", env.Type)
+	assert.Equal(t, "masked", env.Visibility)
+}
+
+func TestLocalStoreClientDirenvWarnRecordsDiagnosticAndContinues(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".envrc"), []byte("bad\n"), 0o600))
+	client := NewLocalStoreClient(LocalStoreOptions{
+		ProcessEnv: []string{},
+		Direnv:     DirenvEnabledWarn,
+		DirenvDir:  dir,
+		DirenvRunner: func(context.Context, string) (map[string]string, error) {
+			return nil, assert.AnError
+		},
+	})
+
+	check, err := client.Check(context.Background(), CheckRequest{})
+	require.NoError(t, err)
+	assert.True(t, check.OK)
+	require.NotEmpty(t, check.Diagnostics)
+	assert.Contains(t, check.Diagnostics[0], "warning direnv.export")
+}
+
+func TestLocalStoreClientDirenvErrorFails(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".envrc"), []byte("bad\n"), 0o600))
+	client := NewLocalStoreClient(LocalStoreOptions{
+		ProcessEnv: []string{},
+		Direnv:     DirenvEnabledError,
+		DirenvDir:  dir,
+		DirenvRunner: func(context.Context, string) (map[string]string, error) {
+			return nil, assert.AnError
+		},
+	})
+
+	_, err := client.Snapshot(context.Background(), SnapshotRequest{})
+	require.Error(t, err)
+}
+
+func TestLocalStoreClientDirenvDisabledSkipsRunner(t *testing.T) {
+	t.Parallel()
+
+	client := NewLocalStoreClient(LocalStoreOptions{
+		ProcessEnv: []string{},
+		Direnv:     DirenvDisabled,
+		DirenvRunner: func(context.Context, string) (map[string]string, error) {
+			t.Fatal("direnv runner should not run when disabled")
+			return nil, nil
+		},
+	})
+
+	_, err := client.Snapshot(context.Background(), SnapshotRequest{})
+	require.NoError(t, err)
+}
+
 func TestLocalStoreClientAutoloadsV1SpecDefaultsInOrder(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
