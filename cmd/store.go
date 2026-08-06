@@ -549,10 +549,7 @@ func runCharmPromptInput(r io.Reader, w io.Writer, prompt PromptAction) (string,
 }
 
 func readLinePromptInput(r io.Reader, w io.Writer, prompt PromptAction) (string, error) {
-	label := prompt.Label
-	if label == "" {
-		label = prompt.ProjectionKey
-	}
+	label := promptDisplayLabel(prompt)
 	if _, err := fmt.Fprintf(w, "%s: ", label); err != nil {
 		return "", err
 	}
@@ -583,10 +580,7 @@ type promptInputModel struct {
 }
 
 func newPromptInputModel(prompt PromptAction) promptInputModel {
-	label := prompt.Label
-	if label == "" {
-		label = prompt.ProjectionKey
-	}
+	label := promptDisplayLabel(prompt)
 	input := textinput.New()
 	input.Prompt = ""
 	input.Placeholder = prompt.Description
@@ -596,6 +590,28 @@ func newPromptInputModel(prompt PromptAction) promptInputModel {
 	}
 	input.Focus()
 	return promptInputModel{label: label, input: input}
+}
+
+func promptDisplayLabel(prompt PromptAction) string {
+	key := prompt.ProjectionKey
+	if key == "" {
+		return prompt.Label
+	}
+	keyHint := shortenPromptKey(key)
+	if prompt.Label == "" || prompt.Label == key {
+		return keyHint
+	}
+	return fmt.Sprintf("%s (%s)", prompt.Label, keyHint)
+}
+
+func shortenPromptKey(key string) string {
+	const maxLen = 24
+	if len(key) <= maxLen {
+		return key
+	}
+	const prefixLen = 7
+	const suffixLen = 8
+	return key[:prefixLen] + "..." + key[len(key)-suffixLen:]
 }
 
 func (m promptInputModel) Init() tea.Cmd {

@@ -598,7 +598,19 @@ func TestCharmPromptFallsBackForPipedInput(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, "secret", value)
-	assert.Equal(t, "API key: ", out.String())
+	assert.Equal(t, "API key (API_KEY): ", out.String())
+}
+
+func TestPromptDisplayLabelShortensLongProjectionKey(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "OpenAI API key (OWL_INT..._API_KEY)", promptDisplayLabel(PromptAction{
+		ProjectionKey: "OWL_INTERACTIVE_OPENAI_API_KEY",
+		Label:         "OpenAI API key",
+	}))
+	assert.Equal(t, "API_KEY", promptDisplayLabel(PromptAction{
+		ProjectionKey: "API_KEY",
+	}))
 }
 
 type fakeStoreClient struct {
