@@ -10,7 +10,7 @@ import (
 
 	"github.com/runmedev/owl/internal/model"
 	"github.com/runmedev/owl/internal/requirements"
-	internalseed "github.com/runmedev/owl/internal/seed"
+	"github.com/runmedev/owl/internal/seed"
 	"github.com/runmedev/owl/pkg/owl"
 )
 
@@ -19,9 +19,9 @@ type LocalStoreOptions struct {
 	SpecFiles    []string
 	ConfigPath   string
 	ProcessEnv   []string
-	Direnv       internalseed.DirenvPolicy
+	Direnv       seed.DirenvPolicy
 	DirenvDir    string
-	DirenvRunner internalseed.DirenvExportRunner
+	DirenvRunner seed.DirenvExportRunner
 }
 
 type LocalStoreClient struct {
@@ -33,7 +33,7 @@ type LocalStoreClient struct {
 var processEnviron = os.Environ
 
 func NewLocalCommands() []*cobra.Command {
-	options := LocalStoreOptions{Direnv: internalseed.DirenvEnabledWarn}
+	options := LocalStoreOptions{Direnv: seed.DirenvEnabledWarn}
 
 	configureLocalFlags := func(cmd *cobra.Command) {
 		cmd.Flags().StringArrayVar(&options.EnvFiles, "env-file", nil, "Env file to load")
@@ -120,7 +120,7 @@ func (c *LocalStoreClient) Type(_ context.Context, req TypeRequest) (*TypeResult
 	}
 	options := c.options
 	options.SpecFiles = []string{req.SpecPath}
-	store, err := internalseed.NewRawValueStore(seedOptions(options), true)
+	store, err := seed.NewRawValueStore(seedOptions(options), true)
 	if err != nil {
 		return nil, err
 	}
@@ -200,10 +200,10 @@ func (c *LocalStoreClient) baseStore(ctx context.Context) (*owl.Store, error) {
 	return store, err
 }
 
-func (c *LocalStoreClient) baseStoreWithSources(ctx context.Context) (*owl.Store, internalseed.Catalog, error) {
-	result, err := internalseed.NewStore(ctx, seedOptions(c.options))
+func (c *LocalStoreClient) baseStoreWithSources(ctx context.Context) (*owl.Store, seed.Catalog, error) {
+	result, err := seed.NewStore(ctx, seedOptions(c.options))
 	if err != nil {
-		return nil, internalseed.Catalog{}, err
+		return nil, seed.Catalog{}, err
 	}
 	c.lastSourceDiagnostics = result.Diagnostics
 	return result.Store, result.Catalog, nil
@@ -227,12 +227,12 @@ func (c *LocalStoreClient) resolvedStore(ctx context.Context, interactive bool) 
 	return store, nil
 }
 
-func seedOptions(options LocalStoreOptions) internalseed.Options {
-	return internalseed.Options{
+func seedOptions(options LocalStoreOptions) seed.Options {
+	return seed.Options{
 		EnvFiles:     options.EnvFiles,
 		SpecFiles:    options.SpecFiles,
 		ConfigPath:   options.ConfigPath,
-		Observed:     []internalseed.ObservedSource{{Source: owl.Source{Name: "[process]", Kind: "process"}, Environ: processEnvForOptions(options)}},
+		Observed:     []seed.ObservedSource{{Source: owl.Source{Name: "[process]", Kind: "process"}, Environ: processEnvForOptions(options)}},
 		WorkDir:      options.DirenvDir,
 		Direnv:       options.Direnv,
 		DirenvRunner: options.DirenvRunner,
