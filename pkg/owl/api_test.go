@@ -615,7 +615,7 @@ func TestPublicAPIResolveReturnsPromptActionsAndAppliesAnswers(t *testing.T) {
 	require.NotNil(t, result.Actions[0].Prompt)
 	assert.NotEmpty(t, store.ResolverAttempts())
 	require.Len(t, store.UnresolvedFrontier().Needs, 1)
-	assert.Equal(t, "prompt", string(result.Actions[0].Type))
+	assert.Equal(t, "interactive", string(result.Actions[0].Type))
 	assert.Equal(t, "API_KEY", string(result.Actions[0].Prompt.ProjectionKey))
 	assert.Equal(t, "API key", result.Actions[0].Prompt.Label)
 	assert.True(t, result.Actions[0].Prompt.Required)
@@ -634,7 +634,7 @@ func TestPublicAPIResolveReturnsPromptActionsAndAppliesAnswers(t *testing.T) {
 	require.NoError(t, err)
 	byName := snapshotByName(snapshot)
 	assert.Equal(t, "[masked]", byName["API_KEY"].Value)
-	assert.Equal(t, "[prompt]", byName["API_KEY"].Source.Name)
+	assert.Equal(t, "[interactive]", byName["API_KEY"].Source.Name)
 	assert.Empty(t, byName["API_KEY"].Diagnostics)
 }
 

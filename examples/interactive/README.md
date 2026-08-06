@@ -11,7 +11,7 @@ owl snapshot --interactive
 ```
 
 The CLI uses Charm Bubble Tea input for the interactive value and applies the answer
-through Owl's normal resolver proposal path with `[prompt]` provenance.
+through Owl's normal resolver proposal path with `[interactive]` provenance.
 
 To inspect the generated dotenv contract:
 

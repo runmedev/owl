@@ -53,7 +53,7 @@ func TestRunnerExecutesOrderedResolversAndStopsPerNeed(t *testing.T) {
 		},
 	}
 	prompt := scriptedResolver{
-		descriptor: Descriptor{ID: "core/prompt", Capabilities: []Capability{CapabilityInteraction}},
+		descriptor: Descriptor{ID: "core/interactive", Capabilities: []Capability{CapabilityInteraction}},
 		resolve: func(_ context.Context, req Request) (Result, error) {
 			calls = append(calls, "prompt:"+string(req.Need.ProjectionKey))
 			return Result{Outcome: model.ResolverAttemptNotFound}, nil
@@ -66,7 +66,7 @@ func TestRunnerExecutesOrderedResolversAndStopsPerNeed(t *testing.T) {
 		Chain: ChainConfig{Resolvers: []ResolverConfig{
 			{ID: "core/process", Enabled: true},
 			{ID: "core/dotenv", Enabled: true},
-			{ID: "core/prompt", Enabled: true},
+			{ID: "core/interactive", Enabled: true},
 		}},
 		SourceHint: model.Source{Name: "[test]", Kind: "test"},
 	})
@@ -89,7 +89,7 @@ func TestRunnerRecordsPolicyDeniedAttemptAndContinues(t *testing.T) {
 	t.Parallel()
 
 	prompt := scriptedResolver{
-		descriptor: Descriptor{ID: "core/prompt", Capabilities: []Capability{CapabilityInteraction}},
+		descriptor: Descriptor{ID: "core/interactive", Capabilities: []Capability{CapabilityInteraction}},
 		resolve: func(context.Context, Request) (Result, error) {
 			t.Fatal("policy-denied resolver should not execute")
 			return Result{}, nil
@@ -105,7 +105,7 @@ func TestRunnerRecordsPolicyDeniedAttemptAndContinues(t *testing.T) {
 
 	require.Len(t, result.Attempts, 2)
 	assert.Equal(t, model.ResolverAttemptDeniedByOwlPolicy, result.Attempts[0].Outcome)
-	assert.Equal(t, model.ResolverID("core/prompt"), result.Attempts[0].ResolverID)
+	assert.Equal(t, model.ResolverID("core/interactive"), result.Attempts[0].ResolverID)
 	assert.Equal(t, model.ResolverAttemptResolved, result.Attempts[1].Outcome)
 	require.Len(t, result.Proposals, 1)
 }
@@ -114,7 +114,7 @@ func TestRunnerStopsNeedOnNextAction(t *testing.T) {
 	t.Parallel()
 
 	prompt := scriptedResolver{
-		descriptor: Descriptor{ID: "core/prompt", Capabilities: []Capability{CapabilityInteraction}},
+		descriptor: Descriptor{ID: "core/interactive", Capabilities: []Capability{CapabilityInteraction}},
 		resolve: func(_ context.Context, req Request) (Result, error) {
 			return Result{
 				Outcome: model.ResolverAttemptInteractionUnavailable,

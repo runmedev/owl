@@ -393,7 +393,7 @@ func TestStoreResolveRendersAttemptsAndPromptActions(t *testing.T) {
 				Outcome:       "not_found",
 			}},
 			Actions: []ResolverAction{{
-				Type: "prompt",
+				Type: "interactive",
 				Prompt: &PromptAction{
 					NeedID:        "need:API_KEY",
 					ProjectionKey: "API_KEY",
@@ -418,7 +418,7 @@ func TestStoreResolveRendersAttemptsAndPromptActions(t *testing.T) {
 	assert.False(t, client.resolveReq.Interactive)
 	assert.Contains(t, out.String(), "API_KEY")
 	assert.Contains(t, out.String(), "not_found")
-	assert.Contains(t, out.String(), "prompt")
+	assert.Contains(t, out.String(), "interactive")
 }
 
 func TestStoreResolvePromptSubmitsAnswers(t *testing.T) {
@@ -427,7 +427,7 @@ func TestStoreResolvePromptSubmitsAnswers(t *testing.T) {
 	client := &fakeStoreClient{
 		resolve: &ResolveResult{
 			Actions: []ResolverAction{{
-				Type: "prompt",
+				Type: "interactive",
 				Prompt: &PromptAction{
 					NeedID:        "need:API_KEY",
 					ProjectionKey: "API_KEY",
@@ -436,7 +436,7 @@ func TestStoreResolvePromptSubmitsAnswers(t *testing.T) {
 			}},
 		},
 		applyPromptAnswers: &ResolveResult{
-			Attempts: []ResolverAttempt{{ResolverID: "core/prompt", ProjectionKey: "API_KEY", Outcome: "resolved"}},
+			Attempts: []ResolverAttempt{{ResolverID: "core/interactive", ProjectionKey: "API_KEY", Outcome: "resolved"}},
 		},
 	}
 	cmd := NewStoreCommand(StoreCommandOptions{
@@ -472,12 +472,12 @@ func TestStoreSnapshotInteractiveSubmitsAnswersBeforeRendering(t *testing.T) {
 			Name:       "API_KEY",
 			Value:      "[masked]",
 			Type:       "core/secret",
-			Source:     "[prompt]",
+			Source:     "[interactive]",
 			Explicit:   true,
 			Visibility: "masked",
 		}}},
 		resolve: &ResolveResult{Actions: []ResolverAction{{
-			Type: "prompt",
+			Type: "interactive",
 			Prompt: &PromptAction{
 				NeedID:        "need:API_KEY",
 				ProjectionKey: "API_KEY",
@@ -485,7 +485,7 @@ func TestStoreSnapshotInteractiveSubmitsAnswersBeforeRendering(t *testing.T) {
 			},
 		}}},
 		applyPromptAnswers: &ResolveResult{
-			Attempts: []ResolverAttempt{{ResolverID: "core/prompt", ProjectionKey: "API_KEY", Outcome: "resolved"}},
+			Attempts: []ResolverAttempt{{ResolverID: "core/interactive", ProjectionKey: "API_KEY", Outcome: "resolved"}},
 		},
 	}
 	cmd := NewStoreCommand(StoreCommandOptions{
@@ -517,11 +517,11 @@ func TestStoreCheckInteractiveSubmitsAnswersBeforeChecking(t *testing.T) {
 	client := &fakeStoreClient{
 		check: &CheckResult{OK: true, Checked: 1},
 		resolve: &ResolveResult{Actions: []ResolverAction{{
-			Type:   "prompt",
+			Type:   "interactive",
 			Prompt: &PromptAction{NeedID: "need:API_KEY", ProjectionKey: "API_KEY", Label: "API key"},
 		}}},
 		applyPromptAnswers: &ResolveResult{
-			Attempts: []ResolverAttempt{{ResolverID: "core/prompt", ProjectionKey: "API_KEY", Outcome: "resolved"}},
+			Attempts: []ResolverAttempt{{ResolverID: "core/interactive", ProjectionKey: "API_KEY", Outcome: "resolved"}},
 		},
 	}
 	cmd := NewStoreCommand(StoreCommandOptions{
@@ -550,11 +550,11 @@ func TestStoreSourceInteractiveSubmitsAnswersBeforeRendering(t *testing.T) {
 	client := &fakeStoreClient{
 		source: &SourceResult{Envs: []string{"API_KEY=secret"}},
 		resolve: &ResolveResult{Actions: []ResolverAction{{
-			Type:   "prompt",
+			Type:   "interactive",
 			Prompt: &PromptAction{NeedID: "need:API_KEY", ProjectionKey: "API_KEY", Label: "API key"},
 		}}},
 		applyPromptAnswers: &ResolveResult{
-			Attempts: []ResolverAttempt{{ResolverID: "core/prompt", ProjectionKey: "API_KEY", Outcome: "resolved"}},
+			Attempts: []ResolverAttempt{{ResolverID: "core/interactive", ProjectionKey: "API_KEY", Outcome: "resolved"}},
 		},
 	}
 	cmd := NewStoreCommand(StoreCommandOptions{

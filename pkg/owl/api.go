@@ -355,13 +355,13 @@ func (s *Store) ApplyPromptAnswers(ctx context.Context, answers []PromptAnswer) 
 			ID:         newAttemptID(),
 			ResolverID: builtin.ResolverIDPrompt,
 			Outcome:    ResolverResolved,
-			Source:     Source{Name: "[prompt]", Kind: "prompt"},
+			Source:     Source{Name: "[interactive]", Kind: "interactive"},
 			StartedAt:  timestamp,
 			FinishedAt: timestamp,
 		}
 		if !ok {
 			attempt.Outcome = ResolverInvalidResult
-			attempt.Message = "prompt answer references an unknown unresolved need"
+			attempt.Message = "interactive answer references an unknown unresolved need"
 			result.Attempts = append(result.Attempts, attempt)
 			s.operations = append(s.operations, store.OperationRecord{
 				Kind:            store.OperationRecordResolverAttempt,

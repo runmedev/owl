@@ -47,8 +47,8 @@ type fakePromptResolver struct{}
 
 func (fakePromptResolver) Describe(context.Context) (Descriptor, error) {
 	return Descriptor{
-		ID:           "core/prompt",
-		Name:         "Prompt",
+		ID:           "core/interactive",
+		Name:         "Interactive",
 		Description:  "requests a value from an interactive client",
 		Capabilities: []Capability{CapabilityInteraction},
 	}, nil

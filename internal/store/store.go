@@ -456,13 +456,13 @@ func (s *Store) ApplyPromptAnswers(ctx context.Context, input ApplyPromptAnswers
 			ID:         newAttemptID(),
 			ResolverID: builtin.ResolverIDPrompt,
 			Outcome:    model.ResolverAttemptResolved,
-			Source:     model.Source{Name: "[prompt]", Kind: "prompt"},
+			Source:     model.Source{Name: "[interactive]", Kind: "interactive"},
 			StartedAt:  timestamp,
 			FinishedAt: timestamp,
 		}
 		if !ok {
 			attempt.Outcome = model.ResolverAttemptInvalidResult
-			attempt.Message = "prompt answer references an unknown unresolved need"
+			attempt.Message = "interactive answer references an unknown unresolved need"
 			if _, err := s.Apply(ctx, RecordResolverAttemptOperation{Attempt: attempt}); err != nil {
 				return result, err
 			}
@@ -972,7 +972,7 @@ func promptAttemptIDGenerator(offset int) func() model.ResolverAttemptID {
 	var next int
 	return func() model.ResolverAttemptID {
 		next++
-		return model.ResolverAttemptID(fmt.Sprintf("prompt-%06d", offset+next))
+		return model.ResolverAttemptID(fmt.Sprintf("interactive-%06d", offset+next))
 	}
 }
 

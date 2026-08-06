@@ -492,7 +492,7 @@ func renderResolve(w io.Writer, result *ResolveResult) error {
 		if action.Prompt == nil {
 			continue
 		}
-		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", action.Prompt.ProjectionKey, "core/prompt", action.Type, action.Prompt.Label); err != nil {
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", action.Prompt.ProjectionKey, "core/interactive", action.Type, action.Prompt.Label); err != nil {
 			return err
 		}
 	}
@@ -502,7 +502,7 @@ func renderResolve(w io.Writer, result *ResolveResult) error {
 func readPromptAnswers(r io.Reader, prompt io.Writer, actions []ResolverAction, promptInput PromptInputRunner) ([]PromptAnswer, error) {
 	var answers []PromptAnswer
 	for _, action := range actions {
-		if action.Prompt == nil || action.Type != "prompt" {
+		if action.Prompt == nil || action.Type != "interactive" {
 			continue
 		}
 		value, err := promptInput(r, prompt, *action.Prompt)

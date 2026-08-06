@@ -54,7 +54,7 @@ type ProposedValue struct {
 type NextActionType string
 
 const (
-	NextActionPrompt NextActionType = "prompt"
+	NextActionPrompt NextActionType = "interactive"
 )
 
 type NextAction struct {

@@ -7,7 +7,7 @@ import (
 	"github.com/runmedev/owl/internal/resolver"
 )
 
-const ResolverIDPrompt model.ResolverID = "core/prompt"
+const ResolverIDPrompt model.ResolverID = "core/interactive"
 
 type PromptResolver struct{}
 
@@ -18,7 +18,7 @@ func NewPromptResolver() PromptResolver {
 func (PromptResolver) Describe(context.Context) (resolver.Descriptor, error) {
 	return resolver.Descriptor{
 		ID:           ResolverIDPrompt,
-		Name:         "Prompt",
+		Name:         "Interactive",
 		Description:  "asks an interactive client for unresolved values",
 		Capabilities: []resolver.Capability{resolver.CapabilityInteraction},
 	}, nil
