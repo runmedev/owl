@@ -1,5 +1,0 @@
-[needs.openai.prompt]
-type = "github.com/runmedev/owl/types/universe/openai"
-
-[needs.openai.prompt.dotenv]
-apiKey = "OWL_PROMPT_OPENAI_API_KEY"

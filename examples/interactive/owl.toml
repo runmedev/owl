@@ -1,0 +1,5 @@
+[needs.openai.interactive]
+type = "github.com/runmedev/owl/types/universe/openai"
+
+[needs.openai.interactive.dotenv]
+apiKey = "OWL_INTERACTIVE_OPENAI_API_KEY"
