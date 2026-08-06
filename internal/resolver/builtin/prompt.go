@@ -32,7 +32,7 @@ func (PromptResolver) Resolve(_ context.Context, req resolver.Request) (resolver
 		return resolver.Result{Outcome: model.ResolverAttemptDeniedByOwlPolicy}, nil
 	}
 	return resolver.Result{
-		Outcome: model.ResolverAttemptInteractionUnavailable,
+		Outcome: model.ResolverAttemptActionRequired,
 		NextAction: &resolver.NextAction{
 			Type: resolver.NextActionPrompt,
 			Prompt: &resolver.PromptAction{

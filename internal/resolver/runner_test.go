@@ -117,7 +117,7 @@ func TestRunnerStopsNeedOnNextAction(t *testing.T) {
 		descriptor: Descriptor{ID: "core/interactive", Capabilities: []Capability{CapabilityInteraction}},
 		resolve: func(_ context.Context, req Request) (Result, error) {
 			return Result{
-				Outcome: model.ResolverAttemptInteractionUnavailable,
+				Outcome: model.ResolverAttemptActionRequired,
 				NextAction: &NextAction{
 					Type:   NextActionPrompt,
 					Prompt: &PromptAction{NeedID: req.Need.ID},

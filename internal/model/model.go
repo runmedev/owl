@@ -89,17 +89,17 @@ type ResolverAttemptID string
 type ResolverAttemptOutcome string
 
 const (
-	ResolverAttemptResolved               ResolverAttemptOutcome = "resolved"
-	ResolverAttemptSkipped                ResolverAttemptOutcome = "skipped"
-	ResolverAttemptNotApplicable          ResolverAttemptOutcome = "not_applicable"
-	ResolverAttemptNotFound               ResolverAttemptOutcome = "not_found"
-	ResolverAttemptDeniedByOwlPolicy      ResolverAttemptOutcome = "denied_by_owl_policy"
-	ResolverAttemptDeniedByBackend        ResolverAttemptOutcome = "denied_by_backend"
-	ResolverAttemptIdentityMissing        ResolverAttemptOutcome = "identity_missing"
-	ResolverAttemptInteractionUnavailable ResolverAttemptOutcome = "interaction_unavailable"
-	ResolverAttemptNetworkUnavailable     ResolverAttemptOutcome = "network_unavailable"
-	ResolverAttemptInvalidResult          ResolverAttemptOutcome = "invalid_result"
-	ResolverAttemptFailed                 ResolverAttemptOutcome = "failed"
+	ResolverAttemptResolved           ResolverAttemptOutcome = "resolved"
+	ResolverAttemptSkipped            ResolverAttemptOutcome = "skipped"
+	ResolverAttemptNotApplicable      ResolverAttemptOutcome = "not_applicable"
+	ResolverAttemptNotFound           ResolverAttemptOutcome = "not_found"
+	ResolverAttemptDeniedByOwlPolicy  ResolverAttemptOutcome = "denied_by_owl_policy"
+	ResolverAttemptDeniedByBackend    ResolverAttemptOutcome = "denied_by_backend"
+	ResolverAttemptIdentityMissing    ResolverAttemptOutcome = "identity_missing"
+	ResolverAttemptActionRequired     ResolverAttemptOutcome = "action_required"
+	ResolverAttemptNetworkUnavailable ResolverAttemptOutcome = "network_unavailable"
+	ResolverAttemptInvalidResult      ResolverAttemptOutcome = "invalid_result"
+	ResolverAttemptFailed             ResolverAttemptOutcome = "failed"
 )
 
 type ResolverAttempt struct {

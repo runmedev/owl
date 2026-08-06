@@ -82,17 +82,17 @@ const (
 	DiagnosticWarning = model.DiagnosticWarning
 	DiagnosticError   = model.DiagnosticError
 
-	ResolverResolved               = model.ResolverAttemptResolved
-	ResolverSkipped                = model.ResolverAttemptSkipped
-	ResolverNotApplicable          = model.ResolverAttemptNotApplicable
-	ResolverNotFound               = model.ResolverAttemptNotFound
-	ResolverDeniedByOwlPolicy      = model.ResolverAttemptDeniedByOwlPolicy
-	ResolverDeniedByBackend        = model.ResolverAttemptDeniedByBackend
-	ResolverIdentityMissing        = model.ResolverAttemptIdentityMissing
-	ResolverInteractionUnavailable = model.ResolverAttemptInteractionUnavailable
-	ResolverNetworkUnavailable     = model.ResolverAttemptNetworkUnavailable
-	ResolverInvalidResult          = model.ResolverAttemptInvalidResult
-	ResolverFailed                 = model.ResolverAttemptFailed
+	ResolverResolved           = model.ResolverAttemptResolved
+	ResolverSkipped            = model.ResolverAttemptSkipped
+	ResolverNotApplicable      = model.ResolverAttemptNotApplicable
+	ResolverNotFound           = model.ResolverAttemptNotFound
+	ResolverDeniedByOwlPolicy  = model.ResolverAttemptDeniedByOwlPolicy
+	ResolverDeniedByBackend    = model.ResolverAttemptDeniedByBackend
+	ResolverIdentityMissing    = model.ResolverAttemptIdentityMissing
+	ResolverActionRequired     = model.ResolverAttemptActionRequired
+	ResolverNetworkUnavailable = model.ResolverAttemptNetworkUnavailable
+	ResolverInvalidResult      = model.ResolverAttemptInvalidResult
+	ResolverFailed             = model.ResolverAttemptFailed
 
 	UnresolvedMissing = model.UnresolvedReasonMissing
 	UnresolvedInvalid = model.UnresolvedReasonInvalid

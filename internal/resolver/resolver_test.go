@@ -59,7 +59,7 @@ func (fakePromptResolver) Resolve(_ context.Context, req Request) (Result, error
 		return Result{Outcome: model.ResolverAttemptDeniedByOwlPolicy}, nil
 	}
 	return Result{
-		Outcome: model.ResolverAttemptInteractionUnavailable,
+		Outcome: model.ResolverAttemptActionRequired,
 		NextAction: &NextAction{
 			Type:   NextActionPrompt,
 			Prompt: &PromptAction{NeedID: req.Need.ID},
@@ -138,7 +138,7 @@ func TestPromptResolverCanReturnNextAction(t *testing.T) {
 
 	require.NotNil(t, result.NextAction)
 	require.NotNil(t, result.NextAction.Prompt)
-	assert.Equal(t, model.ResolverAttemptInteractionUnavailable, result.Outcome)
+	assert.Equal(t, model.ResolverAttemptActionRequired, result.Outcome)
 	assert.Equal(t, NextActionPrompt, result.NextAction.Type)
 	assert.Equal(t, need.ID, result.NextAction.Prompt.NeedID)
 }
