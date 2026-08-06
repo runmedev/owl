@@ -198,7 +198,14 @@ func (c *LocalStoreClient) ApplyPromptAnswers(ctx context.Context, answers []Pro
 }
 
 func (c *LocalStoreClient) baseStore() (*owl.Store, error) {
-	return c.storeWithOptions(false, true, false)
+	store, err := c.storeWithOptions(false, true, false)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.loadInheritedSourceValues(store); err != nil {
+		return nil, err
+	}
+	return store, nil
 }
 
 func (c *LocalStoreClient) resolvedStore(ctx context.Context, interactive bool) (*owl.Store, error) {
@@ -285,6 +292,63 @@ func (c *LocalStoreClient) storeWithOptions(allowMissingSpec bool, loadConfig bo
 	}
 
 	return owl.NewStore(opts...)
+}
+
+func (c *LocalStoreClient) loadInheritedSourceValues(store *owl.Store) error {
+	explicit, err := explicitSnapshotKeys(store)
+	if err != nil {
+		return err
+	}
+	process, dotenvVars, err := c.resolverVariables()
+	if err != nil {
+		return err
+	}
+	if err := loadInheritedVariables(store, process, explicit); err != nil {
+		return err
+	}
+	return loadInheritedVariables(store, dotenvVars, explicit)
+}
+
+func explicitSnapshotKeys(store *owl.Store) (map[string]struct{}, error) {
+	items, err := store.Snapshot(owl.SnapshotPolicy{})
+	if err != nil {
+		return nil, err
+	}
+	keys := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		if item.Explicit {
+			keys[item.Name] = struct{}{}
+		}
+	}
+	return keys, nil
+}
+
+func loadInheritedVariables(store *owl.Store, vars []owl.DotenvVariable, explicit map[string]struct{}) error {
+	type sourceVars struct {
+		source owl.Source
+		vars   []owl.DotenvVariable
+	}
+	positions := make(map[owl.Source]int)
+	groups := make([]sourceVars, 0)
+	for _, variable := range vars {
+		if _, ok := explicit[variable.Key]; ok {
+			continue
+		}
+		source := variable.Source
+		index, ok := positions[source]
+		if !ok {
+			index = len(groups)
+			positions[source] = index
+			groups = append(groups, sourceVars{source: source})
+		}
+		groups[index].vars = append(groups[index].vars, variable)
+	}
+	for _, group := range groups {
+		if err := store.LoadDotenv(group.source, group.vars); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *LocalStoreClient) resolverVariables() ([]owl.DotenvVariable, []owl.DotenvVariable, error) {

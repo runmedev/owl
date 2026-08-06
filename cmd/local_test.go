@@ -124,6 +124,36 @@ func TestLocalStoreClientSeedsProcessEnvBaseline(t *testing.T) {
 	assert.True(t, check.OK)
 }
 
+func TestLocalStoreClientSnapshotAllIncludesInheritedProcessEnv(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	specFile := filepath.Join(dir, ".env.example")
+	require.NoError(t, os.WriteFile(specFile, []byte("API_KEY=\"API key\" # Secret!\n"), 0o600))
+
+	client := NewLocalStoreClient(LocalStoreOptions{
+		SpecFiles: []string{specFile},
+		ProcessEnv: []string{
+			"API_KEY=from-process",
+			"UNBOUND_PROCESS_ENV=from-process",
+		},
+	})
+
+	snapshot, err := client.Snapshot(context.Background(), SnapshotRequest{All: true})
+	require.NoError(t, err)
+	byName := snapshotByName(snapshot.Envs)
+
+	assert.Equal(t, "[masked]", byName["API_KEY"].Value)
+	assert.Equal(t, "core/secret", byName["API_KEY"].Type)
+	assert.True(t, byName["API_KEY"].Explicit)
+	assert.Equal(t, "[process]", byName["API_KEY"].Source)
+
+	assert.Equal(t, "[hidden]", byName["UNBOUND_PROCESS_ENV"].Value)
+	assert.Equal(t, "core/opaque", byName["UNBOUND_PROCESS_ENV"].Type)
+	assert.False(t, byName["UNBOUND_PROCESS_ENV"].Explicit)
+	assert.Equal(t, "[process]", byName["UNBOUND_PROCESS_ENV"].Source)
+}
+
 func TestLocalStoreClientConfigSnapshotMasksSensitiveProviderFields(t *testing.T) {
 	t.Parallel()
 
