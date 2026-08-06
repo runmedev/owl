@@ -109,6 +109,20 @@ echo '{"CACHE_REDIS_HOST":"from-direnv"}'
 	assert.Equal(t, "from-direnv", values["CACHE_REDIS_HOST"])
 }
 
+func TestRunDirenvExportJSONParsesJSONAfterStdoutLogs(t *testing.T) {
+	binDir := t.TempDir()
+	writeFakeDirenv(t, binDir, `#!/bin/sh
+echo "direnv: loading .envrc"
+echo "direnv: export +CACHE_REDIS_HOST"
+echo '{"CACHE_REDIS_HOST":"from-direnv"}'
+`)
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	values, err := RunDirenvExportJSON(context.Background(), t.TempDir())
+	require.NoError(t, err)
+	assert.Equal(t, "from-direnv", values["CACHE_REDIS_HOST"])
+}
+
 func TestRunDirenvExportJSONTreatsBlockedEnvrcAsError(t *testing.T) {
 	binDir := t.TempDir()
 	writeFakeDirenv(t, binDir, `#!/bin/sh

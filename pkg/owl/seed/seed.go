@@ -380,6 +380,7 @@ func direnvDiagnostic(code string, err error) owl.Diagnostic {
 func RunDirenvExportJSON(ctx context.Context, dir string) (map[string]string, error) {
 	cmd := exec.CommandContext(ctx, "direnv", "export", "json")
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "DIRENV_LOG_FORMAT=")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	raw, err := cmd.Output()
@@ -393,6 +394,13 @@ func RunDirenvExportJSON(ctx context.Context, dir string) (map[string]string, er
 	if msg := strings.TrimSpace(stderr.String()); strings.Contains(msg, "direnv: error") {
 		return nil, errors.New(msg)
 	}
+	if msg := strings.TrimSpace(string(raw)); strings.Contains(msg, "direnv: error") {
+		return nil, errors.New(msg)
+	}
+	raw, err = extractJSONObject(raw)
+	if err != nil {
+		return nil, err
+	}
 	var decoded map[string]*string
 	if err := json.Unmarshal(raw, &decoded); err != nil {
 		return nil, err
@@ -405,6 +413,15 @@ func RunDirenvExportJSON(ctx context.Context, dir string) (map[string]string, er
 		values[key] = *value
 	}
 	return values, nil
+}
+
+func extractJSONObject(raw []byte) ([]byte, error) {
+	start := bytes.IndexByte(raw, '{')
+	end := bytes.LastIndexByte(raw, '}')
+	if start < 0 || end < start {
+		return nil, errors.New("direnv export json did not include a JSON object")
+	}
+	return raw[start : end+1], nil
 }
 
 func reverseSourceGroups(vars []owl.DotenvVariable) []owl.DotenvVariable {
