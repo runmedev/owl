@@ -29,7 +29,7 @@ func (PromptResolver) Resolve(_ context.Context, req resolver.Request) (resolver
 		return resolver.Result{Outcome: model.ResolverAttemptNotApplicable}, nil
 	}
 	if !req.Policy.AllowInteraction {
-		return resolver.Result{Outcome: model.ResolverAttemptDeniedByOwlPolicy}, nil
+		return resolver.Result{Outcome: model.ResolverAttemptDeniedByPolicy}, nil
 	}
 	return resolver.Result{
 		Outcome: model.ResolverAttemptActionRequired,

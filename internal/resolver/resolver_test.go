@@ -56,7 +56,7 @@ func (fakePromptResolver) Describe(context.Context) (Descriptor, error) {
 
 func (fakePromptResolver) Resolve(_ context.Context, req Request) (Result, error) {
 	if !req.Policy.AllowInteraction {
-		return Result{Outcome: model.ResolverAttemptDeniedByOwlPolicy}, nil
+		return Result{Outcome: model.ResolverAttemptDeniedByPolicy}, nil
 	}
 	return Result{
 		Outcome: model.ResolverAttemptActionRequired,
@@ -121,7 +121,7 @@ func TestPromptResolverCanBeBlockedByPolicy(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	assert.Equal(t, model.ResolverAttemptDeniedByOwlPolicy, result.Outcome)
+	assert.Equal(t, model.ResolverAttemptDeniedByPolicy, result.Outcome)
 	assert.Nil(t, result.NextAction)
 }
 

@@ -85,7 +85,7 @@ func (r Runner) Resolve(ctx context.Context, req RunRequest) (RunResult, error) 
 				StartedAt:     startedAt,
 			}
 			if !policyAllows(req.Policy, item.descriptor) {
-				attempt.Outcome = model.ResolverAttemptDeniedByOwlPolicy
+				attempt.Outcome = model.ResolverAttemptDeniedByPolicy
 				attempt.FinishedAt = clock()
 				result.Attempts = append(result.Attempts, attempt)
 				continue

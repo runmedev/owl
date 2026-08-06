@@ -104,7 +104,7 @@ func TestRunnerRecordsPolicyDeniedAttemptAndContinues(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Len(t, result.Attempts, 2)
-	assert.Equal(t, model.ResolverAttemptDeniedByOwlPolicy, result.Attempts[0].Outcome)
+	assert.Equal(t, model.ResolverAttemptDeniedByPolicy, result.Attempts[0].Outcome)
 	assert.Equal(t, model.ResolverID("core/interactive"), result.Attempts[0].ResolverID)
 	assert.Equal(t, model.ResolverAttemptResolved, result.Attempts[1].Outcome)
 	require.Len(t, result.Proposals, 1)
