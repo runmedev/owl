@@ -123,6 +123,23 @@ echo '{"CACHE_REDIS_HOST":"from-direnv"}'
 	assert.Equal(t, "from-direnv", values["CACHE_REDIS_HOST"])
 }
 
+func TestRunDirenvExportJSONUnsetsKnownProjectionKeys(t *testing.T) {
+	binDir := t.TempDir()
+	writeFakeDirenv(t, binDir, `#!/bin/sh
+if [ -n "$CACHE_REDIS_HOST" ]; then
+  echo '{}'
+else
+  echo '{"CACHE_REDIS_HOST":"from-direnv"}'
+fi
+`)
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("CACHE_REDIS_HOST", "from-process")
+
+	values, err := runDirenvExportJSON(context.Background(), t.TempDir(), map[string]struct{}{"CACHE_REDIS_HOST": {}})
+	require.NoError(t, err)
+	assert.Equal(t, "from-direnv", values["CACHE_REDIS_HOST"])
+}
+
 func TestRunDirenvExportJSONTreatsBlockedEnvrcAsError(t *testing.T) {
 	binDir := t.TempDir()
 	writeFakeDirenv(t, binDir, `#!/bin/sh

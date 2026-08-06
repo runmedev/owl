@@ -88,7 +88,7 @@ func NewStore(ctx context.Context, opts Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	catalog, diagnostics, err := BuildCatalog(ctx, opts)
+	catalog, diagnostics, err := buildCatalog(ctx, opts, projectionKeys(store))
 	if err != nil {
 		return nil, err
 	}
@@ -109,12 +109,16 @@ func NewValueStore(opts Options, allowMissingSpec bool) (*owl.Store, error) {
 
 // BuildCatalog discovers candidate values without creating or mutating a store.
 func BuildCatalog(ctx context.Context, opts Options) (Catalog, []owl.Diagnostic, error) {
+	return buildCatalog(ctx, opts, nil)
+}
+
+func buildCatalog(ctx context.Context, opts Options, direnvKeys map[string]struct{}) (Catalog, []owl.Diagnostic, error) {
 	observed := observedVariables(opts.Observed)
 	dotenvVars, err := dotenvVariables(opts)
 	if err != nil {
 		return Catalog{}, nil, err
 	}
-	direnvVars, diagnostics, err := direnvVariables(ctx, opts)
+	direnvVars, diagnostics, err := direnvVariables(ctx, opts, direnvKeys)
 	if err != nil {
 		return Catalog{}, diagnostics, err
 	}
@@ -320,7 +324,21 @@ func dotenvVariables(opts Options) ([]owl.DotenvVariable, error) {
 	return vars, nil
 }
 
-func direnvVariables(ctx context.Context, opts Options) ([]owl.DotenvVariable, []owl.Diagnostic, error) {
+func projectionKeys(store *owl.Store) map[string]struct{} {
+	items, err := store.Snapshot(owl.SnapshotPolicy{})
+	if err != nil {
+		return nil
+	}
+	keys := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		if item.Name != "" {
+			keys[item.Name] = struct{}{}
+		}
+	}
+	return keys
+}
+
+func direnvVariables(ctx context.Context, opts Options, direnvKeys map[string]struct{}) ([]owl.DotenvVariable, []owl.Diagnostic, error) {
 	policy := opts.Direnv
 	if policy == "" {
 		policy = DirenvDisabled
@@ -339,7 +357,9 @@ func direnvVariables(ctx context.Context, opts Options) ([]owl.DotenvVariable, [
 	}
 	runner := opts.DirenvRunner
 	if runner == nil {
-		runner = RunDirenvExportJSON
+		runner = func(ctx context.Context, dir string) (map[string]string, error) {
+			return runDirenvExportJSON(ctx, dir, direnvKeys)
+		}
 	}
 	values, err := runner(ctx, dir)
 	if err != nil {
@@ -378,9 +398,13 @@ func direnvDiagnostic(code string, err error) owl.Diagnostic {
 
 // RunDirenvExportJSON runs direnv export json in dir and returns non-null values.
 func RunDirenvExportJSON(ctx context.Context, dir string) (map[string]string, error) {
+	return runDirenvExportJSON(ctx, dir, nil)
+}
+
+func runDirenvExportJSON(ctx context.Context, dir string, unsetKeys map[string]struct{}) (map[string]string, error) {
 	cmd := exec.CommandContext(ctx, "direnv", "export", "json")
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "DIRENV_LOG_FORMAT=")
+	cmd.Env = direnvCommandEnv(unsetKeys)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	raw, err := cmd.Output()
@@ -413,6 +437,20 @@ func RunDirenvExportJSON(ctx context.Context, dir string) (map[string]string, er
 		values[key] = *value
 	}
 	return values, nil
+}
+
+func direnvCommandEnv(unsetKeys map[string]struct{}) []string {
+	env := make([]string, 0, len(os.Environ())+1)
+	for _, item := range os.Environ() {
+		key, _, ok := strings.Cut(item, "=")
+		if ok {
+			if _, unset := unsetKeys[key]; unset {
+				continue
+			}
+		}
+		env = append(env, item)
+	}
+	return append(env, "DIRENV_LOG_FORMAT=")
 }
 
 func extractJSONObject(raw []byte) ([]byte, error) {
