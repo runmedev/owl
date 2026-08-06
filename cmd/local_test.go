@@ -33,8 +33,10 @@ func TestLocalStoreClientUsesV2StoreSemantics(t *testing.T) {
 	byName := snapshotByName(snapshot.Envs)
 
 	assert.Equal(t, "https://api.example.com", byName["API_URL"].Value)
+	assert.Equal(t, envFile, byName["API_URL"].Source)
 	assert.Equal(t, "core/plain", byName["API_URL"].Type)
 	assert.Equal(t, "[masked]", byName["API_KEY"].Value)
+	assert.Equal(t, envFile, byName["API_KEY"].Source)
 	assert.Equal(t, "core/secret", byName["API_KEY"].Type)
 	assert.Equal(t, "masked", byName["API_KEY"].Visibility)
 	assert.Equal(t, "[hidden]", byName["DATABASE_URL"].Value)
@@ -56,6 +58,13 @@ func TestLocalStoreClientUsesV2StoreSemantics(t *testing.T) {
 	assert.False(t, check.OK)
 	require.NotEmpty(t, check.Diagnostics)
 	assert.Contains(t, check.Diagnostics[len(check.Diagnostics)-1], "error dotenv.unresolved-required MISSING_TOKEN")
+
+	resolved, err := client.resolvedStore(context.Background(), false)
+	require.NoError(t, err)
+	attempts := resolved.ResolverAttempts()
+	require.NotEmpty(t, attempts)
+	assert.Equal(t, owl.ResolverID("core/process"), attempts[0].ResolverID)
+	assert.Equal(t, owl.ResolverID("core/dotenv"), attempts[1].ResolverID)
 }
 
 func TestLocalStoreClientSnapshotRequiresRevealAndInsecureForPlaintext(t *testing.T) {
@@ -115,6 +124,36 @@ func TestLocalStoreClientSeedsProcessEnvBaseline(t *testing.T) {
 	assert.True(t, check.OK)
 }
 
+func TestLocalStoreClientSnapshotAllIncludesInheritedProcessEnv(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	specFile := filepath.Join(dir, ".env.example")
+	require.NoError(t, os.WriteFile(specFile, []byte("API_KEY=\"API key\" # Secret!\n"), 0o600))
+
+	client := NewLocalStoreClient(LocalStoreOptions{
+		SpecFiles: []string{specFile},
+		ProcessEnv: []string{
+			"API_KEY=from-process",
+			"UNBOUND_PROCESS_ENV=from-process",
+		},
+	})
+
+	snapshot, err := client.Snapshot(context.Background(), SnapshotRequest{All: true})
+	require.NoError(t, err)
+	byName := snapshotByName(snapshot.Envs)
+
+	assert.Equal(t, "[masked]", byName["API_KEY"].Value)
+	assert.Equal(t, "core/secret", byName["API_KEY"].Type)
+	assert.True(t, byName["API_KEY"].Explicit)
+	assert.Equal(t, "[process]", byName["API_KEY"].Source)
+
+	assert.Equal(t, "[hidden]", byName["UNBOUND_PROCESS_ENV"].Value)
+	assert.Equal(t, "core/opaque", byName["UNBOUND_PROCESS_ENV"].Type)
+	assert.False(t, byName["UNBOUND_PROCESS_ENV"].Explicit)
+	assert.Equal(t, "[process]", byName["UNBOUND_PROCESS_ENV"].Source)
+}
+
 func TestLocalStoreClientConfigSnapshotMasksSensitiveProviderFields(t *testing.T) {
 	t.Parallel()
 
@@ -141,7 +180,7 @@ type = "github.com/runmedev/owl/types/universe/anthropic"
 	assert.Equal(t, "universe/anthropic", env.Type)
 }
 
-func TestLocalStoreClientEnvFileOverridesProcessEnvBaseline(t *testing.T) {
+func TestLocalStoreClientSnapshotUsesProcessBeforeDotenvResolver(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -158,7 +197,9 @@ func TestLocalStoreClientEnvFileOverridesProcessEnvBaseline(t *testing.T) {
 
 	snapshot, err := client.Snapshot(context.Background(), SnapshotRequest{})
 	require.NoError(t, err)
-	assert.Equal(t, "from-file", snapshotByName(snapshot.Envs)["OWL_PROCESS_OVERRIDE"].Value)
+	env := snapshotByName(snapshot.Envs)["OWL_PROCESS_OVERRIDE"]
+	assert.Equal(t, "from-process", env.Value)
+	assert.Equal(t, "[process]", env.Source)
 }
 
 func TestLocalStoreClientAutoloadsV1SpecDefaultsInOrder(t *testing.T) {

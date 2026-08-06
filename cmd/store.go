@@ -1,13 +1,17 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 	"text/tabwriter"
 
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
@@ -17,6 +21,8 @@ type StoreClient interface {
 	Source(context.Context, SourceRequest) (*SourceResult, error)
 	Check(context.Context, CheckRequest) (*CheckResult, error)
 	Type(context.Context, TypeRequest) (*TypeResult, error)
+	Resolve(context.Context, ResolveRequest) (*ResolveResult, error)
+	ApplyPromptAnswers(context.Context, []PromptAnswer) (*ResolveResult, error)
 	ProjectSpec(context.Context, ProjectSpecRequest) (*ProjectSpecResult, error)
 }
 
@@ -26,17 +32,22 @@ type StoreCommandOptions struct {
 	ConfigureSourceCommand     func(*cobra.Command)
 	ConfigureCheckCommand      func(*cobra.Command)
 	ConfigureTypeCommand       func(*cobra.Command)
+	ConfigureResolveCommand    func(*cobra.Command)
 	ConfigureProjectCommand    func(*cobra.Command)
+	PromptInput                PromptInputRunner
 	Hidden                     bool
 	InsecureModeEnabled        func() bool
 	DefineSnapshotInsecureFlag bool
 }
 
+type PromptInputRunner func(io.Reader, io.Writer, PromptAction) (string, error)
+
 type SnapshotRequest struct {
-	Limit    int
-	Reveal   bool
-	All      bool
-	Insecure bool
+	Limit       int
+	Reveal      bool
+	All         bool
+	Insecure    bool
+	Interactive bool
 }
 
 type SnapshotResult struct {
@@ -57,8 +68,9 @@ type SnapshotEnv struct {
 }
 
 type SourceRequest struct {
-	Export   bool
-	Insecure bool
+	Export      bool
+	Insecure    bool
+	Interactive bool
 }
 
 type SourceResult struct {
@@ -66,7 +78,8 @@ type SourceResult struct {
 }
 
 type CheckRequest struct {
-	Details bool
+	Details     bool
+	Interactive bool
 }
 
 type CheckResult struct {
@@ -86,6 +99,42 @@ type TypeRequest struct {
 type TypeResult struct {
 	Proposals []TypeProposal
 	Rendered  string
+}
+
+type ResolveRequest struct {
+	Interactive bool
+}
+
+type ResolveResult struct {
+	Attempts []ResolverAttempt
+	Actions  []ResolverAction
+}
+
+type ResolverAttempt struct {
+	ResolverID    string
+	ProjectionKey string
+	Outcome       string
+	Message       string
+}
+
+type ResolverAction struct {
+	Type   string
+	Prompt *PromptAction
+}
+
+type PromptAction struct {
+	NeedID        string
+	ProjectionKey string
+	Label         string
+	Description   string
+	Sensitive     bool
+	Required      bool
+	AllowEmpty    bool
+}
+
+type PromptAnswer struct {
+	NeedID string
+	Value  string
 }
 
 type ProjectSpecRequest struct {
@@ -135,6 +184,7 @@ func NewStoreCommands(opts StoreCommandOptions) []*cobra.Command {
 		newSourceCommand(opts),
 		newCheckCommand(opts),
 		newTypeCommand(opts),
+		newResolveCommand(opts),
 	}
 }
 
@@ -158,6 +208,9 @@ func newSnapshotCommand(opts StoreCommandOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := resolveInteractively(cmd, opts, client, req.Interactive); err != nil {
+				return err
+			}
 
 			result, err := client.Snapshot(cmd.Context(), req)
 			if err != nil {
@@ -177,6 +230,7 @@ func newSnapshotCommand(opts StoreCommandOptions) *cobra.Command {
 	cmd.Flags().IntVar(&req.Limit, "limit", 50, "Limit the number of lines")
 	cmd.Flags().BoolVarP(&req.All, "all", "A", false, "Show all lines")
 	cmd.Flags().BoolVarP(&req.Reveal, "reveal", "r", false, "Reveal hidden values")
+	cmd.Flags().BoolVar(&req.Interactive, "interactive", false, "Interactively resolve unresolved values")
 	if opts.DefineSnapshotInsecureFlag {
 		cmd.Flags().BoolVar(&req.Insecure, "insecure", false, "Explicitly allow revealing hidden values")
 	}
@@ -203,6 +257,9 @@ func newSourceCommand(opts StoreCommandOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := resolveInteractively(cmd, opts, client, req.Interactive); err != nil {
+				return err
+			}
 
 			result, err := client.Source(cmd.Context(), req)
 			if err != nil {
@@ -215,6 +272,7 @@ func newSourceCommand(opts StoreCommandOptions) *cobra.Command {
 
 	cmd.Flags().BoolVarP(&req.Export, "export", "", false, "export variables")
 	cmd.Flags().BoolVar(&req.Insecure, "insecure", false, "Explicitly allow delicate operations to prevent misuse")
+	cmd.Flags().BoolVar(&req.Interactive, "interactive", false, "Interactively resolve unresolved values")
 	if opts.ConfigureSourceCommand != nil {
 		opts.ConfigureSourceCommand(&cmd)
 	}
@@ -233,6 +291,9 @@ func newCheckCommand(opts StoreCommandOptions) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := opts.client(cmd)
 			if err != nil {
+				return err
+			}
+			if err := resolveInteractively(cmd, opts, client, req.Interactive); err != nil {
 				return err
 			}
 
@@ -257,6 +318,7 @@ func newCheckCommand(opts StoreCommandOptions) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&req.Details, "details", false, "Show detailed validation errors")
+	cmd.Flags().BoolVar(&req.Interactive, "interactive", false, "Interactively resolve unresolved values")
 	if opts.ConfigureCheckCommand != nil {
 		opts.ConfigureCheckCommand(&cmd)
 	}
@@ -306,11 +368,98 @@ func newTypeCommand(opts StoreCommandOptions) *cobra.Command {
 	return &cmd
 }
 
+func newResolveCommand(opts StoreCommandOptions) *cobra.Command {
+	var req ResolveRequest
+
+	cmd := cobra.Command{
+		Hidden: opts.Hidden,
+		Use:    "resolve",
+		Short:  "Resolve missing environment values",
+		Long:   "Resolve missing environment values.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := opts.client(cmd)
+			if err != nil {
+				return err
+			}
+			result, err := client.Resolve(cmd.Context(), req)
+			if err != nil {
+				return err
+			}
+			if !req.Interactive {
+				return renderResolve(cmd.OutOrStdout(), result)
+			}
+			promptInput := opts.PromptInput
+			if promptInput == nil {
+				promptInput = runCharmPromptInput
+			}
+			answers, err := readPromptAnswers(cmd.InOrStdin(), cmd.ErrOrStderr(), result.Actions, promptInput)
+			if err != nil {
+				return err
+			}
+			if len(answers) == 0 {
+				return renderResolve(cmd.OutOrStdout(), result)
+			}
+			applied, err := client.ApplyPromptAnswers(cmd.Context(), answers)
+			if err != nil {
+				return err
+			}
+			if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "\nresolved %d interactive values\n", len(applied.Attempts)); err != nil {
+				return err
+			}
+			return renderResolve(cmd.OutOrStdout(), mergeResolveAttempts(result, applied))
+		},
+	}
+
+	cmd.Flags().BoolVar(&req.Interactive, "interactive", false, "Interactively resolve unresolved values")
+	if opts.ConfigureResolveCommand != nil {
+		opts.ConfigureResolveCommand(&cmd)
+	}
+
+	return &cmd
+}
+
+func mergeResolveAttempts(first, second *ResolveResult) *ResolveResult {
+	if first == nil {
+		return second
+	}
+	if second == nil {
+		return first
+	}
+	merged := &ResolveResult{
+		Attempts: append([]ResolverAttempt{}, first.Attempts...),
+	}
+	merged.Attempts = append(merged.Attempts, second.Attempts...)
+	return merged
+}
+
 func (opts StoreCommandOptions) client(cmd *cobra.Command) (StoreClient, error) {
 	if opts.ClientFactory == nil {
 		return nil, errors.New("store client factory is required")
 	}
 	return opts.ClientFactory(cmd)
+}
+
+func resolveInteractively(cmd *cobra.Command, opts StoreCommandOptions, client StoreClient, interactive bool) error {
+	if !interactive {
+		return nil
+	}
+	result, err := client.Resolve(cmd.Context(), ResolveRequest{Interactive: true})
+	if err != nil {
+		return err
+	}
+	promptInput := opts.PromptInput
+	if promptInput == nil {
+		promptInput = runCharmPromptInput
+	}
+	answers, err := readPromptAnswers(cmd.InOrStdin(), cmd.ErrOrStderr(), result.Actions, promptInput)
+	if err != nil {
+		return err
+	}
+	if len(answers) == 0 {
+		return nil
+	}
+	_, err = client.ApplyPromptAnswers(cmd.Context(), answers)
+	return err
 }
 
 func renderSnapshot(w io.Writer, result *SnapshotResult, req SnapshotRequest) error {
@@ -341,6 +490,166 @@ func renderSnapshot(w io.Writer, result *SnapshotResult, req SnapshotRequest) er
 	}
 
 	return tw.Flush()
+}
+
+func renderResolve(w io.Writer, result *ResolveResult) error {
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	if _, err := fmt.Fprintln(tw, "KEY\tRESOLVER\tOUTCOME\tMESSAGE"); err != nil {
+		return err
+	}
+	for _, attempt := range result.Attempts {
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", attempt.ProjectionKey, attempt.ResolverID, attempt.Outcome, attempt.Message); err != nil {
+			return err
+		}
+	}
+	for _, action := range result.Actions {
+		if action.Prompt == nil {
+			continue
+		}
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", action.Prompt.ProjectionKey, "core/interactive", action.Type, action.Prompt.Label); err != nil {
+			return err
+		}
+	}
+	return tw.Flush()
+}
+
+func readPromptAnswers(r io.Reader, prompt io.Writer, actions []ResolverAction, promptInput PromptInputRunner) ([]PromptAnswer, error) {
+	var answers []PromptAnswer
+	for _, action := range actions {
+		if action.Prompt == nil || action.Type != "interactive" {
+			continue
+		}
+		value, err := promptInput(r, prompt, *action.Prompt)
+		if err != nil {
+			return nil, err
+		}
+		if value == "" && !action.Prompt.AllowEmpty {
+			return nil, errors.Errorf("%s cannot be empty", action.Prompt.ProjectionKey)
+		}
+		answers = append(answers, PromptAnswer{NeedID: action.Prompt.NeedID, Value: value})
+	}
+	return answers, nil
+}
+
+func runCharmPromptInput(r io.Reader, w io.Writer, prompt PromptAction) (string, error) {
+	if !isTerminalReader(r) {
+		return readLinePromptInput(r, w, prompt)
+	}
+	model := newPromptInputModel(prompt)
+	program := tea.NewProgram(model, tea.WithInput(r), tea.WithOutput(w))
+	finished, err := program.Run()
+	if err != nil {
+		return "", err
+	}
+	next, ok := finished.(promptInputModel)
+	if !ok {
+		return "", errors.New("prompt returned unexpected model")
+	}
+	return next.value, nil
+}
+
+func readLinePromptInput(r io.Reader, w io.Writer, prompt PromptAction) (string, error) {
+	label := promptDisplayLabel(prompt)
+	if _, err := fmt.Fprintf(w, "%s: ", label); err != nil {
+		return "", err
+	}
+	value, err := bufio.NewReader(r).ReadString('\n')
+	if err != nil && err != io.EOF {
+		return "", err
+	}
+	return strings.TrimRight(value, "\r\n"), nil
+}
+
+func isTerminalReader(r io.Reader) bool {
+	file, ok := r.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
+}
+
+type promptInputModel struct {
+	label string
+	input textinput.Model
+	value string
+	done  bool
+}
+
+func newPromptInputModel(prompt PromptAction) promptInputModel {
+	label := promptDisplayLabel(prompt)
+	input := textinput.New()
+	input.Prompt = ""
+	input.Placeholder = prompt.Description
+	if prompt.Sensitive {
+		input.EchoMode = textinput.EchoPassword
+		input.EchoCharacter = '*'
+	}
+	input.Focus()
+	return promptInputModel{label: label, input: input}
+}
+
+func promptDisplayLabel(prompt PromptAction) string {
+	key := prompt.ProjectionKey
+	if key == "" {
+		return cleanPromptLabel(prompt.Label)
+	}
+	keyHint := shortenPromptKey(key)
+	label := cleanPromptLabel(prompt.Label)
+	if label == "" || label == key {
+		return promptKeyHint(prompt, keyHint)
+	}
+	return fmt.Sprintf("%s (%s)", label, promptKeyHint(prompt, keyHint))
+}
+
+func promptKeyHint(prompt PromptAction, key string) string {
+	if prompt.Required {
+		return key
+	}
+	return "optional " + key
+}
+
+func cleanPromptLabel(label string) string {
+	label = strings.TrimSpace(label)
+	if len(strings.Fields(label)) > 1 {
+		label = strings.TrimSuffix(label, ".")
+	}
+	return label
+}
+
+func shortenPromptKey(key string) string {
+	const maxLen = 24
+	if len(key) <= maxLen {
+		return key
+	}
+	const prefixLen = 7
+	const suffixLen = 8
+	return key[:prefixLen] + "..." + key[len(key)-suffixLen:]
+}
+
+func (m promptInputModel) Init() tea.Cmd {
+	return textinput.Blink
+}
+
+func (m promptInputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	if key, ok := msg.(tea.KeyMsg); ok && key.Type == tea.KeyEnter {
+		m.value = m.input.Value()
+		m.done = true
+		return m, tea.Quit
+	}
+	return m, cmd
+}
+
+func (m promptInputModel) View() string {
+	if m.done {
+		return ""
+	}
+	return fmt.Sprintf("%s: %s\n", m.label, m.input.View())
 }
 
 func snapshotHasInvalidRows(envs []SnapshotEnv, req SnapshotRequest) bool {

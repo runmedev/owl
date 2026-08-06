@@ -20,6 +20,12 @@ The core ownership boundaries are:
   internal model detail by default.
 - `cmd`: command wiring and rendering only.
 
+Prefer cohesive structs with methods when several helpers repeatedly pass the
+same conceptual state through a call chain. Avoid func soup where a small
+builder, evaluator, planner, or renderer object would make ownership and
+invariants clearer. This is about internal cohesion; it does not mean every
+helper or intermediate type needs to become public API.
+
 ## Owl Store V2 Decisions
 
 - CUE owns type-value validation. Go may orchestrate registry/store behavior and

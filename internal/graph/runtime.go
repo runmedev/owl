@@ -10,6 +10,7 @@ import (
 
 	"github.com/runmedev/owl/internal/model"
 	"github.com/runmedev/owl/internal/registry"
+	"github.com/runmedev/owl/internal/resolver"
 	"github.com/runmedev/owl/internal/store"
 )
 
@@ -333,35 +334,45 @@ func marshalEffectiveState(state model.EffectiveState) map[string]interface{} {
 	values := make([]map[string]interface{}, 0, len(state.Values))
 	for ref, value := range state.Values {
 		value.FieldRef = ref
-		values = append(values, map[string]interface{}{
+		item := map[string]interface{}{
 			"field":       marshalFieldRef(value.FieldRef),
 			"original":    value.Original,
 			"resolved":    value.Resolved,
 			"visibility":  string(value.Visibility),
 			"sensitivity": string(value.Sensitivity),
 			"exposure":    string(value.Exposure),
-			"origin":      marshalSource(value.Origin),
-			"source":      marshalSource(value.Source),
 			"createdAt":   timeString(value.CreatedAt),
 			"updatedAt":   timeString(value.UpdatedAt),
-		})
+		}
+		if source := marshalSource(value.Origin); source != nil {
+			item["origin"] = source
+		}
+		if source := marshalSource(value.Source); source != nil {
+			item["source"] = source
+		}
+		values = append(values, item)
 	}
 	bindings := make([]map[string]interface{}, 0, len(state.Bindings))
 	for _, binding := range state.Bindings {
-		bindings = append(bindings, map[string]interface{}{
+		item := map[string]interface{}{
 			"id":          binding.ID,
 			"field":       marshalFieldRef(binding.FieldRef),
 			"projection":  string(binding.ProjectionID),
 			"key":         string(binding.Key),
 			"description": binding.Description,
-			"source":      marshalSource(binding.Source),
-			"origin":      marshalSource(binding.Origin),
 			"confidence":  string(binding.Confidence),
 			"explicit":    binding.Explicit,
 			"order":       int(binding.Order),
 			"preserveKey": binding.PreserveKey,
 			"required":    binding.Required,
-		})
+		}
+		if source := marshalSource(binding.Source); source != nil {
+			item["source"] = source
+		}
+		if source := marshalSource(binding.Origin); source != nil {
+			item["origin"] = source
+		}
+		bindings = append(bindings, item)
 	}
 	diagnostics := make([]map[string]interface{}, 0, len(state.Diagnostics))
 	for _, diagnostic := range state.Diagnostics {
@@ -376,10 +387,103 @@ func marshalEffectiveState(state model.EffectiveState) map[string]interface{} {
 		})
 	}
 	return map[string]interface{}{
-		"values":      values,
-		"bindings":    bindings,
-		"diagnostics": diagnostics,
+		"values":             values,
+		"bindings":           bindings,
+		"resolverAttempts":   marshalResolverAttempts(state.ResolverAttempts),
+		"unresolvedFrontier": marshalUnresolvedFrontier(state.UnresolvedFrontier),
+		"diagnostics":        diagnostics,
 	}
+}
+
+func marshalUnresolvedFrontier(frontier model.UnresolvedFrontier) map[string]interface{} {
+	needs := make([]map[string]interface{}, 0, len(frontier.Needs))
+	for _, need := range frontier.Needs {
+		ids := make([]string, 0, len(need.ResolverAttemptIDs))
+		for _, id := range need.ResolverAttemptIDs {
+			ids = append(ids, string(id))
+		}
+		item := map[string]interface{}{
+			"id":                 string(need.ID),
+			"field":              marshalFieldRef(need.FieldRef),
+			"projectionKey":      string(need.ProjectionKey),
+			"required":           need.Required,
+			"blocking":           need.Blocking,
+			"reason":             string(need.Reason),
+			"description":        need.Description,
+			"sensitivity":        string(need.Sensitivity),
+			"exposure":           string(need.Exposure),
+			"resolverAttemptIDs": ids,
+		}
+		if source := marshalSource(need.Source); source != nil {
+			item["source"] = source
+		}
+		if source := marshalSource(need.Origin); source != nil {
+			item["origin"] = source
+		}
+		needs = append(needs, item)
+	}
+	return map[string]interface{}{"needs": needs}
+}
+
+func marshalResolverAttempts(attempts []model.ResolverAttempt) []map[string]interface{} {
+	items := make([]map[string]interface{}, 0, len(attempts))
+	for _, attempt := range attempts {
+		items = append(items, marshalResolverAttempt(attempt))
+	}
+	return items
+}
+
+func marshalResolverAttempt(attempt model.ResolverAttempt) map[string]interface{} {
+	diagnostics := make([]map[string]interface{}, 0, len(attempt.Diagnostics))
+	for _, diagnostic := range attempt.Diagnostics {
+		diagnostics = append(diagnostics, map[string]interface{}{
+			"severity": string(diagnostic.Severity),
+			"code":     diagnostic.Code,
+			"message":  diagnostic.Message,
+			"details":  append([]string{}, diagnostic.Details...),
+			"key":      diagnostic.Key,
+			"field":    marshalFieldRef(diagnostic.FieldRef),
+			"owner":    string(diagnostic.Owner),
+		})
+	}
+	item := map[string]interface{}{
+		"id":            string(attempt.ID),
+		"resolverID":    string(attempt.ResolverID),
+		"field":         marshalFieldRef(attempt.FieldRef),
+		"projectionKey": string(attempt.ProjectionKey),
+		"outcome":       string(attempt.Outcome),
+		"message":       attempt.Message,
+		"startedAt":     timeString(attempt.StartedAt),
+		"finishedAt":    timeString(attempt.FinishedAt),
+		"diagnostics":   diagnostics,
+	}
+	if source := marshalSource(attempt.Source); source != nil {
+		item["source"] = source
+	}
+	return item
+}
+
+func marshalResolverProposal(proposal resolver.Proposal) map[string]interface{} {
+	return map[string]interface{}{
+		"needID":        string(proposal.NeedID),
+		"attemptID":     string(proposal.AttemptID),
+		"resolverID":    string(proposal.ResolverID),
+		"field":         marshalFieldRef(proposal.FieldRef),
+		"projectionKey": string(proposal.ProjectionKey),
+		"value":         marshalProposedValue(proposal.Value),
+	}
+}
+
+func marshalProposedValue(value resolver.ProposedValue) map[string]interface{} {
+	item := map[string]interface{}{
+		"value":       value.Value,
+		"sensitivity": string(value.Sensitivity),
+		"exposure":    string(value.Exposure),
+	}
+	if source := marshalSource(value.Source); source != nil {
+		item["source"] = source
+	}
+	return item
 }
 
 func marshalFieldRef(ref model.FieldRef) map[string]interface{} {
@@ -590,7 +694,55 @@ func decodeEffectiveState(raw interface{}) model.EffectiveState {
 		})
 	}
 	state.Diagnostics = decodeDiagnostics(row["diagnostics"])
+	for _, item := range decodeList(row["resolverAttempts"]) {
+		attempt, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		state.ResolverAttempts = append(state.ResolverAttempts, model.ResolverAttempt{
+			ID:            model.ResolverAttemptID(stringValue(attempt["id"])),
+			ResolverID:    model.ResolverID(stringValue(attempt["resolverID"])),
+			FieldRef:      decodeFieldRef(attempt["field"]),
+			ProjectionKey: model.ProjectionKey(stringValue(attempt["projectionKey"])),
+			Outcome:       model.ResolverAttemptOutcome(stringValue(attempt["outcome"])),
+			Message:       stringValue(attempt["message"]),
+			Source:        decodeSource(attempt["source"]),
+			StartedAt:     timeValue(attempt["startedAt"]),
+			FinishedAt:    timeValue(attempt["finishedAt"]),
+			Diagnostics:   decodeDiagnostics(attempt["diagnostics"]),
+		})
+	}
+	state.UnresolvedFrontier = decodeUnresolvedFrontier(row["unresolvedFrontier"])
 	return state
+}
+
+func decodeUnresolvedFrontier(raw interface{}) model.UnresolvedFrontier {
+	var frontier model.UnresolvedFrontier
+	row, ok := raw.(map[string]interface{})
+	if !ok {
+		return frontier
+	}
+	for _, item := range decodeList(row["needs"]) {
+		needRaw, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		frontier.Needs = append(frontier.Needs, model.UnresolvedNeed{
+			ID:                 model.UnresolvedNeedID(stringValue(needRaw["id"])),
+			FieldRef:           decodeFieldRef(needRaw["field"]),
+			ProjectionKey:      model.ProjectionKey(stringValue(needRaw["projectionKey"])),
+			Required:           boolValue(needRaw["required"]),
+			Blocking:           boolValue(needRaw["blocking"]),
+			Reason:             model.UnresolvedReason(stringValue(needRaw["reason"])),
+			Description:        stringValue(needRaw["description"]),
+			Sensitivity:        model.Sensitivity(stringValue(needRaw["sensitivity"])),
+			Exposure:           model.Exposure(stringValue(needRaw["exposure"])),
+			Source:             decodeSource(needRaw["source"]),
+			Origin:             decodeSource(needRaw["origin"]),
+			ResolverAttemptIDs: decodeResolverAttemptIDs(needRaw["resolverAttemptIDs"]),
+		})
+	}
+	return frontier
 }
 
 func decodeStateProvenance(raw interface{}) store.StateProvenance {

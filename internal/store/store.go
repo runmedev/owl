@@ -12,6 +12,8 @@ import (
 	"github.com/runmedev/owl/internal/model"
 	"github.com/runmedev/owl/internal/projection/dotenv"
 	"github.com/runmedev/owl/internal/registry"
+	"github.com/runmedev/owl/internal/resolver"
+	"github.com/runmedev/owl/internal/resolver/builtin"
 )
 
 type Store struct {
@@ -120,6 +122,22 @@ type DotenvVariable struct {
 	Source model.Source
 }
 
+type ResolveSourcesInput struct {
+	Process      []DotenvVariable
+	Dotenv       []DotenvVariable
+	Policy       resolver.Policy
+	Chain        resolver.ChainConfig
+	Timestamp    time.Time
+	Clock        model.Clock
+	NewAttemptID func() model.ResolverAttemptID
+}
+
+type ApplyPromptAnswersInput struct {
+	Answers      []resolver.PromptAnswer
+	Timestamp    time.Time
+	NewAttemptID func() model.ResolverAttemptID
+}
+
 type EnvBinding struct {
 	FieldRef    model.FieldRef
 	Key         string
@@ -175,20 +193,41 @@ func (op DeleteOperation) Record() OperationRecord {
 	return OperationRecord{Kind: OperationRecordDelete, Timestamp: op.Timestamp, Delete: op}
 }
 
+type RecordResolverAttemptOperation struct {
+	Attempt model.ResolverAttempt
+}
+
+func (op RecordResolverAttemptOperation) Record() OperationRecord {
+	return OperationRecord{Kind: OperationRecordResolverAttempt, Timestamp: op.Attempt.FinishedAt, ResolverAttempt: op.Attempt}
+}
+
+type ApplyResolverProposalOperation struct {
+	Proposal  resolver.Proposal
+	Timestamp time.Time
+}
+
+func (op ApplyResolverProposalOperation) Record() OperationRecord {
+	return OperationRecord{Kind: OperationRecordApplyResolverProposal, Timestamp: op.Timestamp, ResolverProposal: op.Proposal}
+}
+
 type OperationRecordKind string
 
 const (
-	OperationRecordLoad   OperationRecordKind = "load"
-	OperationRecordUpdate OperationRecordKind = "update"
-	OperationRecordDelete OperationRecordKind = "delete"
+	OperationRecordLoad                  OperationRecordKind = "load"
+	OperationRecordUpdate                OperationRecordKind = "update"
+	OperationRecordDelete                OperationRecordKind = "delete"
+	OperationRecordResolverAttempt       OperationRecordKind = "resolver_attempt"
+	OperationRecordApplyResolverProposal OperationRecordKind = "apply_resolver_proposal"
 )
 
 type OperationRecord struct {
-	Kind      OperationRecordKind
-	Timestamp time.Time
-	Load      LoadInput
-	Update    UpdateOperation
-	Delete    DeleteOperation
+	Kind             OperationRecordKind
+	Timestamp        time.Time
+	Load             LoadInput
+	Update           UpdateOperation
+	Delete           DeleteOperation
+	ResolverAttempt  model.ResolverAttempt
+	ResolverProposal resolver.Proposal
 }
 
 type NormalizeOperation struct{}
@@ -264,6 +303,13 @@ func timestampRecordedOperation(record OperationRecord) (OperationRecord, Operat
 	case OperationRecordDelete:
 		record.Delete.Timestamp = record.Timestamp
 		return record, record.Delete
+	case OperationRecordResolverAttempt:
+		if record.ResolverAttempt.FinishedAt.IsZero() {
+			record.ResolverAttempt.FinishedAt = record.Timestamp
+		}
+		return record, RecordResolverAttemptOperation{Attempt: record.ResolverAttempt}
+	case OperationRecordApplyResolverProposal:
+		return record, ApplyResolverProposalOperation{Proposal: record.ResolverProposal, Timestamp: record.Timestamp}
 	default:
 		return record, NormalizeOperation{}
 	}
@@ -353,6 +399,104 @@ func (s *Store) Apply(ctx context.Context, op Operation) (model.EffectiveState, 
 	}
 	s.state = state
 	return state, nil
+}
+
+func (s *Store) ResolveSources(ctx context.Context, input ResolveSourcesInput) (resolver.RunResult, error) {
+	if _, err := s.Apply(ctx, IntegrityOperation{Types: s.types}); err != nil {
+		return resolver.RunResult{}, err
+	}
+	clock := input.Clock
+	if clock == nil && !input.Timestamp.IsZero() {
+		clock = func() time.Time { return input.Timestamp }
+	}
+	runner := resolver.Runner{
+		Resolvers: []resolver.Resolver{
+			builtin.ProcessResolver(catalogsFromVariables(input.Process, model.Source{Name: "[process]", Kind: "process"})...),
+			builtin.DotenvResolver(catalogsFromVariables(input.Dotenv, model.Source{Name: ".env", Kind: "dotenv"})...),
+			builtin.NewPromptResolver(),
+		},
+		NewAttemptID: input.NewAttemptID,
+		Clock:        clock,
+	}
+	result, err := runner.Resolve(ctx, resolver.RunRequest{
+		State:  s.state,
+		Policy: input.Policy,
+		Chain:  input.Chain,
+	})
+	if err != nil {
+		return result, err
+	}
+	for _, attempt := range result.Attempts {
+		if _, err := s.Apply(ctx, RecordResolverAttemptOperation{Attempt: attempt}); err != nil {
+			return result, err
+		}
+	}
+	for _, proposal := range result.Proposals {
+		if _, err := s.Apply(ctx, ApplyResolverProposalOperation{Proposal: proposal, Timestamp: input.Timestamp}); err != nil {
+			return result, err
+		}
+	}
+	if _, err := s.Apply(ctx, IntegrityOperation{Types: s.types}); err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
+func (s *Store) ApplyPromptAnswers(ctx context.Context, input ApplyPromptAnswersInput) (resolver.RunResult, error) {
+	newAttemptID := input.NewAttemptID
+	if newAttemptID == nil {
+		newAttemptID = promptAttemptIDGenerator(len(s.operations))
+	}
+	timestamp := operationTimestamp(input.Timestamp)
+	needs := needsByID(s.state.UnresolvedFrontier.Needs)
+	var result resolver.RunResult
+	for _, answer := range input.Answers {
+		need, ok := needs[answer.NeedID]
+		attempt := model.ResolverAttempt{
+			ID:         newAttemptID(),
+			ResolverID: builtin.ResolverIDPrompt,
+			Outcome:    model.ResolverAttemptResolved,
+			Source:     model.Source{Name: "[interactive]", Kind: "interactive"},
+			StartedAt:  timestamp,
+			FinishedAt: timestamp,
+		}
+		if !ok {
+			attempt.Outcome = model.ResolverAttemptInvalidResult
+			attempt.Message = "interactive answer references an unknown unresolved need"
+			if _, err := s.Apply(ctx, RecordResolverAttemptOperation{Attempt: attempt}); err != nil {
+				return result, err
+			}
+			result.Attempts = append(result.Attempts, attempt)
+			continue
+		}
+		attempt.FieldRef = need.FieldRef
+		attempt.ProjectionKey = need.ProjectionKey
+		proposal := resolver.Proposal{
+			NeedID:        need.ID,
+			AttemptID:     attempt.ID,
+			ResolverID:    builtin.ResolverIDPrompt,
+			FieldRef:      need.FieldRef,
+			ProjectionKey: need.ProjectionKey,
+			Value: resolver.ProposedValue{
+				Value:       answer.Value,
+				Source:      attempt.Source,
+				Sensitivity: need.Sensitivity,
+				Exposure:    need.Exposure,
+			},
+		}
+		if _, err := s.Apply(ctx, RecordResolverAttemptOperation{Attempt: attempt}); err != nil {
+			return result, err
+		}
+		if _, err := s.Apply(ctx, ApplyResolverProposalOperation{Proposal: proposal, Timestamp: timestamp}); err != nil {
+			return result, err
+		}
+		result.Attempts = append(result.Attempts, attempt)
+		result.Proposals = append(result.Proposals, proposal)
+	}
+	if _, err := s.Apply(ctx, IntegrityOperation{Types: s.types}); err != nil {
+		return result, err
+	}
+	return result, nil
 }
 
 func (op LoadOperation) Apply(context.Context, model.EffectiveState) (model.EffectiveState, error) {
@@ -477,6 +621,77 @@ func (op DeleteOperation) Apply(_ context.Context, state model.EffectiveState) (
 	return state, nil
 }
 
+func (op RecordResolverAttemptOperation) Apply(_ context.Context, state model.EffectiveState) (model.EffectiveState, error) {
+	state.ResolverAttempts = append(state.ResolverAttempts, op.Attempt)
+	return state, nil
+}
+
+func (op ApplyResolverProposalOperation) Apply(_ context.Context, state model.EffectiveState) (model.EffectiveState, error) {
+	if state.Values == nil {
+		state.Values = make(map[model.FieldRef]model.Value)
+	}
+	timestamp := operationTimestamp(op.Timestamp)
+	proposal := op.Proposal
+	ref, binding, found := findBinding(state.Bindings, string(proposal.ProjectionKey))
+	if !found {
+		ref = proposal.FieldRef
+		binding = model.Binding{
+			ID:           "resolve:" + string(proposal.ProjectionKey),
+			FieldRef:     ref,
+			ProjectionID: model.ProjectionDotenv,
+			Key:          proposal.ProjectionKey,
+			Source:       proposal.Value.Source,
+			Origin:       proposal.Value.Source,
+			Confidence:   model.BindingConfidenceExplicit,
+			Explicit:     true,
+			PreserveKey:  true,
+			CreatedAt:    timestamp,
+			UpdatedAt:    timestamp,
+		}
+		state.Bindings = append(state.Bindings, binding)
+	}
+
+	source := proposal.Value.Source
+	if source.Name == "" && source.Kind == "" {
+		source = model.Source{Name: string(proposal.ResolverID), Kind: "resolver"}
+	}
+	operationID := resolverProposalOperationID(proposal)
+	value := state.Values[ref]
+	changed := value.Original != proposal.Value.Value ||
+		value.Resolved != proposal.Value.Value ||
+		value.Visibility != model.VisibilityLiteral ||
+		value.Source != source
+	value.FieldRef = ref
+	value.Original = proposal.Value.Value
+	value.Resolved = proposal.Value.Value
+	value.Visibility = model.VisibilityLiteral
+	value.Sensitivity = firstSensitivity(proposal.Value.Sensitivity, value.Sensitivity, inferSensitivityForField(ref))
+	value.Exposure = firstExposure(proposal.Value.Exposure, value.Exposure, inferExposureForField(ref))
+	if value.Origin.Name == "" {
+		value.Origin = binding.Origin
+	}
+	if value.Origin.Name == "" && value.Origin.Kind == "" {
+		value.Origin = source
+	}
+	value.Source = source
+	if changed || value.UpdatedAt.IsZero() {
+		value.UpdatedAt = timestamp
+	}
+	if value.CreatedAt.IsZero() {
+		value.CreatedAt = value.UpdatedAt
+	}
+	value.LastOperationID = operationID
+	state.Values[ref] = value
+	state.Operations = append(state.Operations, model.OperationMetadata{
+		ID:           operationID,
+		Kind:         model.OperationKindResolve,
+		Timestamp:    timestamp,
+		Source:       source,
+		ProjectionID: firstProjection(binding.ProjectionID, model.ProjectionDotenv),
+	})
+	return state, nil
+}
+
 func (NormalizeOperation) Apply(_ context.Context, state model.EffectiveState) (model.EffectiveState, error) {
 	// Dotenv ingest currently materializes the normalized effective state. Keep
 	// this explicit graph node so the driver can grow richer normalization
@@ -491,6 +706,7 @@ func (op IntegrityOperation) Apply(_ context.Context, state model.EffectiveState
 	}
 	state.Diagnostics = withoutDiagnosticOwner(state.Diagnostics, model.DiagnosticOwnerValidation)
 	state.Diagnostics = append(state.Diagnostics, CheckStateIntegrity(state, types)...)
+	state.UnresolvedFrontier = BuildUnresolvedFrontier(state)
 	return state, nil
 }
 
@@ -744,6 +960,41 @@ func sourceBytesFromInputs(inputs []sourceInput) []SourceBytes {
 	return result
 }
 
+func needsByID(needs []model.UnresolvedNeed) map[model.UnresolvedNeedID]model.UnresolvedNeed {
+	result := make(map[model.UnresolvedNeedID]model.UnresolvedNeed, len(needs))
+	for _, need := range needs {
+		result[need.ID] = need
+	}
+	return result
+}
+
+func promptAttemptIDGenerator(offset int) func() model.ResolverAttemptID {
+	var next int
+	return func() model.ResolverAttemptID {
+		next++
+		return model.ResolverAttemptID(fmt.Sprintf("interactive-%06d", offset+next))
+	}
+}
+
+func catalogsFromVariables(variables []DotenvVariable, fallback model.Source) []builtin.Catalog {
+	positions := make(map[model.Source]int)
+	var catalogs []builtin.Catalog
+	for _, variable := range variables {
+		source := variable.Source
+		if source.Name == "" && source.Kind == "" {
+			source = fallback
+		}
+		index, ok := positions[source]
+		if !ok {
+			index = len(catalogs)
+			positions[source] = index
+			catalogs = append(catalogs, builtin.Catalog{Source: source, Values: make(map[model.ProjectionKey]string)})
+		}
+		catalogs[index].Values[model.ProjectionKey(variable.Key)] = variable.Value
+	}
+	return catalogs
+}
+
 func declarationsFromContracts(contracts []EnvContract) []dotenv.FieldDeclaration {
 	var declarations []dotenv.FieldDeclaration
 	var order uint
@@ -787,6 +1038,40 @@ func firstUint(values ...uint) uint {
 		}
 	}
 	return 0
+}
+
+func firstSensitivity(values ...model.Sensitivity) model.Sensitivity {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return model.SensitivityUnknown
+}
+
+func firstExposure(values ...model.Exposure) model.Exposure {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return model.ExposureOpaque
+}
+
+func firstProjection(values ...model.ProjectionID) model.ProjectionID {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func resolverProposalOperationID(proposal resolver.Proposal) model.OperationID {
+	if proposal.AttemptID != "" {
+		return model.OperationID("resolve:" + string(proposal.AttemptID))
+	}
+	return model.OperationID("resolve:" + string(proposal.ProjectionKey))
 }
 
 func findBinding(bindings []model.Binding, key string) (model.FieldRef, model.Binding, bool) {

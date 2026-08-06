@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -296,6 +297,83 @@ func TestPublicAPIStateEnvelopeRoundTrip(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestPublicAPIStateEnvelopeRoundTripPreservesResolverAttempts(t *testing.T) {
+	t.Parallel()
+
+	store, err := owl.NewStore(
+		owl.WithDotenv(".env", strings.NewReader("API_URL=https://api.example.com\n")),
+	)
+	require.NoError(t, err)
+
+	envelope, err := store.StateEnvelope(context.Background())
+	require.NoError(t, err)
+	startedAt := time.Date(2026, 8, 3, 16, 0, 0, 0, time.UTC)
+	attempt := owl.ResolverAttempt{
+		ID:            "attempt-000001",
+		ResolverID:    "core/dotenv",
+		FieldRef:      owl.FieldRef{TypeID: owl.TypeCoreSecret, Instance: "default", Field: "api.key"},
+		ProjectionKey: "API_KEY",
+		Outcome:       owl.ResolverNotFound,
+		Message:       "dotenv value was not present",
+		Source:        owl.Source{Name: ".env", Kind: "dotenv"},
+		StartedAt:     startedAt,
+		FinishedAt:    startedAt.Add(time.Second),
+	}
+	envelope.State.ResolverAttempts = append(envelope.State.ResolverAttempts, attempt)
+
+	roundTripped, err := owl.NewStore(owl.WithStateEnvelope(envelope))
+	require.NoError(t, err)
+	next, err := roundTripped.StateEnvelope(context.Background())
+	require.NoError(t, err)
+
+	require.Len(t, next.State.ResolverAttempts, 1)
+	gotAttempt := next.State.ResolverAttempts[0]
+	assert.Equal(t, attempt.ID, gotAttempt.ID)
+	assert.Equal(t, attempt.ResolverID, gotAttempt.ResolverID)
+	assert.Equal(t, attempt.FieldRef, gotAttempt.FieldRef)
+	assert.Equal(t, attempt.ProjectionKey, gotAttempt.ProjectionKey)
+	assert.Equal(t, attempt.Outcome, gotAttempt.Outcome)
+	assert.Equal(t, attempt.Message, gotAttempt.Message)
+	assert.Equal(t, attempt.Source, gotAttempt.Source)
+	assert.Equal(t, attempt.StartedAt, gotAttempt.StartedAt)
+	assert.Equal(t, attempt.FinishedAt, gotAttempt.FinishedAt)
+	assert.Empty(t, gotAttempt.Diagnostics)
+
+	got, ok, err := roundTripped.Get("API_URL", owl.GetPolicy{Reveal: true})
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, "https://api.example.com", got.Value)
+}
+
+func TestPublicAPIStateEnvelopeExposesUnresolvedFrontier(t *testing.T) {
+	t.Parallel()
+
+	store, err := owl.NewStore(
+		owl.WithEnvSpec(".env.spec", strings.NewReader("API_URL=\"API URL\" # Plain\nAPI_KEY=\"API key\" # Secret!\n")),
+	)
+	require.NoError(t, err)
+
+	envelope, err := store.StateEnvelope(context.Background())
+	require.NoError(t, err)
+
+	require.Len(t, envelope.State.UnresolvedFrontier.Needs, 2)
+	byKey := unresolvedNeedsByKey(envelope.State.UnresolvedFrontier.Needs)
+	require.Contains(t, byKey, "API_KEY")
+	assert.True(t, byKey["API_KEY"].Required)
+	assert.True(t, byKey["API_KEY"].Blocking)
+	assert.Equal(t, owl.UnresolvedMissing, byKey["API_KEY"].Reason)
+	require.Contains(t, byKey, "API_URL")
+	assert.False(t, byKey["API_URL"].Required)
+	assert.False(t, byKey["API_URL"].Blocking)
+	assert.Equal(t, owl.UnresolvedMissing, byKey["API_URL"].Reason)
+
+	roundTripped, err := owl.NewStore(owl.WithStateEnvelope(envelope))
+	require.NoError(t, err)
+	next, err := roundTripped.StateEnvelope(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, envelope.State.UnresolvedFrontier, next.State.UnresolvedFrontier)
+}
+
 func TestPublicAPIUpdatesMaterializeFromOperationLog(t *testing.T) {
 	t.Parallel()
 
@@ -521,6 +599,82 @@ func TestPublicAPIWithConfigIncludesRedisHostDiagnosticsInSnapshot(t *testing.T)
 	assert.Contains(t, diagnosticCodes(byName["QUEUES_REDIS_HOST"].Diagnostics), "type.invalid-host")
 }
 
+func TestPublicAPIResolveReturnsPromptActionsAndAppliesAnswers(t *testing.T) {
+	t.Parallel()
+
+	store, err := owl.NewStore(
+		owl.WithEnvSpec(".env.spec", strings.NewReader("API_KEY=\"API key\" # Secret!\n")),
+	)
+	require.NoError(t, err)
+
+	result, err := store.Resolve(context.Background(), owl.ResolveInput{
+		Policy: owl.ResolvePolicy{AllowInteraction: true},
+	})
+	require.NoError(t, err)
+	require.Len(t, result.Actions, 1)
+	require.NotNil(t, result.Actions[0].Prompt)
+	assert.NotEmpty(t, store.ResolverAttempts())
+	require.Len(t, store.UnresolvedFrontier().Needs, 1)
+	assert.Equal(t, "interactive", string(result.Actions[0].Type))
+	assert.Equal(t, "API_KEY", string(result.Actions[0].Prompt.ProjectionKey))
+	assert.Equal(t, "API key", result.Actions[0].Prompt.Label)
+	assert.True(t, result.Actions[0].Prompt.Required)
+	assert.False(t, result.Actions[0].Prompt.AllowEmpty)
+	assert.Equal(t, "sensitive", string(result.Actions[0].Prompt.Sensitivity))
+
+	applied, err := store.ApplyPromptAnswers(context.Background(), []owl.PromptAnswer{{
+		NeedID: result.Actions[0].Prompt.NeedID,
+		Value:  "secret",
+	}})
+	require.NoError(t, err)
+	require.Len(t, applied.Attempts, 1)
+	assert.Equal(t, owl.ResolverResolved, applied.Attempts[0].Outcome)
+
+	snapshot, err := store.Snapshot(owl.SnapshotPolicy{})
+	require.NoError(t, err)
+	byName := snapshotByName(snapshot)
+	assert.Equal(t, "[masked]", byName["API_KEY"].Value)
+	assert.Equal(t, "[interactive]", byName["API_KEY"].Source.Name)
+	assert.Empty(t, byName["API_KEY"].Diagnostics)
+}
+
+func TestPublicAPIPromptAnswerDomainInvalidKeepsFrontierOpen(t *testing.T) {
+	t.Parallel()
+
+	store, err := owl.NewStore(
+		owl.WithConfig(owl.ConfigInput{
+			Needs: []owl.NeedInput{{
+				ID:       "redis.queues",
+				Type:     owl.TypeUniverseRedis,
+				Instance: "queues",
+			}},
+		}),
+	)
+	require.NoError(t, err)
+
+	result, err := store.Resolve(context.Background(), owl.ResolveInput{
+		Policy: owl.ResolvePolicy{AllowInteraction: true},
+	})
+	require.NoError(t, err)
+	actionsByKey := promptActionsByKey(result.Actions)
+	require.Contains(t, actionsByKey, "QUEUES_REDIS_PORT")
+
+	applied, err := store.ApplyPromptAnswers(context.Background(), []owl.PromptAnswer{{
+		NeedID: actionsByKey["QUEUES_REDIS_PORT"].NeedID,
+		Value:  "not-a-port",
+	}})
+	require.NoError(t, err)
+	require.Len(t, applied.Attempts, 1)
+	assert.Equal(t, owl.ResolverResolved, applied.Attempts[0].Outcome)
+
+	envelope, err := store.StateEnvelope(context.Background())
+	require.NoError(t, err)
+	needs := unresolvedNeedsByKey(envelope.State.UnresolvedFrontier.Needs)
+	require.Contains(t, needs, "QUEUES_REDIS_PORT")
+	assert.Equal(t, owl.UnresolvedInvalid, needs["QUEUES_REDIS_PORT"].Reason)
+	assert.Contains(t, diagnosticCodes(envelope.State.Diagnostics), "type.invalid-port")
+}
+
 func TestV2PublicAPIDiagnostics(t *testing.T) {
 	t.Parallel()
 
@@ -575,4 +729,23 @@ func diagnosticCodes(diagnostics []owl.Diagnostic) []string {
 		codes = append(codes, diagnostic.Code)
 	}
 	return codes
+}
+
+func unresolvedNeedsByKey(needs []owl.UnresolvedNeed) map[string]owl.UnresolvedNeed {
+	result := make(map[string]owl.UnresolvedNeed, len(needs))
+	for _, need := range needs {
+		result[string(need.ProjectionKey)] = need
+	}
+	return result
+}
+
+func promptActionsByKey(actions []owl.ResolverAction) map[string]owl.PromptAction {
+	result := make(map[string]owl.PromptAction, len(actions))
+	for _, action := range actions {
+		if action.Prompt == nil {
+			continue
+		}
+		result[string(action.Prompt.ProjectionKey)] = *action.Prompt
+	}
+	return result
 }

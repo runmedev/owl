@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"io"
 	"strings"
 	"testing"
 
@@ -381,22 +382,293 @@ func TestStoreSourceRequiresInsecureFlag(t *testing.T) {
 	assert.False(t, client.sourceCalled)
 }
 
+func TestStoreResolveRendersAttemptsAndPromptActions(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeStoreClient{
+		resolve: &ResolveResult{
+			Attempts: []ResolverAttempt{{
+				ResolverID:    "core/dotenv",
+				ProjectionKey: "API_KEY",
+				Outcome:       "not_found",
+			}},
+			Actions: []ResolverAction{{
+				Type: "interactive",
+				Prompt: &PromptAction{
+					NeedID:        "need:API_KEY",
+					ProjectionKey: "API_KEY",
+					Label:         "API key",
+				},
+			}},
+		},
+	}
+	cmd := NewStoreCommand(StoreCommandOptions{
+		ClientFactory: func(*cobra.Command) (StoreClient, error) {
+			return client, nil
+		},
+	})
+
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"resolve"})
+
+	require.NoError(t, cmd.Execute())
+	assert.True(t, client.resolveCalled)
+	assert.False(t, client.resolveReq.Interactive)
+	assert.Contains(t, out.String(), "API_KEY")
+	assert.Contains(t, out.String(), "not_found")
+	assert.Contains(t, out.String(), "interactive")
+}
+
+func TestStoreResolvePromptSubmitsAnswers(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeStoreClient{
+		resolve: &ResolveResult{
+			Attempts: []ResolverAttempt{{
+				ResolverID:    "core/dotenv",
+				ProjectionKey: "API_KEY",
+				Outcome:       "not_found",
+			}},
+			Actions: []ResolverAction{{
+				Type: "interactive",
+				Prompt: &PromptAction{
+					NeedID:        "need:API_KEY",
+					ProjectionKey: "API_KEY",
+					Label:         "API key",
+				},
+			}},
+		},
+		applyPromptAnswers: &ResolveResult{
+			Attempts: []ResolverAttempt{{ResolverID: "core/interactive", ProjectionKey: "API_KEY", Outcome: "resolved"}},
+		},
+	}
+	cmd := NewStoreCommand(StoreCommandOptions{
+		ClientFactory: func(*cobra.Command) (StoreClient, error) {
+			return client, nil
+		},
+		PromptInput: func(_ io.Reader, _ io.Writer, prompt PromptAction) (string, error) {
+			assert.Equal(t, "need:API_KEY", prompt.NeedID)
+			return "secret", nil
+		},
+	})
+
+	var out bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"resolve", "--interactive"})
+
+	require.NoError(t, cmd.Execute())
+	assert.True(t, client.resolveReq.Interactive)
+	require.Len(t, client.promptAnswers, 1)
+	assert.Equal(t, "need:API_KEY", client.promptAnswers[0].NeedID)
+	assert.Equal(t, "secret", client.promptAnswers[0].Value)
+	assert.Equal(t, "\nresolved 1 interactive values\n", stderr.String())
+	assert.Contains(t, out.String(), "API_KEY")
+	assert.Contains(t, out.String(), "core/dotenv")
+	assert.Contains(t, out.String(), "not_found")
+	assert.Contains(t, out.String(), "core/interactive")
+	assert.Contains(t, out.String(), "resolved")
+	assert.NotContains(t, out.String(), "resolved 1 interactive values")
+}
+
+func TestStoreSnapshotInteractiveSubmitsAnswersBeforeRendering(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeStoreClient{
+		snapshot: &SnapshotResult{Envs: []SnapshotEnv{{
+			Name:       "API_KEY",
+			Value:      "[masked]",
+			Type:       "core/secret",
+			Source:     "[interactive]",
+			Explicit:   true,
+			Visibility: "masked",
+		}}},
+		resolve: &ResolveResult{Actions: []ResolverAction{{
+			Type: "interactive",
+			Prompt: &PromptAction{
+				NeedID:        "need:API_KEY",
+				ProjectionKey: "API_KEY",
+				Label:         "API key",
+			},
+		}}},
+		applyPromptAnswers: &ResolveResult{
+			Attempts: []ResolverAttempt{{ResolverID: "core/interactive", ProjectionKey: "API_KEY", Outcome: "resolved"}},
+		},
+	}
+	cmd := NewStoreCommand(StoreCommandOptions{
+		ClientFactory: func(*cobra.Command) (StoreClient, error) {
+			return client, nil
+		},
+		PromptInput: func(_ io.Reader, _ io.Writer, prompt PromptAction) (string, error) {
+			assert.Equal(t, "need:API_KEY", prompt.NeedID)
+			return "secret", nil
+		},
+	})
+
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"snapshot", "--interactive"})
+
+	require.NoError(t, cmd.Execute())
+	assert.True(t, client.resolveReq.Interactive)
+	assert.True(t, client.snapshotReq.Interactive)
+	require.Len(t, client.promptAnswers, 1)
+	assert.Equal(t, "secret", client.promptAnswers[0].Value)
+	assert.Contains(t, out.String(), "API_KEY")
+	assert.NotContains(t, out.String(), "resolved 1 interactive values")
+}
+
+func TestStoreCheckInteractiveSubmitsAnswersBeforeChecking(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeStoreClient{
+		check: &CheckResult{OK: true, Checked: 1},
+		resolve: &ResolveResult{Actions: []ResolverAction{{
+			Type:   "interactive",
+			Prompt: &PromptAction{NeedID: "need:API_KEY", ProjectionKey: "API_KEY", Label: "API key"},
+		}}},
+		applyPromptAnswers: &ResolveResult{
+			Attempts: []ResolverAttempt{{ResolverID: "core/interactive", ProjectionKey: "API_KEY", Outcome: "resolved"}},
+		},
+	}
+	cmd := NewStoreCommand(StoreCommandOptions{
+		ClientFactory: func(*cobra.Command) (StoreClient, error) {
+			return client, nil
+		},
+		PromptInput: func(_ io.Reader, _ io.Writer, _ PromptAction) (string, error) {
+			return "secret", nil
+		},
+	})
+
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"check", "--interactive"})
+
+	require.NoError(t, cmd.Execute())
+	assert.True(t, client.resolveReq.Interactive)
+	assert.True(t, client.checkReq.Interactive)
+	require.Len(t, client.promptAnswers, 1)
+	assert.Equal(t, "ok: 1 variables checked, 0 errors, 0 warnings\n", out.String())
+}
+
+func TestStoreSourceInteractiveSubmitsAnswersBeforeRendering(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeStoreClient{
+		source: &SourceResult{Envs: []string{"API_KEY=secret"}},
+		resolve: &ResolveResult{Actions: []ResolverAction{{
+			Type:   "interactive",
+			Prompt: &PromptAction{NeedID: "need:API_KEY", ProjectionKey: "API_KEY", Label: "API key"},
+		}}},
+		applyPromptAnswers: &ResolveResult{
+			Attempts: []ResolverAttempt{{ResolverID: "core/interactive", ProjectionKey: "API_KEY", Outcome: "resolved"}},
+		},
+	}
+	cmd := NewStoreCommand(StoreCommandOptions{
+		ClientFactory: func(*cobra.Command) (StoreClient, error) {
+			return client, nil
+		},
+		PromptInput: func(_ io.Reader, _ io.Writer, _ PromptAction) (string, error) {
+			return "secret", nil
+		},
+	})
+
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"source", "--insecure", "--interactive"})
+
+	require.NoError(t, cmd.Execute())
+	assert.True(t, client.resolveReq.Interactive)
+	assert.True(t, client.sourceReq.Interactive)
+	require.Len(t, client.promptAnswers, 1)
+	assert.Equal(t, "API_KEY=\"secret\"\n", out.String())
+}
+
+func TestCharmPromptFallsBackForPipedInput(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	value, err := runCharmPromptInput(strings.NewReader("secret\n"), &out, PromptAction{
+		ProjectionKey: "API_KEY",
+		Label:         "API key",
+		Required:      true,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "secret", value)
+	assert.Equal(t, "API key (API_KEY): ", out.String())
+}
+
+func TestPromptDisplayLabelShortensLongProjectionKey(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "OpenAI API key (OWL_INT..._API_KEY)", promptDisplayLabel(PromptAction{
+		ProjectionKey: "OWL_INTERACTIVE_OPENAI_API_KEY",
+		Label:         "OpenAI API key",
+		Required:      true,
+	}))
+	assert.Equal(t, "API_KEY", promptDisplayLabel(PromptAction{
+		ProjectionKey: "API_KEY",
+		Required:      true,
+	}))
+}
+
+func TestPromptDisplayLabelStripsSentencePeriod(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "The Runme test token to use for integration tests (RUNME_TEST_TOKEN)", promptDisplayLabel(PromptAction{
+		ProjectionKey: "RUNME_TEST_TOKEN",
+		Label:         "The Runme test token to use for integration tests.",
+		Required:      true,
+	}))
+	assert.Equal(t, "Continue? (CONFIRM)", promptDisplayLabel(PromptAction{
+		ProjectionKey: "CONFIRM",
+		Label:         "Continue?",
+		Required:      true,
+	}))
+	assert.Equal(t, "Danger! (CONFIRM)", promptDisplayLabel(PromptAction{
+		ProjectionKey: "CONFIRM",
+		Label:         "Danger!",
+		Required:      true,
+	}))
+}
+
+func TestPromptDisplayLabelMarksOptionalKeys(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "OpenAI organization ID (optional OPENAI_ORG_ID)", promptDisplayLabel(PromptAction{
+		ProjectionKey: "OPENAI_ORG_ID",
+		Label:         "OpenAI organization ID",
+	}))
+	assert.Equal(t, "optional OPENAI_ORG_ID", promptDisplayLabel(PromptAction{
+		ProjectionKey: "OPENAI_ORG_ID",
+	}))
+}
+
 type fakeStoreClient struct {
-	snapshot       *SnapshotResult
-	source         *SourceResult
-	check          *CheckResult
-	typeResult     *TypeResult
-	projectResult  *ProjectSpecResult
-	snapshotReq    SnapshotRequest
-	sourceReq      SourceRequest
-	checkReq       CheckRequest
-	typeReq        TypeRequest
-	projectReq     ProjectSpecRequest
-	snapshotCalled bool
-	sourceCalled   bool
-	checkCalled    bool
-	typeCalled     bool
-	projectCalled  bool
+	snapshot           *SnapshotResult
+	source             *SourceResult
+	check              *CheckResult
+	typeResult         *TypeResult
+	resolve            *ResolveResult
+	applyPromptAnswers *ResolveResult
+	projectResult      *ProjectSpecResult
+	snapshotReq        SnapshotRequest
+	sourceReq          SourceRequest
+	checkReq           CheckRequest
+	typeReq            TypeRequest
+	resolveReq         ResolveRequest
+	projectReq         ProjectSpecRequest
+	promptAnswers      []PromptAnswer
+	snapshotCalled     bool
+	sourceCalled       bool
+	checkCalled        bool
+	typeCalled         bool
+	resolveCalled      bool
+	projectCalled      bool
 }
 
 func (c *fakeStoreClient) Snapshot(_ context.Context, req SnapshotRequest) (*SnapshotResult, error) {
@@ -421,6 +693,17 @@ func (c *fakeStoreClient) Type(_ context.Context, req TypeRequest) (*TypeResult,
 	c.typeReq = req
 	c.typeCalled = true
 	return c.typeResult, nil
+}
+
+func (c *fakeStoreClient) Resolve(_ context.Context, req ResolveRequest) (*ResolveResult, error) {
+	c.resolveReq = req
+	c.resolveCalled = true
+	return c.resolve, nil
+}
+
+func (c *fakeStoreClient) ApplyPromptAnswers(_ context.Context, answers []PromptAnswer) (*ResolveResult, error) {
+	c.promptAnswers = append([]PromptAnswer{}, answers...)
+	return c.applyPromptAnswers, nil
 }
 
 func (c *fakeStoreClient) ProjectSpec(_ context.Context, req ProjectSpecRequest) (*ProjectSpecResult, error) {

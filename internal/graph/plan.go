@@ -60,6 +60,26 @@ func planStateEnvelopeQuery(records []store.OperationRecord) (plannedQuery, erro
 				argument("keys", variable(name)),
 			}, next))
 			path = append(path, "delete")
+		case store.OperationRecordResolverAttempt:
+			name := fmt.Sprintf("resolverAttempt_%d", index)
+			varDefs = append(varDefs, variableDefinition(name, nonNull(namedType("ResolverAttemptInput"))))
+			vars[name] = marshalResolverAttempt(record.ResolverAttempt)
+			current.Selections = append(current.Selections, field("recordResolverAttempt", []*ast.Argument{
+				argument("attempt", variable(name)),
+			}, next))
+			path = append(path, "recordResolverAttempt")
+		case store.OperationRecordApplyResolverProposal:
+			name := fmt.Sprintf("resolverProposal_%d", index)
+			varDefs = append(varDefs, variableDefinition(name, nonNull(namedType("ResolverProposalInput"))))
+			timestampName := fmt.Sprintf("resolverProposalTimestamp_%d", index)
+			varDefs = append(varDefs, variableDefinition(timestampName, namedType("String")))
+			vars[name] = marshalResolverProposal(record.ResolverProposal)
+			vars[timestampName] = timeString(record.Timestamp)
+			current.Selections = append(current.Selections, field("applyResolverProposal", []*ast.Argument{
+				argument("proposal", variable(name)),
+				argument("timestamp", variable(timestampName)),
+			}, next))
+			path = append(path, "applyResolverProposal")
 		default:
 			return plannedQuery{}, fmt.Errorf("unsupported operation record kind %q", record.Kind)
 		}
@@ -121,6 +141,8 @@ func stateEnvelopeTerminal() *ast.Field {
 							field("preserveKey", nil, nil),
 							field("required", nil, nil),
 						}})),
+						field("resolverAttempts", nil, resolverAttemptSelection()),
+						field("unresolvedFrontier", nil, unresolvedFrontierSelection()),
 						field("diagnostics", nil, diagnosticSelection()),
 					}})),
 					field("provenance", nil, ast.NewSelectionSet(&ast.SelectionSet{Selections: []ast.Selection{
@@ -157,6 +179,44 @@ func diagnosticSelection() *ast.SelectionSet {
 		field("key", nil, nil),
 		field("field", nil, nil),
 		field("owner", nil, nil),
+	}})
+}
+
+func resolverAttemptSelection() *ast.SelectionSet {
+	return ast.NewSelectionSet(&ast.SelectionSet{Selections: []ast.Selection{
+		field("id", nil, nil),
+		field("resolverID", nil, nil),
+		field("field", nil, fieldRefSelection()),
+		field("projectionKey", nil, nil),
+		field("outcome", nil, nil),
+		field("message", nil, nil),
+		field("source", nil, sourceSelection()),
+		field("startedAt", nil, nil),
+		field("finishedAt", nil, nil),
+		field("diagnostics", nil, diagnosticSelection()),
+	}})
+}
+
+func unresolvedFrontierSelection() *ast.SelectionSet {
+	return ast.NewSelectionSet(&ast.SelectionSet{Selections: []ast.Selection{
+		field("needs", nil, unresolvedNeedSelection()),
+	}})
+}
+
+func unresolvedNeedSelection() *ast.SelectionSet {
+	return ast.NewSelectionSet(&ast.SelectionSet{Selections: []ast.Selection{
+		field("id", nil, nil),
+		field("field", nil, fieldRefSelection()),
+		field("projectionKey", nil, nil),
+		field("required", nil, nil),
+		field("blocking", nil, nil),
+		field("reason", nil, nil),
+		field("description", nil, nil),
+		field("sensitivity", nil, nil),
+		field("exposure", nil, nil),
+		field("source", nil, sourceSelection()),
+		field("origin", nil, sourceSelection()),
+		field("resolverAttemptIDs", nil, nil),
 	}})
 }
 

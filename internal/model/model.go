@@ -82,6 +82,71 @@ type Source struct {
 	Kind string
 }
 
+type ResolverID string
+
+type ResolverAttemptID string
+
+type ResolverAttemptOutcome string
+
+const (
+	ResolverAttemptResolved           ResolverAttemptOutcome = "resolved"
+	ResolverAttemptSkipped            ResolverAttemptOutcome = "skipped"
+	ResolverAttemptNotApplicable      ResolverAttemptOutcome = "not_applicable"
+	ResolverAttemptNotFound           ResolverAttemptOutcome = "not_found"
+	ResolverAttemptDeniedByPolicy     ResolverAttemptOutcome = "denied_by_policy"
+	ResolverAttemptDeniedByProvider   ResolverAttemptOutcome = "denied_by_provider"
+	ResolverAttemptIdentityMissing    ResolverAttemptOutcome = "identity_missing"
+	ResolverAttemptActionRequired     ResolverAttemptOutcome = "action_required"
+	ResolverAttemptNetworkUnavailable ResolverAttemptOutcome = "network_unavailable"
+	ResolverAttemptInvalidResult      ResolverAttemptOutcome = "invalid_result"
+	ResolverAttemptFailed             ResolverAttemptOutcome = "failed"
+)
+
+type ResolverAttempt struct {
+	ID            ResolverAttemptID
+	ResolverID    ResolverID
+	FieldRef      FieldRef
+	ProjectionKey ProjectionKey
+	Outcome       ResolverAttemptOutcome
+	Message       string
+	Source        Source
+	StartedAt     time.Time
+	FinishedAt    time.Time
+	Diagnostics   []Diagnostic
+}
+
+type UnresolvedNeedID string
+
+type UnresolvedReason string
+
+const (
+	UnresolvedReasonMissing UnresolvedReason = "missing"
+	UnresolvedReasonInvalid UnresolvedReason = "invalid"
+)
+
+type UnresolvedFrontier struct {
+	Needs []UnresolvedNeed
+}
+
+type UnresolvedNeed struct {
+	ID                 UnresolvedNeedID
+	FieldRef           FieldRef
+	ProjectionKey      ProjectionKey
+	Required           bool
+	Blocking           bool
+	Reason             UnresolvedReason
+	Description        string
+	Sensitivity        Sensitivity
+	Exposure           Exposure
+	Source             Source
+	Origin             Source
+	ResolverAttemptIDs []ResolverAttemptID
+}
+
+func NewUnresolvedNeedID(ref FieldRef, key ProjectionKey, reason UnresolvedReason) UnresolvedNeedID {
+	return UnresolvedNeedID(fmt.Sprintf("need:%s:%s:%s", ref.String(), key, reason))
+}
+
 type OperationID string
 
 type OperationKind string
@@ -146,10 +211,12 @@ type Diagnostic struct {
 }
 
 type EffectiveState struct {
-	Values      map[FieldRef]Value
-	Bindings    []Binding
-	Operations  []OperationMetadata
-	Diagnostics []Diagnostic
+	Values             map[FieldRef]Value
+	Bindings           []Binding
+	ResolverAttempts   []ResolverAttempt
+	UnresolvedFrontier UnresolvedFrontier
+	Operations         []OperationMetadata
+	Diagnostics        []Diagnostic
 }
 
 func NewEffectiveState() EffectiveState {

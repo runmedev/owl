@@ -3,11 +3,13 @@ package graph
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/runmedev/owl/internal/model"
+	"github.com/runmedev/owl/internal/resolver"
 	"github.com/runmedev/owl/internal/store"
 )
 
@@ -137,10 +139,18 @@ func TestRuntimeSchemaUsesVisibilityAndExposureNames(t *testing.T) {
 	for _, name := range []string{
 		`"name": "StateValue"`,
 		`"name": "StateValueInput"`,
+		`"name": "ResolverAttempt"`,
+		`"name": "ResolverAttemptInput"`,
+		`"name": "UnresolvedFrontier"`,
+		`"name": "UnresolvedFrontierInput"`,
+		`"name": "UnresolvedNeed"`,
+		`"name": "UnresolvedNeedInput"`,
 		`"name": "SnapshotItem"`,
 		`"name": "GetResult"`,
 		`"name": "visibility"`,
 		`"name": "exposure"`,
+		`"name": "resolverAttempts"`,
+		`"name": "unresolvedFrontier"`,
 		`"name": "createdAt"`,
 		`"name": "updatedAt"`,
 	} {
@@ -177,17 +187,47 @@ func TestPlanStateEnvelopeQueryStacksOperationRecords(t *testing.T) {
 			Kind:   store.OperationRecordDelete,
 			Delete: store.DeleteOperation{Keys: []string{"API_KEY"}},
 		},
+		{
+			Kind: store.OperationRecordResolverAttempt,
+			ResolverAttempt: model.ResolverAttempt{
+				ID:            "attempt-000001",
+				ResolverID:    "core/dotenv",
+				FieldRef:      model.FieldRef{TypeID: model.TypeCoreSecret, Instance: "default", Field: "api.key"},
+				ProjectionKey: "API_KEY",
+				Outcome:       model.ResolverAttemptNotFound,
+			},
+		},
+		{
+			Kind: store.OperationRecordApplyResolverProposal,
+			ResolverProposal: resolver.Proposal{
+				AttemptID:     "attempt-000002",
+				ResolverID:    "core/dotenv",
+				FieldRef:      model.FieldRef{TypeID: model.TypeCoreSecret, Instance: "default", Field: "api.key"},
+				ProjectionKey: "API_KEY",
+				Value: resolver.ProposedValue{
+					Value:       "secret",
+					Source:      model.Source{Name: ".env", Kind: "dotenv"},
+					Sensitivity: model.SensitivitySensitive,
+					Exposure:    model.ExposureClear,
+				},
+			},
+		},
 	})
 	require.NoError(t, err)
 
 	assert.Contains(t, plan.Query, "$load_0: LoadInput!")
 	assert.Contains(t, plan.Query, "$update_1: DotenvInput")
 	assert.Contains(t, plan.Query, "$delete_2: [String!]")
+	assert.Contains(t, plan.Query, "$resolverAttempt_3: ResolverAttemptInput!")
+	assert.Contains(t, plan.Query, "$resolverProposal_4: ResolverProposalInput!")
 	assert.Contains(t, plan.Query, "load(input: $load_0)")
 	assert.Contains(t, plan.Query, "update(dotenv: $update_1)")
 	assert.Contains(t, plan.Query, "delete(keys: $delete_2)")
+	assert.Contains(t, plan.Query, "recordResolverAttempt(attempt: $resolverAttempt_3)")
+	assert.Contains(t, plan.Query, "applyResolverProposal(proposal: $resolverProposal_4")
+	assert.Contains(t, plan.Query, "unresolvedFrontier")
 	assert.NotContains(t, plan.Query, "reconcile")
-	assert.Equal(t, []string{"load", "update", "delete", "normalize", "validate", "state", "envelope"}, plan.Path)
+	assert.Equal(t, []string{"load", "update", "delete", "recordResolverAttempt", "applyResolverProposal", "normalize", "validate", "state", "envelope"}, plan.Path)
 }
 
 func TestRuntimeMaterializesStateEnvelopeFromOperationRecords(t *testing.T) {
@@ -246,6 +286,174 @@ func TestRuntimeMaterializesStateEnvelopeFromOperationRecords(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestRuntimeMaterializesResolverAttemptsFromOperationRecords(t *testing.T) {
+	t.Parallel()
+
+	runtime, err := NewRuntime(nil)
+	require.NoError(t, err)
+	startedAt := time.Date(2026, 8, 3, 16, 0, 0, 0, time.UTC)
+	finishedAt := startedAt.Add(time.Second)
+	attempt := model.ResolverAttempt{
+		ID:            "attempt-000001",
+		ResolverID:    "core/dotenv",
+		FieldRef:      model.FieldRef{TypeID: model.TypeCoreSecret, Instance: "default", Field: "api.key"},
+		ProjectionKey: "API_KEY",
+		Outcome:       model.ResolverAttemptNotFound,
+		Message:       "dotenv value was not present",
+		Source:        model.Source{Name: ".env", Kind: "dotenv"},
+		StartedAt:     startedAt,
+		FinishedAt:    finishedAt,
+		Diagnostics: []model.Diagnostic{
+			{
+				Severity: model.DiagnosticInfo,
+				Code:     "resolver.not-found",
+				Message:  "resolver did not find a value",
+				Key:      "API_KEY",
+				FieldRef: model.FieldRef{TypeID: model.TypeCoreSecret, Instance: "default", Field: "api.key"},
+				Owner:    model.DiagnosticOwnerValidation,
+			},
+		},
+	}
+
+	envelope, err := runtime.StateEnvelopeForOperations(context.Background(), []store.OperationRecord{
+		{
+			Kind: store.OperationRecordLoad,
+			Load: store.LoadInput{
+				DotenvSource: model.Source{Name: ".env", Kind: "dotenv"},
+				Dotenv:       []store.DotenvVariable{{Key: "API_URL", Value: "https://api.example.com"}},
+			},
+		},
+		{
+			Kind:            store.OperationRecordResolverAttempt,
+			ResolverAttempt: attempt,
+		},
+	})
+	require.NoError(t, err)
+
+	require.Len(t, envelope.State.ResolverAttempts, 1)
+	assert.Equal(t, attempt, envelope.State.ResolverAttempts[0])
+	assert.NotContains(t, envelope.State.ResolverAttempts[0].Message, "secret")
+
+	s := store.NewState(envelope.State, nil)
+	got, ok, err := s.Get("API_URL", store.GetPolicy{Reveal: true})
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, "https://api.example.com", got.Value)
+}
+
+func TestRuntimeMaterializesResolverProposalsFromOperationRecords(t *testing.T) {
+	t.Parallel()
+
+	runtime, err := NewRuntime(nil)
+	require.NoError(t, err)
+	ref := model.FieldRef{TypeID: model.TypeCoreSecret, Instance: "default", Field: "api.key"}
+	timestamp := time.Date(2026, 8, 3, 20, 30, 0, 0, time.UTC)
+
+	envelope, err := runtime.StateEnvelopeForOperations(context.Background(), []store.OperationRecord{
+		{
+			Kind: store.OperationRecordLoad,
+			Load: store.LoadInput{
+				DotenvSource: model.Source{Name: ".env", Kind: "dotenv"},
+				Contracts: []store.EnvContract{{
+					Source:     model.Source{Name: ".env.example", Kind: "dotenv-spec"},
+					Projection: model.ProjectionDotenv,
+					Bindings: []store.EnvBinding{{
+						Key:        "API_KEY",
+						FieldRef:   ref,
+						Projection: model.ProjectionDotenv,
+						Required:   true,
+					}},
+				}},
+			},
+		},
+		{
+			Kind:      store.OperationRecordApplyResolverProposal,
+			Timestamp: timestamp,
+			ResolverProposal: resolver.Proposal{
+				AttemptID:     "attempt-000001",
+				ResolverID:    "core/dotenv",
+				FieldRef:      ref,
+				ProjectionKey: "API_KEY",
+				Value: resolver.ProposedValue{
+					Value:       "secret",
+					Source:      model.Source{Name: ".env", Kind: "dotenv"},
+					Sensitivity: model.SensitivitySensitive,
+					Exposure:    model.ExposureClear,
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	s := store.NewState(envelope.State, nil)
+	got, ok, err := s.Get("API_KEY", store.GetPolicy{Reveal: true})
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, "secret", got.Value)
+	assert.Empty(t, envelope.State.UnresolvedFrontier.Needs)
+	require.NotEmpty(t, envelope.Provenance.Operations)
+	operation := envelope.Provenance.Operations[len(envelope.Provenance.Operations)-1]
+	assert.Equal(t, model.OperationKindResolve, operation.Kind)
+	assert.Equal(t, timestamp, operation.Timestamp)
+}
+
+func TestRuntimeMaterializesUnresolvedFrontier(t *testing.T) {
+	t.Parallel()
+
+	runtime, err := NewRuntime(nil)
+	require.NoError(t, err)
+
+	envelope, err := runtime.StateEnvelope(context.Background(), store.LoadInput{
+		DotenvSource: model.Source{Name: ".env", Kind: "dotenv"},
+		Dotenv:       []store.DotenvVariable{{Key: "PRESENT_SECRET", Value: "secret"}},
+		Contracts: []store.EnvContract{
+			{
+				Source:     model.Source{Name: "owl.toml", Kind: "owl-config"},
+				Projection: model.ProjectionDotenv,
+				Bindings: []store.EnvBinding{
+					{
+						Key:         "MISSING_SECRET",
+						FieldRef:    model.FieldRef{TypeID: model.TypeCoreSecret, Instance: "default", Field: "missing.secret"},
+						Projection:  model.ProjectionDotenv,
+						Description: "Missing secret",
+						Source:      model.Source{Name: "owl.toml", Kind: "owl-config"},
+						Required:    true,
+						Sensitivity: model.SensitivitySensitive,
+						Exposure:    model.ExposureClear,
+					},
+					{
+						Key:         "OPTIONAL_URL",
+						FieldRef:    model.FieldRef{TypeID: model.TypeCorePlain, Instance: "default", Field: "optional.url"},
+						Projection:  model.ProjectionDotenv,
+						Description: "Optional URL",
+						Source:      model.Source{Name: "owl.toml", Kind: "owl-config"},
+						Sensitivity: model.SensitivityPlaintext,
+						Exposure:    model.ExposureClear,
+					},
+					{
+						Key:        "PRESENT_SECRET",
+						FieldRef:   model.FieldRef{TypeID: model.TypeCoreSecret, Instance: "default", Field: "present.secret"},
+						Projection: model.ProjectionDotenv,
+						Source:     model.Source{Name: "owl.toml", Kind: "owl-config"},
+						Required:   true,
+					},
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	require.Len(t, envelope.State.UnresolvedFrontier.Needs, 2)
+	byKey := unresolvedNeedsByKey(envelope.State.UnresolvedFrontier.Needs)
+	require.Contains(t, byKey, "MISSING_SECRET")
+	assert.True(t, byKey["MISSING_SECRET"].Blocking)
+	assert.Equal(t, model.UnresolvedReasonMissing, byKey["MISSING_SECRET"].Reason)
+	require.Contains(t, byKey, "OPTIONAL_URL")
+	assert.False(t, byKey["OPTIONAL_URL"].Blocking)
+	assert.Equal(t, model.UnresolvedReasonMissing, byKey["OPTIONAL_URL"].Reason)
+	assert.NotContains(t, byKey, "PRESENT_SECRET")
+}
+
 func snapshotByName(items []SnapshotItem) map[string]SnapshotItem {
 	result := make(map[string]SnapshotItem, len(items))
 	for _, item := range items {
@@ -260,4 +468,12 @@ func diagnosticCodes(diagnostics []model.Diagnostic) []string {
 		codes = append(codes, diagnostic.Code)
 	}
 	return codes
+}
+
+func unresolvedNeedsByKey(needs []model.UnresolvedNeed) map[string]model.UnresolvedNeed {
+	result := make(map[string]model.UnresolvedNeed, len(needs))
+	for _, need := range needs {
+		result[string(need.ProjectionKey)] = need
+	}
+	return result
 }
