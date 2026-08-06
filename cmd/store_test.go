@@ -613,6 +613,23 @@ func TestPromptDisplayLabelShortensLongProjectionKey(t *testing.T) {
 	}))
 }
 
+func TestPromptDisplayLabelStripsSentencePeriod(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "The Runme test token to use for integration tests (RUNME_TEST_TOKEN)", promptDisplayLabel(PromptAction{
+		ProjectionKey: "RUNME_TEST_TOKEN",
+		Label:         "The Runme test token to use for integration tests.",
+	}))
+	assert.Equal(t, "Continue? (CONFIRM)", promptDisplayLabel(PromptAction{
+		ProjectionKey: "CONFIRM",
+		Label:         "Continue?",
+	}))
+	assert.Equal(t, "Danger! (CONFIRM)", promptDisplayLabel(PromptAction{
+		ProjectionKey: "CONFIRM",
+		Label:         "Danger!",
+	}))
+}
+
 type fakeStoreClient struct {
 	snapshot           *SnapshotResult
 	source             *SourceResult

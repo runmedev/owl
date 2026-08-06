@@ -595,13 +595,22 @@ func newPromptInputModel(prompt PromptAction) promptInputModel {
 func promptDisplayLabel(prompt PromptAction) string {
 	key := prompt.ProjectionKey
 	if key == "" {
-		return prompt.Label
+		return cleanPromptLabel(prompt.Label)
 	}
 	keyHint := shortenPromptKey(key)
-	if prompt.Label == "" || prompt.Label == key {
+	label := cleanPromptLabel(prompt.Label)
+	if label == "" || label == key {
 		return keyHint
 	}
-	return fmt.Sprintf("%s (%s)", prompt.Label, keyHint)
+	return fmt.Sprintf("%s (%s)", label, keyHint)
+}
+
+func cleanPromptLabel(label string) string {
+	label = strings.TrimSpace(label)
+	if len(strings.Fields(label)) > 1 {
+		label = strings.TrimSuffix(label, ".")
+	}
+	return label
 }
 
 func shortenPromptKey(key string) string {
