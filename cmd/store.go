@@ -600,9 +600,16 @@ func promptDisplayLabel(prompt PromptAction) string {
 	keyHint := shortenPromptKey(key)
 	label := cleanPromptLabel(prompt.Label)
 	if label == "" || label == key {
-		return keyHint
+		return promptKeyHint(prompt, keyHint)
 	}
-	return fmt.Sprintf("%s (%s)", label, keyHint)
+	return fmt.Sprintf("%s (%s)", label, promptKeyHint(prompt, keyHint))
+}
+
+func promptKeyHint(prompt PromptAction, key string) string {
+	if prompt.Required {
+		return key
+	}
+	return "optional " + key
 }
 
 func cleanPromptLabel(label string) string {

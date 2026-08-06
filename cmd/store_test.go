@@ -594,6 +594,7 @@ func TestCharmPromptFallsBackForPipedInput(t *testing.T) {
 	value, err := runCharmPromptInput(strings.NewReader("secret\n"), &out, PromptAction{
 		ProjectionKey: "API_KEY",
 		Label:         "API key",
+		Required:      true,
 	})
 
 	require.NoError(t, err)
@@ -607,9 +608,11 @@ func TestPromptDisplayLabelShortensLongProjectionKey(t *testing.T) {
 	assert.Equal(t, "OpenAI API key (OWL_INT..._API_KEY)", promptDisplayLabel(PromptAction{
 		ProjectionKey: "OWL_INTERACTIVE_OPENAI_API_KEY",
 		Label:         "OpenAI API key",
+		Required:      true,
 	}))
 	assert.Equal(t, "API_KEY", promptDisplayLabel(PromptAction{
 		ProjectionKey: "API_KEY",
+		Required:      true,
 	}))
 }
 
@@ -619,14 +622,29 @@ func TestPromptDisplayLabelStripsSentencePeriod(t *testing.T) {
 	assert.Equal(t, "The Runme test token to use for integration tests (RUNME_TEST_TOKEN)", promptDisplayLabel(PromptAction{
 		ProjectionKey: "RUNME_TEST_TOKEN",
 		Label:         "The Runme test token to use for integration tests.",
+		Required:      true,
 	}))
 	assert.Equal(t, "Continue? (CONFIRM)", promptDisplayLabel(PromptAction{
 		ProjectionKey: "CONFIRM",
 		Label:         "Continue?",
+		Required:      true,
 	}))
 	assert.Equal(t, "Danger! (CONFIRM)", promptDisplayLabel(PromptAction{
 		ProjectionKey: "CONFIRM",
 		Label:         "Danger!",
+		Required:      true,
+	}))
+}
+
+func TestPromptDisplayLabelMarksOptionalKeys(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "OpenAI organization ID (optional OPENAI_ORG_ID)", promptDisplayLabel(PromptAction{
+		ProjectionKey: "OPENAI_ORG_ID",
+		Label:         "OpenAI organization ID",
+	}))
+	assert.Equal(t, "optional OPENAI_ORG_ID", promptDisplayLabel(PromptAction{
+		ProjectionKey: "OPENAI_ORG_ID",
 	}))
 }
 
