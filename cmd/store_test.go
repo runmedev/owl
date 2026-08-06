@@ -464,6 +464,119 @@ func TestStoreResolvePromptSubmitsAnswers(t *testing.T) {
 	assert.Equal(t, "resolved 1 interactive values\n", out.String())
 }
 
+func TestStoreSnapshotInteractiveSubmitsAnswersBeforeRendering(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeStoreClient{
+		snapshot: &SnapshotResult{Envs: []SnapshotEnv{{
+			Name:       "API_KEY",
+			Value:      "[masked]",
+			Type:       "core/secret",
+			Source:     "[prompt]",
+			Explicit:   true,
+			Visibility: "masked",
+		}}},
+		resolve: &ResolveResult{Actions: []ResolverAction{{
+			Type: "prompt",
+			Prompt: &PromptAction{
+				NeedID:        "need:API_KEY",
+				ProjectionKey: "API_KEY",
+				Label:         "API key",
+			},
+		}}},
+		applyPromptAnswers: &ResolveResult{
+			Attempts: []ResolverAttempt{{ResolverID: "core/prompt", ProjectionKey: "API_KEY", Outcome: "resolved"}},
+		},
+	}
+	cmd := NewStoreCommand(StoreCommandOptions{
+		ClientFactory: func(*cobra.Command) (StoreClient, error) {
+			return client, nil
+		},
+		PromptInput: func(_ io.Reader, _ io.Writer, prompt PromptAction) (string, error) {
+			assert.Equal(t, "need:API_KEY", prompt.NeedID)
+			return "secret", nil
+		},
+	})
+
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"snapshot", "--interactive"})
+
+	require.NoError(t, cmd.Execute())
+	assert.True(t, client.resolveReq.Interactive)
+	assert.True(t, client.snapshotReq.Interactive)
+	require.Len(t, client.promptAnswers, 1)
+	assert.Equal(t, "secret", client.promptAnswers[0].Value)
+	assert.Contains(t, out.String(), "API_KEY")
+	assert.NotContains(t, out.String(), "resolved 1 interactive values")
+}
+
+func TestStoreCheckInteractiveSubmitsAnswersBeforeChecking(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeStoreClient{
+		check: &CheckResult{OK: true, Checked: 1},
+		resolve: &ResolveResult{Actions: []ResolverAction{{
+			Type:   "prompt",
+			Prompt: &PromptAction{NeedID: "need:API_KEY", ProjectionKey: "API_KEY", Label: "API key"},
+		}}},
+		applyPromptAnswers: &ResolveResult{
+			Attempts: []ResolverAttempt{{ResolverID: "core/prompt", ProjectionKey: "API_KEY", Outcome: "resolved"}},
+		},
+	}
+	cmd := NewStoreCommand(StoreCommandOptions{
+		ClientFactory: func(*cobra.Command) (StoreClient, error) {
+			return client, nil
+		},
+		PromptInput: func(_ io.Reader, _ io.Writer, _ PromptAction) (string, error) {
+			return "secret", nil
+		},
+	})
+
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"check", "--interactive"})
+
+	require.NoError(t, cmd.Execute())
+	assert.True(t, client.resolveReq.Interactive)
+	assert.True(t, client.checkReq.Interactive)
+	require.Len(t, client.promptAnswers, 1)
+	assert.Equal(t, "ok: 1 variables checked, 0 errors, 0 warnings\n", out.String())
+}
+
+func TestStoreSourceInteractiveSubmitsAnswersBeforeRendering(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeStoreClient{
+		source: &SourceResult{Envs: []string{"API_KEY=secret"}},
+		resolve: &ResolveResult{Actions: []ResolverAction{{
+			Type:   "prompt",
+			Prompt: &PromptAction{NeedID: "need:API_KEY", ProjectionKey: "API_KEY", Label: "API key"},
+		}}},
+		applyPromptAnswers: &ResolveResult{
+			Attempts: []ResolverAttempt{{ResolverID: "core/prompt", ProjectionKey: "API_KEY", Outcome: "resolved"}},
+		},
+	}
+	cmd := NewStoreCommand(StoreCommandOptions{
+		ClientFactory: func(*cobra.Command) (StoreClient, error) {
+			return client, nil
+		},
+		PromptInput: func(_ io.Reader, _ io.Writer, _ PromptAction) (string, error) {
+			return "secret", nil
+		},
+	})
+
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"source", "--insecure", "--interactive"})
+
+	require.NoError(t, cmd.Execute())
+	assert.True(t, client.resolveReq.Interactive)
+	assert.True(t, client.sourceReq.Interactive)
+	require.Len(t, client.promptAnswers, 1)
+	assert.Equal(t, "API_KEY=\"secret\"\n", out.String())
+}
+
 func TestCharmPromptFallsBackForPipedInput(t *testing.T) {
 	t.Parallel()
 

@@ -67,7 +67,7 @@ func NewLocalStoreClient(options LocalStoreOptions) *LocalStoreClient {
 }
 
 func (c *LocalStoreClient) Snapshot(ctx context.Context, req SnapshotRequest) (*SnapshotResult, error) {
-	store, err := c.resolvedStore(ctx)
+	store, err := c.resolvedStore(ctx, req.Interactive)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +81,7 @@ func (c *LocalStoreClient) Snapshot(ctx context.Context, req SnapshotRequest) (*
 }
 
 func (c *LocalStoreClient) Source(ctx context.Context, req SourceRequest) (*SourceResult, error) {
-	store, err := c.resolvedStore(ctx)
+	store, err := c.resolvedStore(ctx, req.Interactive)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +95,7 @@ func (c *LocalStoreClient) Source(ctx context.Context, req SourceRequest) (*Sour
 }
 
 func (c *LocalStoreClient) Check(ctx context.Context, req CheckRequest) (*CheckResult, error) {
-	store, err := c.resolvedStore(ctx)
+	store, err := c.resolvedStore(ctx, req.Interactive)
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +201,10 @@ func (c *LocalStoreClient) baseStore() (*owl.Store, error) {
 	return c.storeWithOptions(false, true, false)
 }
 
-func (c *LocalStoreClient) resolvedStore(ctx context.Context) (*owl.Store, error) {
+func (c *LocalStoreClient) resolvedStore(ctx context.Context, interactive bool) (*owl.Store, error) {
+	if interactive && c.lastStore != nil {
+		return c.lastStore, nil
+	}
 	store, err := c.baseStore()
 	if err != nil {
 		return nil, err
@@ -213,7 +216,7 @@ func (c *LocalStoreClient) resolvedStore(ctx context.Context) (*owl.Store, error
 	if _, err := store.Resolve(ctx, owl.ResolveInput{
 		Process: process,
 		Dotenv:  dotenvVars,
-		Policy:  owl.ResolvePolicy{AllowInteraction: false},
+		Policy:  owl.ResolvePolicy{AllowInteraction: interactive},
 	}); err != nil {
 		return nil, err
 	}

@@ -59,7 +59,7 @@ func TestLocalStoreClientUsesV2StoreSemantics(t *testing.T) {
 	require.NotEmpty(t, check.Diagnostics)
 	assert.Contains(t, check.Diagnostics[len(check.Diagnostics)-1], "error dotenv.unresolved-required MISSING_TOKEN")
 
-	resolved, err := client.resolvedStore(context.Background())
+	resolved, err := client.resolvedStore(context.Background(), false)
 	require.NoError(t, err)
 	attempts := resolved.ResolverAttempts()
 	require.NotEmpty(t, attempts)
