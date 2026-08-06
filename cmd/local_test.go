@@ -242,7 +242,7 @@ func TestLocalStoreClientSnapshotUsesDirenvBeforeEnvFilesAndProcess(t *testing.T
 	client := NewLocalStoreClient(LocalStoreOptions{
 		EnvFiles:   []string{envFile, localEnvFile},
 		SpecFiles:  []string{specFile},
-		ProcessEnv: []string{"OWL_DIRENV_OVERRIDE=from-process"},
+		ProcessEnv: []string{"OWL_DIRENV_OVERRIDE=from-direnv"},
 		Direnv:     seed.DirenvEnabledWarn,
 		DirenvDir:  dir,
 		DirenvRunner: func(_ context.Context, gotDir string) (map[string]string, error) {
@@ -282,9 +282,9 @@ password = "CACHE_REDIS_TOKEN"
 		ConfigPath: configFile,
 		EnvFiles:   []string{envFile},
 		ProcessEnv: []string{
-			"CACHE_REDIS_HOST=from-process",
-			"CACHE_REDIS_PORT=6379",
-			"CACHE_REDIS_TOKEN=from-process-token",
+			"CACHE_REDIS_HOST=from-direnv",
+			"CACHE_REDIS_PORT=6380",
+			"CACHE_REDIS_TOKEN=from-direnv-token",
 		},
 		Direnv:    seed.DirenvEnabledWarn,
 		DirenvDir: dir,
@@ -307,6 +307,36 @@ password = "CACHE_REDIS_TOKEN"
 	assert.Equal(t, ".envrc", byName["CACHE_REDIS_PORT"].Source)
 	assert.Equal(t, "[masked]", byName["CACHE_REDIS_TOKEN"].Value)
 	assert.Equal(t, ".envrc", byName["CACHE_REDIS_TOKEN"].Source)
+}
+
+func TestLocalStoreClientSnapshotKeepsObservedValueWhenDirenvDiffers(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	specFile := filepath.Join(dir, ".env.example")
+	require.NoError(t, os.WriteFile(specFile, []byte("OWL_DIRENV_MISMATCH=\"Direnv mismatch\" # Plain!\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".envrc"), []byte("export OWL_DIRENV_MISMATCH=from-direnv\n"), 0o600))
+
+	client := NewLocalStoreClient(LocalStoreOptions{
+		SpecFiles:  []string{specFile},
+		ProcessEnv: []string{"OWL_DIRENV_MISMATCH=from-process"},
+		Direnv:     seed.DirenvEnabledWarn,
+		DirenvDir:  dir,
+		DirenvRunner: func(context.Context, string) (map[string]string, error) {
+			return map[string]string{"OWL_DIRENV_MISMATCH": "from-direnv"}, nil
+		},
+	})
+
+	snapshot, err := client.Snapshot(context.Background(), SnapshotRequest{})
+	require.NoError(t, err)
+	env := snapshotByName(snapshot.Envs)["OWL_DIRENV_MISMATCH"]
+	assert.Equal(t, "from-process", env.Value)
+	assert.Equal(t, "[process]", env.Source)
+
+	check, err := client.Check(context.Background(), CheckRequest{})
+	require.NoError(t, err)
+	require.NotEmpty(t, check.Diagnostics)
+	assert.Contains(t, check.Diagnostics[0], "warning direnv.mismatch OWL_DIRENV_MISMATCH")
 }
 
 func TestLocalStoreClientSnapshotKeepsUntypedDirenvValuesHidden(t *testing.T) {

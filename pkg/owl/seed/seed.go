@@ -118,7 +118,7 @@ func buildCatalog(ctx context.Context, opts Options, direnvKeys map[string]struc
 	if err != nil {
 		return Catalog{}, nil, err
 	}
-	direnvVars, diagnostics, err := direnvVariables(ctx, opts, direnvKeys)
+	direnvVars, diagnostics, err := direnvVariables(ctx, opts, direnvKeys, observedValueMap(observed))
 	if err != nil {
 		return Catalog{}, diagnostics, err
 	}
@@ -338,7 +338,7 @@ func projectionKeys(store *owl.Store) map[string]struct{} {
 	return keys
 }
 
-func direnvVariables(ctx context.Context, opts Options, direnvKeys map[string]struct{}) ([]owl.DotenvVariable, []owl.Diagnostic, error) {
+func direnvVariables(ctx context.Context, opts Options, direnvKeys map[string]struct{}, observed map[string]string) ([]owl.DotenvVariable, []owl.Diagnostic, error) {
 	policy := opts.Direnv
 	if policy == "" {
 		policy = DirenvDisabled
@@ -377,14 +377,19 @@ func direnvVariables(ctx context.Context, opts Options, direnvKeys map[string]st
 	}
 	sort.Strings(keys)
 	var vars []owl.DotenvVariable
+	var diagnostics []owl.Diagnostic
 	for _, key := range keys {
+		if observedValue, ok := observed[key]; ok && observedValue != values[key] {
+			diagnostics = append(diagnostics, direnvMismatchDiagnostic(key))
+			continue
+		}
 		vars = append(vars, owl.DotenvVariable{
 			Key:    key,
 			Value:  values[key],
 			Source: owl.Source{Name: ".envrc", Kind: "direnv"},
 		})
 	}
-	return vars, nil, nil
+	return vars, diagnostics, nil
 }
 
 func direnvDiagnostic(code string, err error) owl.Diagnostic {
@@ -394,6 +399,24 @@ func direnvDiagnostic(code string, err error) owl.Diagnostic {
 		Message:  err.Error(),
 		Owner:    model.DiagnosticOwnerParse,
 	}
+}
+
+func direnvMismatchDiagnostic(key string) owl.Diagnostic {
+	return owl.Diagnostic{
+		Severity: owl.DiagnosticWarning,
+		Code:     "direnv.mismatch",
+		Message:  "direnv value differs from observed environment; keeping observed value",
+		Key:      key,
+		Owner:    model.DiagnosticOwnerParse,
+	}
+}
+
+func observedValueMap(vars []owl.DotenvVariable) map[string]string {
+	values := make(map[string]string, len(vars))
+	for _, variable := range vars {
+		values[variable.Key] = variable.Value
+	}
+	return values
 }
 
 // RunDirenvExportJSON runs direnv export json in dir and returns non-null values.

@@ -45,7 +45,7 @@ func TestNewStoreSeedsObservedSourceWithCallerProvenance(t *testing.T) {
 	assert.Equal(t, owl.TypeCoreOpaque, env.Type)
 }
 
-func TestNewStoreResolvesDirenvBeforeObservedEnv(t *testing.T) {
+func TestNewStoreAttributesMatchingObservedEnvToDirenv(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -58,7 +58,7 @@ func TestNewStoreResolvesDirenvBeforeObservedEnv(t *testing.T) {
 		Observed: []ObservedSource{
 			{
 				Source:  owl.Source{Name: "[kernel]", Kind: "runme-kernel"},
-				Environ: []string{"DIRENV_WINS=from-kernel"},
+				Environ: []string{"DIRENV_WINS=from-direnv"},
 			},
 		},
 		WorkDir: dir,
