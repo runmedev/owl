@@ -63,8 +63,7 @@ func TestLocalStoreClientUsesV2StoreSemantics(t *testing.T) {
 	require.NoError(t, err)
 	attempts := resolved.ResolverAttempts()
 	require.NotEmpty(t, attempts)
-	assert.Equal(t, owl.ResolverID("core/process"), attempts[0].ResolverID)
-	assert.Equal(t, owl.ResolverID("core/dotenv"), attempts[1].ResolverID)
+	assert.Equal(t, owl.ResolverID("core/dotenv"), attempts[0].ResolverID)
 }
 
 func TestLocalStoreClientSnapshotRequiresRevealAndInsecureForPlaintext(t *testing.T) {
@@ -180,7 +179,7 @@ type = "github.com/runmedev/owl/types/universe/anthropic"
 	assert.Equal(t, "universe/anthropic", env.Type)
 }
 
-func TestLocalStoreClientSnapshotUsesProcessBeforeDotenvResolver(t *testing.T) {
+func TestLocalStoreClientSnapshotUsesDotenvBeforeProcessResolver(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -198,8 +197,32 @@ func TestLocalStoreClientSnapshotUsesProcessBeforeDotenvResolver(t *testing.T) {
 	snapshot, err := client.Snapshot(context.Background(), SnapshotRequest{})
 	require.NoError(t, err)
 	env := snapshotByName(snapshot.Envs)["OWL_PROCESS_OVERRIDE"]
-	assert.Equal(t, "from-process", env.Value)
-	assert.Equal(t, "[process]", env.Source)
+	assert.Equal(t, "from-file", env.Value)
+	assert.Equal(t, envFile, env.Source)
+}
+
+func TestLocalStoreClientSnapshotUsesLaterEnvFilesBeforeEarlierEnvFiles(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	envFile := filepath.Join(dir, ".env")
+	localEnvFile := filepath.Join(dir, ".env.local")
+	specFile := filepath.Join(dir, ".env.example")
+	require.NoError(t, os.WriteFile(envFile, []byte("OWL_LOCAL_OVERRIDE=from-env\n"), 0o600))
+	require.NoError(t, os.WriteFile(localEnvFile, []byte("OWL_LOCAL_OVERRIDE=from-env-local\n"), 0o600))
+	require.NoError(t, os.WriteFile(specFile, []byte("OWL_LOCAL_OVERRIDE=\"Local override\" # Plain!\n"), 0o600))
+
+	client := NewLocalStoreClient(LocalStoreOptions{
+		EnvFiles:   []string{envFile, localEnvFile},
+		SpecFiles:  []string{specFile},
+		ProcessEnv: []string{"OWL_LOCAL_OVERRIDE=from-process"},
+	})
+
+	snapshot, err := client.Snapshot(context.Background(), SnapshotRequest{})
+	require.NoError(t, err)
+	env := snapshotByName(snapshot.Envs)["OWL_LOCAL_OVERRIDE"]
+	assert.Equal(t, "from-env-local", env.Value)
+	assert.Equal(t, localEnvFile, env.Source)
 }
 
 func TestLocalStoreClientAutoloadsV1SpecDefaultsInOrder(t *testing.T) {

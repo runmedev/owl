@@ -320,8 +320,8 @@ func (s *Store) Resolve(ctx context.Context, input ResolveInput) (ResolveResult,
 	}
 	runner := resolver.Runner{
 		Resolvers: []resolver.Resolver{
-			builtin.ProcessResolver(catalogsFromVariables(input.Process, Source{Name: "[process]", Kind: "process"})...),
 			builtin.DotenvResolver(catalogsFromVariables(input.Dotenv, Source{Name: ".env", Kind: "dotenv"})...),
+			builtin.ProcessResolver(catalogsFromVariables(input.Process, Source{Name: "[process]", Kind: "process"})...),
 			builtin.NewPromptResolver(),
 		},
 		NewAttemptID: publicAttemptIDGenerator(len(s.operations)),

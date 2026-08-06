@@ -31,6 +31,26 @@ type LocalStoreClient struct {
 
 var processEnviron = os.Environ
 
+type sourceCatalog struct {
+	process []owl.DotenvVariable
+	dotenv  []owl.DotenvVariable
+}
+
+func (c sourceCatalog) all() []owl.DotenvVariable {
+	vars := make([]owl.DotenvVariable, 0, len(c.process)+len(c.dotenv))
+	vars = append(vars, c.process...)
+	vars = append(vars, c.dotenv...)
+	return vars
+}
+
+func (c sourceCatalog) processForResolver() []owl.DotenvVariable {
+	return append([]owl.DotenvVariable{}, c.process...)
+}
+
+func (c sourceCatalog) dotenvForResolver() []owl.DotenvVariable {
+	return reverseSourceGroups(c.dotenv)
+}
+
 func NewLocalCommands() []*cobra.Command {
 	var options LocalStoreOptions
 
@@ -160,13 +180,13 @@ func (c *LocalStoreClient) Resolve(ctx context.Context, req ResolveRequest) (*Re
 		return nil, err
 	}
 	c.lastStore = store
-	process, dotenvVars, err := c.resolverVariables()
+	sources, err := c.sourceCatalog()
 	if err != nil {
 		return nil, err
 	}
 	result, err := store.Resolve(ctx, owl.ResolveInput{
-		Process: process,
-		Dotenv:  dotenvVars,
+		Process: sources.processForResolver(),
+		Dotenv:  sources.dotenvForResolver(),
 		Policy:  owl.ResolvePolicy{AllowInteraction: req.Interactive},
 	})
 	if err != nil {
@@ -216,13 +236,13 @@ func (c *LocalStoreClient) resolvedStore(ctx context.Context, interactive bool) 
 	if err != nil {
 		return nil, err
 	}
-	process, dotenvVars, err := c.resolverVariables()
+	sources, err := c.sourceCatalog()
 	if err != nil {
 		return nil, err
 	}
 	if _, err := store.Resolve(ctx, owl.ResolveInput{
-		Process: process,
-		Dotenv:  dotenvVars,
+		Process: sources.processForResolver(),
+		Dotenv:  sources.dotenvForResolver(),
 		Policy:  owl.ResolvePolicy{AllowInteraction: interactive},
 	}); err != nil {
 		return nil, err
@@ -299,14 +319,11 @@ func (c *LocalStoreClient) loadInheritedSourceValues(store *owl.Store) error {
 	if err != nil {
 		return err
 	}
-	process, dotenvVars, err := c.resolverVariables()
+	sources, err := c.sourceCatalog()
 	if err != nil {
 		return err
 	}
-	if err := loadInheritedVariables(store, process, explicit); err != nil {
-		return err
-	}
-	return loadInheritedVariables(store, dotenvVars, explicit)
+	return loadInheritedVariables(store, sources.all(), explicit)
 }
 
 func explicitSnapshotKeys(store *owl.Store) (map[string]struct{}, error) {
@@ -351,7 +368,31 @@ func loadInheritedVariables(store *owl.Store, vars []owl.DotenvVariable, explici
 	return nil
 }
 
-func (c *LocalStoreClient) resolverVariables() ([]owl.DotenvVariable, []owl.DotenvVariable, error) {
+func reverseSourceGroups(vars []owl.DotenvVariable) []owl.DotenvVariable {
+	type sourceGroup struct {
+		source owl.Source
+		vars   []owl.DotenvVariable
+	}
+	positions := make(map[owl.Source]int)
+	groups := make([]sourceGroup, 0)
+	for _, variable := range vars {
+		source := variable.Source
+		index, ok := positions[source]
+		if !ok {
+			index = len(groups)
+			positions[source] = index
+			groups = append(groups, sourceGroup{source: source})
+		}
+		groups[index].vars = append(groups[index].vars, variable)
+	}
+	reversed := make([]owl.DotenvVariable, 0, len(vars))
+	for i := len(groups) - 1; i >= 0; i-- {
+		reversed = append(reversed, groups[i].vars...)
+	}
+	return reversed
+}
+
+func (c *LocalStoreClient) sourceCatalog() (sourceCatalog, error) {
 	process := make([]owl.DotenvVariable, 0)
 	for _, item := range c.processEnv() {
 		key, value, ok := strings.Cut(item, "=")
@@ -371,16 +412,16 @@ func (c *LocalStoreClient) resolverVariables() ([]owl.DotenvVariable, []owl.Dote
 	var dotenvVars []owl.DotenvVariable
 	envFiles, err := filesOrDefaults(c.options.EnvFiles, ".env")
 	if err != nil {
-		return nil, nil, err
+		return sourceCatalog{}, err
 	}
 	for _, file := range envFiles {
 		raw, err := os.ReadFile(file)
 		if err != nil {
-			return nil, nil, err
+			return sourceCatalog{}, err
 		}
 		parsed, err := dotenv.ParseDotenvValues(raw)
 		if err != nil {
-			return nil, nil, err
+			return sourceCatalog{}, err
 		}
 		keys := make([]string, 0, len(parsed))
 		for key := range parsed {
@@ -395,7 +436,7 @@ func (c *LocalStoreClient) resolverVariables() ([]owl.DotenvVariable, []owl.Dote
 			})
 		}
 	}
-	return process, dotenvVars, nil
+	return sourceCatalog{process: process, dotenv: dotenvVars}, nil
 }
 
 func (c *LocalStoreClient) processEnv() []string {
