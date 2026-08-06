@@ -380,12 +380,17 @@ func direnvDiagnostic(code string, err error) owl.Diagnostic {
 func RunDirenvExportJSON(ctx context.Context, dir string) (map[string]string, error) {
 	cmd := exec.CommandContext(ctx, "direnv", "export", "json")
 	cmd.Dir = dir
-	raw, err := cmd.CombinedOutput()
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	raw, err := cmd.Output()
 	if err != nil {
-		msg := strings.TrimSpace(string(raw))
+		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {
 			msg = err.Error()
 		}
+		return nil, errors.New(msg)
+	}
+	if msg := strings.TrimSpace(stderr.String()); strings.Contains(msg, "direnv: error") {
 		return nil, errors.New(msg)
 	}
 	var decoded map[string]*string

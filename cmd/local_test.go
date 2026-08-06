@@ -260,6 +260,55 @@ func TestLocalStoreClientSnapshotUsesDirenvBeforeEnvFilesAndProcess(t *testing.T
 	assert.Equal(t, 1, calls)
 }
 
+func TestLocalStoreClientConfigSnapshotUsesDirenvBeforeEnvFilesAndProcess(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	envFile := filepath.Join(dir, ".env")
+	configFile := filepath.Join(dir, "owl.toml")
+	require.NoError(t, os.WriteFile(envFile, []byte("CACHE_REDIS_HOST=from-env\nCACHE_REDIS_PORT=6370\nCACHE_REDIS_TOKEN=from-env-token\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".envrc"), []byte("export CACHE_REDIS_HOST=from-direnv\nexport CACHE_REDIS_PORT=6380\nexport CACHE_REDIS_TOKEN=from-direnv-token\n"), 0o600))
+	require.NoError(t, os.WriteFile(configFile, []byte(`
+[needs.redis.cache]
+type = "github.com/runmedev/owl/types/universe/redis"
+
+[needs.redis.cache.dotenv]
+host = "CACHE_REDIS_HOST"
+port = "CACHE_REDIS_PORT"
+password = "CACHE_REDIS_TOKEN"
+`), 0o600))
+
+	client := NewLocalStoreClient(LocalStoreOptions{
+		ConfigPath: configFile,
+		EnvFiles:   []string{envFile},
+		ProcessEnv: []string{
+			"CACHE_REDIS_HOST=from-process",
+			"CACHE_REDIS_PORT=6379",
+			"CACHE_REDIS_TOKEN=from-process-token",
+		},
+		Direnv:    seed.DirenvEnabledWarn,
+		DirenvDir: dir,
+		DirenvRunner: func(context.Context, string) (map[string]string, error) {
+			return map[string]string{
+				"CACHE_REDIS_HOST":  "from-direnv",
+				"CACHE_REDIS_PORT":  "6380",
+				"CACHE_REDIS_TOKEN": "from-direnv-token",
+			}, nil
+		},
+	})
+
+	snapshot, err := client.Snapshot(context.Background(), SnapshotRequest{})
+	require.NoError(t, err)
+	byName := snapshotByName(snapshot.Envs)
+
+	assert.Equal(t, "from-direnv", byName["CACHE_REDIS_HOST"].Value)
+	assert.Equal(t, ".envrc", byName["CACHE_REDIS_HOST"].Source)
+	assert.Equal(t, "6380", byName["CACHE_REDIS_PORT"].Value)
+	assert.Equal(t, ".envrc", byName["CACHE_REDIS_PORT"].Source)
+	assert.Equal(t, "[masked]", byName["CACHE_REDIS_TOKEN"].Value)
+	assert.Equal(t, ".envrc", byName["CACHE_REDIS_TOKEN"].Source)
+}
+
 func TestLocalStoreClientSnapshotKeepsUntypedDirenvValuesHidden(t *testing.T) {
 	t.Parallel()
 

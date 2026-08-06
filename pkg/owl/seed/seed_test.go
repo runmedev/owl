@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -93,6 +94,39 @@ func TestProcessEnvDotenvQuotesValuesAndSkipsInvalidKeys(t *testing.T) {
 	assert.Contains(t, rendered, "OWL_SIMPLE=\"value\"\n")
 	assert.Contains(t, rendered, "OWL_QUOTED=\"value with spaces\\nand newline\"\n")
 	assert.NotContains(t, rendered, "BAD-KEY")
+}
+
+func TestRunDirenvExportJSONParsesStdoutWhenDirenvLogsToStderr(t *testing.T) {
+	binDir := t.TempDir()
+	writeFakeDirenv(t, binDir, `#!/bin/sh
+echo "direnv: loading .envrc" >&2
+echo '{"CACHE_REDIS_HOST":"from-direnv"}'
+`)
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	values, err := RunDirenvExportJSON(context.Background(), t.TempDir())
+	require.NoError(t, err)
+	assert.Equal(t, "from-direnv", values["CACHE_REDIS_HOST"])
+}
+
+func TestRunDirenvExportJSONTreatsBlockedEnvrcAsError(t *testing.T) {
+	binDir := t.TempDir()
+	writeFakeDirenv(t, binDir, `#!/bin/sh
+echo "direnv: error /tmp/.envrc is blocked" >&2
+echo '{"DIRENV_DIFF":"x"}'
+`)
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	_, err := RunDirenvExportJSON(context.Background(), t.TempDir())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), ".envrc is blocked")
+}
+
+func writeFakeDirenv(t *testing.T, dir string, script string) {
+	t.Helper()
+
+	path := filepath.Join(dir, "direnv")
+	require.NoError(t, os.WriteFile(path, []byte(strings.TrimSpace(script)+"\n"), 0o700))
 }
 
 func snapshotItemByName(items []owl.SnapshotItem) map[string]owl.SnapshotItem {
