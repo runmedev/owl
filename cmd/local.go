@@ -167,7 +167,7 @@ func (c *LocalStoreClient) Resolve(ctx context.Context, req ResolveRequest) (*Re
 	result, err := store.Resolve(ctx, owl.ResolveInput{
 		Process: process,
 		Dotenv:  dotenvVars,
-		Policy:  owl.ResolvePolicy{AllowInteraction: req.Prompt},
+		Policy:  owl.ResolvePolicy{AllowInteraction: req.Interactive},
 	})
 	if err != nil {
 		return nil, err

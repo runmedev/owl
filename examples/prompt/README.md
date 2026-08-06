@@ -7,7 +7,7 @@ an interactive client supplies it.
 From this directory:
 
 ```bash
-owl resolve --prompt
+owl resolve --interactive
 ```
 
 The CLI uses Charm Bubble Tea input for the prompt and applies the answer

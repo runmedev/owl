@@ -415,7 +415,7 @@ func TestStoreResolveRendersAttemptsAndPromptActions(t *testing.T) {
 
 	require.NoError(t, cmd.Execute())
 	assert.True(t, client.resolveCalled)
-	assert.False(t, client.resolveReq.Prompt)
+	assert.False(t, client.resolveReq.Interactive)
 	assert.Contains(t, out.String(), "API_KEY")
 	assert.Contains(t, out.String(), "not_found")
 	assert.Contains(t, out.String(), "prompt")
@@ -453,15 +453,15 @@ func TestStoreResolvePromptSubmitsAnswers(t *testing.T) {
 	var stderr bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&stderr)
-	cmd.SetArgs([]string{"resolve", "--prompt"})
+	cmd.SetArgs([]string{"resolve", "--interactive"})
 
 	require.NoError(t, cmd.Execute())
-	assert.True(t, client.resolveReq.Prompt)
+	assert.True(t, client.resolveReq.Interactive)
 	require.Len(t, client.promptAnswers, 1)
 	assert.Equal(t, "need:API_KEY", client.promptAnswers[0].NeedID)
 	assert.Equal(t, "secret", client.promptAnswers[0].Value)
 	assert.Empty(t, stderr.String())
-	assert.Equal(t, "resolved 1 prompted values\n", out.String())
+	assert.Equal(t, "resolved 1 interactive values\n", out.String())
 }
 
 func TestCharmPromptFallsBackForPipedInput(t *testing.T) {

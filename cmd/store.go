@@ -99,7 +99,7 @@ type TypeResult struct {
 }
 
 type ResolveRequest struct {
-	Prompt bool
+	Interactive bool
 }
 
 type ResolveResult struct {
@@ -370,7 +370,7 @@ func newResolveCommand(opts StoreCommandOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if !req.Prompt {
+			if !req.Interactive {
 				return renderResolve(cmd.OutOrStdout(), result)
 			}
 			promptInput := opts.PromptInput
@@ -388,14 +388,14 @@ func newResolveCommand(opts StoreCommandOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "resolved %d prompted values\n", len(applied.Attempts)); err != nil {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "resolved %d interactive values\n", len(applied.Attempts)); err != nil {
 				return err
 			}
 			return nil
 		},
 	}
 
-	cmd.Flags().BoolVar(&req.Prompt, "prompt", false, "Prompt interactively for unresolved values")
+	cmd.Flags().BoolVar(&req.Interactive, "interactive", false, "Interactively resolve unresolved values")
 	if opts.ConfigureResolveCommand != nil {
 		opts.ConfigureResolveCommand(&cmd)
 	}
