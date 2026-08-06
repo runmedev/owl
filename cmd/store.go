@@ -403,10 +403,10 @@ func newResolveCommand(opts StoreCommandOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "resolved %d interactive values\n", len(applied.Attempts)); err != nil {
+			if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "\nresolved %d interactive values\n", len(applied.Attempts)); err != nil {
 				return err
 			}
-			return nil
+			return renderResolve(cmd.OutOrStdout(), mergeResolveAttempts(result, applied))
 		},
 	}
 
@@ -416,6 +416,20 @@ func newResolveCommand(opts StoreCommandOptions) *cobra.Command {
 	}
 
 	return &cmd
+}
+
+func mergeResolveAttempts(first, second *ResolveResult) *ResolveResult {
+	if first == nil {
+		return second
+	}
+	if second == nil {
+		return first
+	}
+	merged := &ResolveResult{
+		Attempts: append([]ResolverAttempt{}, first.Attempts...),
+	}
+	merged.Attempts = append(merged.Attempts, second.Attempts...)
+	return merged
 }
 
 func (opts StoreCommandOptions) client(cmd *cobra.Command) (StoreClient, error) {

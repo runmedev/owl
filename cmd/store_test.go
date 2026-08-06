@@ -426,6 +426,11 @@ func TestStoreResolvePromptSubmitsAnswers(t *testing.T) {
 
 	client := &fakeStoreClient{
 		resolve: &ResolveResult{
+			Attempts: []ResolverAttempt{{
+				ResolverID:    "core/dotenv",
+				ProjectionKey: "API_KEY",
+				Outcome:       "not_found",
+			}},
 			Actions: []ResolverAction{{
 				Type: "interactive",
 				Prompt: &PromptAction{
@@ -460,8 +465,13 @@ func TestStoreResolvePromptSubmitsAnswers(t *testing.T) {
 	require.Len(t, client.promptAnswers, 1)
 	assert.Equal(t, "need:API_KEY", client.promptAnswers[0].NeedID)
 	assert.Equal(t, "secret", client.promptAnswers[0].Value)
-	assert.Empty(t, stderr.String())
-	assert.Equal(t, "resolved 1 interactive values\n", out.String())
+	assert.Equal(t, "\nresolved 1 interactive values\n", stderr.String())
+	assert.Contains(t, out.String(), "API_KEY")
+	assert.Contains(t, out.String(), "core/dotenv")
+	assert.Contains(t, out.String(), "not_found")
+	assert.Contains(t, out.String(), "core/interactive")
+	assert.Contains(t, out.String(), "resolved")
+	assert.NotContains(t, out.String(), "resolved 1 interactive values")
 }
 
 func TestStoreSnapshotInteractiveSubmitsAnswersBeforeRendering(t *testing.T) {
