@@ -3,6 +3,7 @@ package seed
 import (
 	"context"
 
+	internalseed "github.com/runmedev/owl/internal/seed"
 	"github.com/runmedev/owl/pkg/owl"
 )
 
@@ -23,52 +24,60 @@ type ObservedSource struct {
 	Environ []string
 }
 
-// Result is the seeded store plus catalog and source diagnostics used to build it.
+// DirenvPolicy controls whether seed evaluates direnv for .envrc values.
+type DirenvPolicy = internalseed.DirenvPolicy
+
+const (
+	// DirenvDisabled prevents direnv execution.
+	DirenvDisabled = internalseed.DirenvDisabled
+	// DirenvEnabledWarn records direnv failures as diagnostics and continues.
+	DirenvEnabledWarn = internalseed.DirenvEnabledWarn
+	// DirenvEnabledError returns direnv failures as errors.
+	DirenvEnabledError = internalseed.DirenvEnabledError
+)
+
+// DirenvExportRunner runs direnv export and returns environment key/value pairs.
+type DirenvExportRunner = internalseed.DirenvExportRunner
+
+// Result is the seeded store plus source diagnostics used to build it.
 type Result struct {
 	Store       *owl.Store
-	Catalog     Catalog
 	Diagnostics []owl.Diagnostic
 }
 
-// NewStore creates an Owl store and seeds inherited values from observed sources.
+// NewStore creates an Owl store and resolves values from observed sources.
 func NewStore(ctx context.Context, opts Options) (*Result, error) {
-	store, err := newBaseStore(baseStoreRequest{
-		options:          opts,
-		allowMissingSpec: false,
-		loadConfig:       true,
-		loadValues:       false,
-	})
+	result, err := internalseed.NewStore(ctx, internalOptions(opts))
 	if err != nil {
 		return nil, err
 	}
-	catalog, diagnostics, err := buildCatalog(ctx, catalogBuildRequest{
-		options:    opts,
-		direnvKeys: projectionKeys(store),
-	})
-	if err != nil {
-		return nil, err
-	}
-	if err := seedInheritedValues(store, catalog); err != nil {
+	if _, err := result.Store.Resolve(ctx, owl.ResolveInput{
+		Process: result.Catalog.ProcessResolverInput(),
+		Dotenv:  result.Catalog.DotenvResolverInput(),
+	}); err != nil {
 		return nil, err
 	}
 	return &Result{
-		Store:       store,
-		Catalog:     catalog,
-		Diagnostics: diagnostics,
+		Store:       result.Store,
+		Diagnostics: result.Diagnostics,
 	}, nil
 }
 
-// NewValueStore creates a store with raw observed and dotenv values loaded directly.
-func NewValueStore(opts Options, allowMissingSpec bool) (*owl.Store, error) {
-	return newBaseStore(baseStoreRequest{
-		options:          opts,
-		allowMissingSpec: allowMissingSpec,
-		loadConfig:       false,
-		loadValues:       true,
-	})
-}
-
-// BuildCatalog discovers candidate values without creating or mutating a store.
-func BuildCatalog(ctx context.Context, opts Options) (Catalog, []owl.Diagnostic, error) {
-	return buildCatalog(ctx, catalogBuildRequest{options: opts})
+func internalOptions(opts Options) internalseed.Options {
+	observed := make([]internalseed.ObservedSource, 0, len(opts.Observed))
+	for _, source := range opts.Observed {
+		observed = append(observed, internalseed.ObservedSource{
+			Source:  source.Source,
+			Environ: source.Environ,
+		})
+	}
+	return internalseed.Options{
+		EnvFiles:     opts.EnvFiles,
+		SpecFiles:    opts.SpecFiles,
+		ConfigPath:   opts.ConfigPath,
+		Observed:     observed,
+		WorkDir:      opts.WorkDir,
+		Direnv:       opts.Direnv,
+		DirenvRunner: opts.DirenvRunner,
+	}
 }
