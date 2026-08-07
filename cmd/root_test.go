@@ -160,9 +160,16 @@ func readGolden(t *testing.T, path string) string {
 
 	raw, err := os.ReadFile(path)
 	require.NoError(t, err)
-	text := string(raw)
+	text := strings.ReplaceAll(string(raw), "\r\n", "\n")
 	if !strings.HasSuffix(text, "\n") {
 		text += "\n"
 	}
 	return text
+}
+
+func TestReadGoldenNormalizesCRLF(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "output.golden")
+	require.NoError(t, os.WriteFile(path, []byte("first\r\nsecond\r\n"), 0o600))
+
+	assert.Equal(t, "first\nsecond\n", readGolden(t, path))
 }

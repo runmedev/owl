@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -207,6 +208,9 @@ echo '{"DIRENV_DIFF":"x"}'
 
 func writeFakeDirenv(t *testing.T, dir string, script string) {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("fake direnv fixture is a POSIX #!/bin/sh executable")
+	}
 
 	path := filepath.Join(dir, "direnv")
 	require.NoError(t, os.WriteFile(path, []byte(strings.TrimSpace(script)+"\n"), 0o700))
