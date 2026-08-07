@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -78,6 +79,26 @@ func TestLoadBuiltInCUETypeDefs(t *testing.T) {
 	assert.Equal(t, model.TypeCoreURL, anthropic.Fields["baseURL"].TypeID)
 	assert.Equal(t, model.SensitivitySensitive, anthropic.Fields["apiKey"].Sensitivity)
 	assert.Equal(t, model.SensitivityPlaintext, anthropic.Fields["baseURL"].Sensitivity)
+}
+
+func TestTrimpathBinaryUsesEmbeddedCUECatalog(t *testing.T) {
+	root := repoRoot(t)
+	binary := filepath.Join(t.TempDir(), "owl")
+	build := exec.Command("go", "build", "-trimpath", "-o", binary, filepath.Join(root, "main.go"))
+	build.Dir = root
+	output, err := build.CombinedOutput()
+	require.NoError(t, err, string(output))
+
+	run := exec.Command(binary,
+		"check",
+		"--config", filepath.Join(root, "examples/redis/owl.toml"),
+		"--env-file", filepath.Join(root, "cmd/testdata/cli/redis.env"),
+	)
+	run.Dir = t.TempDir()
+	output, err = run.CombinedOutput()
+	require.NoError(t, err, string(output))
+	assert.Contains(t, string(output), "ok:")
+	assert.NotContains(t, string(output), "type.invalid-")
 }
 
 func TestNewBuiltInCUERegistry(t *testing.T) {

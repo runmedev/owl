@@ -28,8 +28,8 @@ var builtInCUETypes = []cueTypeSpec{
 }
 
 type cueCatalog struct {
-	root string
-	ctx  *cue.Context
+	loadConfig load.Config
+	ctx        *cue.Context
 
 	specs        []cueTypeSpec
 	specsByID    map[model.TypeID]cueTypeSpec
@@ -41,9 +41,20 @@ func newCUECatalog(root string) (*cueCatalog, error) {
 	if root == "" {
 		return nil, fmt.Errorf("cue root is not configured")
 	}
+	return newCUECatalogWithConfig(load.Config{Dir: filepath.Clean(root)})
+}
 
+func newEmbeddedCUECatalog() (*cueCatalog, error) {
+	cfg, err := embeddedCUEConfig()
+	if err != nil {
+		return nil, err
+	}
+	return newCUECatalogWithConfig(cfg)
+}
+
+func newCUECatalogWithConfig(cfg load.Config) (*cueCatalog, error) {
 	catalog := &cueCatalog{
-		root:         root,
+		loadConfig:   cfg,
 		ctx:          cuecontext.New(),
 		specs:        append([]cueTypeSpec{}, builtInCUETypes...),
 		specsByID:    make(map[model.TypeID]cueTypeSpec, len(builtInCUETypes)),
@@ -75,8 +86,8 @@ func newCUECatalog(root string) (*cueCatalog, error) {
 }
 
 func (c *cueCatalog) loadValue(spec cueTypeSpec) (cue.Value, error) {
-	cfg := &load.Config{Dir: filepath.Clean(c.root)}
-	instances := load.Instances([]string{spec.importPath}, cfg)
+	cfg := c.loadConfig
+	instances := load.Instances([]string{spec.importPath}, &cfg)
 	if len(instances) == 0 {
 		return cue.Value{}, fmt.Errorf("cue type %s: no instances loaded", spec.importPath)
 	}

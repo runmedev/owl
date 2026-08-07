@@ -123,6 +123,7 @@ func TestRedisHostDiagnostics(t *testing.T) {
 		Resolved:    "redis.internal",
 		Visibility:  model.VisibilityLiteral,
 		Sensitivity: model.SensitivityPlaintext,
+		Exposure:    model.ExposureClear,
 	}))
 
 	diagnostics := fieldValueDiagnostics(types, model.TypeCorePlain, model.Value{
@@ -130,6 +131,7 @@ func TestRedisHostDiagnostics(t *testing.T) {
 		Resolved:    "",
 		Visibility:  model.VisibilityLiteral,
 		Sensitivity: model.SensitivityPlaintext,
+		Exposure:    model.ExposureClear,
 	})
 	require.NotEmpty(t, diagnostics)
 	assert.Equal(t, "type.invalid-host", diagnostics[0].Code)
@@ -141,6 +143,7 @@ func TestRedisHostDiagnostics(t *testing.T) {
 		Resolved:    "not a host",
 		Visibility:  model.VisibilityLiteral,
 		Sensitivity: model.SensitivityPlaintext,
+		Exposure:    model.ExposureClear,
 	})
 	require.NotEmpty(t, diagnostics)
 	assert.Equal(t, "type.invalid-host", diagnostics[0].Code)
@@ -157,6 +160,7 @@ func TestRedisPortDiagnostics(t *testing.T) {
 		Resolved:    "6379",
 		Visibility:  model.VisibilityLiteral,
 		Sensitivity: model.SensitivityPlaintext,
+		Exposure:    model.ExposureClear,
 	}))
 
 	diagnostics := fieldValueDiagnostics(types, model.TypeCorePlain, model.Value{
@@ -164,6 +168,7 @@ func TestRedisPortDiagnostics(t *testing.T) {
 		Resolved:    "not-a-port",
 		Visibility:  model.VisibilityLiteral,
 		Sensitivity: model.SensitivityPlaintext,
+		Exposure:    model.ExposureClear,
 	})
 	require.NotEmpty(t, diagnostics)
 	assert.Equal(t, "type.invalid-port", diagnostics[0].Code)
@@ -180,6 +185,7 @@ func TestPrimitiveValueDiagnostics(t *testing.T) {
 		Resolved:    "example.com",
 		Visibility:  model.VisibilityLiteral,
 		Sensitivity: model.SensitivityPlaintext,
+		Exposure:    model.ExposureClear,
 	})
 	require.NotEmpty(t, diagnostics)
 	assert.Equal(t, "type.invalid-url", diagnostics[0].Code)
@@ -231,6 +237,94 @@ func TestStorePreservesDotenvValueSource(t *testing.T) {
 	assert.Equal(t, ".env", byName["FILE_ONLY"].Source.Name)
 	assert.Equal(t, "from-file", byName["DUPLICATE_KEY"].Value)
 	assert.Equal(t, ".env", byName["DUPLICATE_KEY"].Source.Name)
+	check := s.Check()
+	assert.True(t, check.OK)
+	require.Len(t, check.Diagnostics, 1)
+	assert.Equal(t, model.DiagnosticWarning, check.Diagnostics[0].Severity)
+	assert.Equal(t, "dotenv.key-collision", check.Diagnostics[0].Code)
+	assert.Equal(t, "DUPLICATE_KEY", check.Diagnostics[0].Key)
+	assert.Contains(t, check.Diagnostics[0].Message, `.env`)
+	assert.NotContains(t, check.Diagnostics[0].Message, "from-process")
+	assert.NotContains(t, check.Diagnostics[0].Message, "from-file")
+}
+
+func TestDiagnosticValueLabelDefaultsToHidden(t *testing.T) {
+	t.Parallel()
+
+	clearValue := model.Value{
+		Resolved:    "safe-value",
+		Visibility:  model.VisibilityLiteral,
+		Sensitivity: model.SensitivityPlaintext,
+		Exposure:    model.ExposureClear,
+	}
+	assert.Equal(t, `value "safe-value"`, diagnosticValueLabel(clearValue))
+
+	for name, value := range map[string]model.Value{
+		"unknown sensitivity": {
+			Resolved:    "unknown-secret",
+			Visibility:  model.VisibilityLiteral,
+			Sensitivity: model.SensitivityUnknown,
+			Exposure:    model.ExposureClear,
+		},
+		"opaque exposure": {
+			Resolved:    "opaque-secret",
+			Visibility:  model.VisibilityLiteral,
+			Sensitivity: model.SensitivityPlaintext,
+			Exposure:    model.ExposureOpaque,
+		},
+		"masked visibility": {
+			Resolved:    "masked-secret",
+			Visibility:  model.VisibilityMasked,
+			Sensitivity: model.SensitivityPlaintext,
+			Exposure:    model.ExposureClear,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, "value", diagnosticValueLabel(value))
+			assert.NotContains(t, diagnosticValueLabel(value), value.Resolved)
+		})
+	}
+}
+
+func TestDeleteOperationDoesNotReuseInputBindings(t *testing.T) {
+	t.Parallel()
+
+	deletedRef := model.FieldRef{TypeID: model.TypeCorePlain, Instance: "default", Field: "deleted"}
+	keptRef := model.FieldRef{TypeID: model.TypeCorePlain, Instance: "default", Field: "kept"}
+	bindings := []model.Binding{
+		{Key: "DELETED", FieldRef: deletedRef},
+		{Key: "KEPT", FieldRef: keptRef},
+	}
+	original := append([]model.Binding{}, bindings...)
+	state := model.EffectiveState{
+		Values: map[model.FieldRef]model.Value{
+			deletedRef: {FieldRef: deletedRef},
+			keptRef:    {FieldRef: keptRef},
+		},
+		Bindings: bindings,
+	}
+
+	after, err := (DeleteOperation{Keys: []string{"DELETED"}}).Apply(context.Background(), state)
+	require.NoError(t, err)
+	assert.Equal(t, original, bindings)
+	require.Len(t, after.Bindings, 1)
+	assert.Equal(t, keptRef, after.Bindings[0].FieldRef)
+}
+
+func TestWithoutDiagnosticOwnerDoesNotReuseInputSlice(t *testing.T) {
+	t.Parallel()
+
+	diagnostics := []model.Diagnostic{
+		{Code: "validation", Owner: model.DiagnosticOwnerValidation},
+		{Code: "projection", Owner: model.DiagnosticOwnerProjection},
+	}
+	original := append([]model.Diagnostic{}, diagnostics...)
+
+	filtered := withoutDiagnosticOwner(diagnostics, model.DiagnosticOwnerValidation)
+
+	assert.Equal(t, original, diagnostics)
+	require.Len(t, filtered, 1)
+	assert.Equal(t, "projection", filtered[0].Code)
 }
 
 func TestStoreRecordsFactOperationsOnly(t *testing.T) {

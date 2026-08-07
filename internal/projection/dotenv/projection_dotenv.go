@@ -64,7 +64,7 @@ func IngestDotenv(values map[string]string, opts DotenvIngestOptions) model.Effe
 		if left.Order > 0 && right.Order > 0 && left.Order != right.Order {
 			return left.Order < right.Order
 		}
-		if left.Order > 0 != (right.Order > 0) {
+		if (left.Order > 0) != (right.Order > 0) {
 			return left.Order > 0
 		}
 		return declarationKeys[i] < declarationKeys[j]
