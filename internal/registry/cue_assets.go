@@ -20,6 +20,10 @@ const embeddedCUERoot = "/owl-cue"
 type embeddedCUECatalogSource struct{}
 
 func (embeddedCUECatalogSource) LoadConfig() (load.Config, error) {
+	root, err := filepath.Abs(embeddedCUERoot)
+	if err != nil {
+		return load.Config{}, fmt.Errorf("resolve embedded CUE catalog root %q: %w", embeddedCUERoot, err)
+	}
 	overlay := make(map[string]load.Source)
 	assets := []struct {
 		prefix string
@@ -30,11 +34,11 @@ func (embeddedCUECatalogSource) LoadConfig() (load.Config, error) {
 		{prefix: "types", fs: types.BuiltInFS},
 	}
 	for _, asset := range assets {
-		if err := addCUEOverlay(overlay, asset.prefix, asset.fs); err != nil {
+		if err := addCUEOverlay(overlay, root, asset.prefix, asset.fs); err != nil {
 			return load.Config{}, err
 		}
 	}
-	return load.Config{Dir: embeddedCUERoot, Overlay: overlay}, nil
+	return load.Config{Dir: root, Overlay: overlay}, nil
 }
 
 type directoryCUECatalogSource struct {
@@ -89,7 +93,7 @@ func (s directoryCUECatalogSource) LoadConfig() (load.Config, error) {
 	return load.Config{Dir: root}, nil
 }
 
-func addCUEOverlay(overlay map[string]load.Source, prefix string, assets fs.FS) error {
+func addCUEOverlay(overlay map[string]load.Source, root string, prefix string, assets fs.FS) error {
 	return fs.WalkDir(assets, ".", func(name string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -101,7 +105,7 @@ func addCUEOverlay(overlay map[string]load.Source, prefix string, assets fs.FS) 
 		if err != nil {
 			return fmt.Errorf("read embedded CUE asset %s/%s: %w", prefix, name, err)
 		}
-		filename := filepath.Join(embeddedCUERoot, prefix, filepath.FromSlash(name))
+		filename := filepath.Join(root, prefix, filepath.FromSlash(name))
 		overlay[filename] = load.FromBytes(raw)
 		return nil
 	})

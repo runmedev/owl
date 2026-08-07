@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -85,7 +86,11 @@ func TestLoadBuiltInCUETypeDefs(t *testing.T) {
 
 func TestTrimpathBinaryUsesEmbeddedAndDirectoryCUECatalogs(t *testing.T) {
 	root := repoRoot(t)
-	binary := filepath.Join(t.TempDir(), "owl")
+	binaryName := "owl"
+	if runtime.GOOS == "windows" {
+		binaryName += ".exe"
+	}
+	binary := filepath.Join(t.TempDir(), binaryName)
 	build := exec.Command("go", "build", "-trimpath", "-o", binary, filepath.Join(root, "main.go"))
 	build.Dir = root
 	output, err := build.CombinedOutput()
@@ -114,6 +119,17 @@ func TestTrimpathBinaryUsesEmbeddedAndDirectoryCUECatalogs(t *testing.T) {
 	require.NoError(t, err, string(output))
 	assert.Contains(t, string(output), "ok:")
 	assert.NotContains(t, string(output), "type.invalid-")
+}
+
+func TestEmbeddedCUECatalogUsesAbsolutePaths(t *testing.T) {
+	t.Parallel()
+
+	config, err := (embeddedCUECatalogSource{}).LoadConfig()
+	require.NoError(t, err)
+	require.True(t, filepath.IsAbs(config.Dir), "catalog directory is not absolute: %q", config.Dir)
+	for filename := range config.Overlay {
+		assert.True(t, filepath.IsAbs(filename), "overlay filename is not absolute: %q", filename)
+	}
 }
 
 func TestNewBuiltInRegistryFromDirectoryRetainsGoMetadata(t *testing.T) {
