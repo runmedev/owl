@@ -2,6 +2,7 @@ package seed
 
 import (
 	"context"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -95,6 +96,7 @@ func dotenvVariables(opts Options) ([]owl.DotenvVariable, error) {
 	}
 	var vars []owl.DotenvVariable
 	for _, file := range envFiles {
+		source := owl.Source{Name: sourceNameForPath(opts.WorkDir, file), Kind: "dotenv"}
 		raw, ok, err := readOptionalEnvFile(file)
 		if err != nil {
 			return nil, err
@@ -115,11 +117,22 @@ func dotenvVariables(opts Options) ([]owl.DotenvVariable, error) {
 			vars = append(vars, owl.DotenvVariable{
 				Key:    key,
 				Value:  parsed[key],
-				Source: owl.Source{Name: file, Kind: "dotenv"},
+				Source: source,
 			})
 		}
 	}
 	return vars, nil
+}
+
+func sourceNameForPath(workDir, path string) string {
+	if workDir == "" || path == "" || !filepath.IsAbs(path) {
+		return path
+	}
+	rel, err := filepath.Rel(workDir, path)
+	if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
+		return path
+	}
+	return rel
 }
 
 func reverseSourceGroups(vars []owl.DotenvVariable) []owl.DotenvVariable {

@@ -58,7 +58,7 @@ func TestNewStoreSkipsMissingEnvFiles(t *testing.T) {
 	assert.Equal(t, "PRESENT", items[0].Name)
 	assert.Equal(t, "from-dotenv", items[0].Value)
 	assert.Equal(t, "dotenv", items[0].Source.Kind)
-	assert.Equal(t, ".env", filepath.Base(items[0].Source.Name))
+	assert.Equal(t, ".env", items[0].Source.Name)
 }
 
 func TestNewStoreUsesDefaultEnvFilesInOrder(t *testing.T) {
@@ -84,5 +84,5 @@ func TestNewStoreUsesDefaultEnvFilesInOrder(t *testing.T) {
 	require.Len(t, items, 1)
 	assert.Equal(t, "DEFAULT_ORDER", items[0].Name)
 	assert.Equal(t, "from-env-dev", items[0].Value)
-	assert.Equal(t, ".env.dev", filepath.Base(items[0].Source.Name))
+	assert.Equal(t, ".env.dev", items[0].Source.Name)
 }
