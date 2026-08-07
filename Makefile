@@ -11,7 +11,7 @@ LDFLAGS := -s -w \
 .PHONY: build
 build: BUILD_OUTPUT ?= owl
 build:
-	CGO_ENABLED=0 go build -o $(BUILD_OUTPUT) -ldflags="$(LDFLAGS)" main.go
+	CGO_ENABLED=0 go build -trimpath -o $(BUILD_OUTPUT) -ldflags="$(LDFLAGS)" main.go
 
 .PHONY: test
 test:

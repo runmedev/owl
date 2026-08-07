@@ -587,6 +587,22 @@ func TestStoreSourceInteractiveSubmitsAnswersBeforeRendering(t *testing.T) {
 	assert.Equal(t, "API_KEY=\"secret\"\n", out.String())
 }
 
+func TestRenderSourcePreservesEqualsInValue(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	err := renderSource(&out, &SourceResult{Envs: []string{"TOKEN=header.payload=signature"}}, SourceRequest{})
+	require.NoError(t, err)
+	assert.Equal(t, "TOKEN=\"header.payload=signature\"\n", out.String())
+}
+
+func TestRenderSourceRejectsBareKey(t *testing.T) {
+	t.Parallel()
+
+	err := renderSource(io.Discard, &SourceResult{Envs: []string{"TOKEN"}}, SourceRequest{})
+	require.EqualError(t, err, "invalid key-value pair: TOKEN")
+}
+
 func TestCharmPromptFallsBackForPipedInput(t *testing.T) {
 	t.Parallel()
 

@@ -1,9 +1,6 @@
 package registry
 
 import (
-	"path/filepath"
-	"runtime"
-
 	"github.com/runmedev/owl/internal/model"
 )
 
@@ -21,12 +18,23 @@ type FieldValueValidator interface {
 }
 
 type BuiltInRegistry struct {
-	types  map[model.TypeID]model.TypeDef
-	cue    *cueCatalog
-	cueErr error
+	types map[model.TypeID]model.TypeDef
+	cue   *cueCatalog
 }
 
 func NewBuiltInRegistry() BuiltInRegistry {
+	catalog, err := newEmbeddedCUECatalog()
+	if err != nil {
+		panic("load embedded CUE catalog: " + err.Error())
+	}
+	return newBuiltInRegistry(catalog)
+}
+
+func newBuiltInRegistry(catalog *cueCatalog) BuiltInRegistry {
+	return BuiltInRegistry{types: builtInTypeDefs(), cue: catalog}
+}
+
+func builtInTypeDefs() map[model.TypeID]model.TypeDef {
 	types := map[model.TypeID]model.TypeDef{
 		model.TypeCoreOpaque: {
 			ID:          model.TypeCoreOpaque,
@@ -182,8 +190,7 @@ func NewBuiltInRegistry() BuiltInRegistry {
 			},
 		},
 	}
-	catalog, err := newCUECatalog(sourceRepoRoot())
-	return BuiltInRegistry{types: types, cue: catalog, cueErr: err}
+	return types
 }
 
 func (r BuiltInRegistry) ResolveType(id model.TypeID) (model.TypeDef, bool) {
@@ -201,9 +208,6 @@ func (r BuiltInRegistry) ResolveTypeRef(ref string) (model.TypeDef, bool, error)
 }
 
 func (r BuiltInRegistry) ValidateValue(typeID model.TypeID, value string) error {
-	if r.cueErr != nil {
-		return r.cueErr
-	}
 	if r.cue == nil {
 		return nil
 	}
@@ -211,19 +215,8 @@ func (r BuiltInRegistry) ValidateValue(typeID model.TypeID, value string) error 
 }
 
 func (r BuiltInRegistry) ValidateFieldValue(ref model.FieldRef, value string) error {
-	if r.cueErr != nil {
-		return r.cueErr
-	}
 	if r.cue == nil {
 		return nil
 	}
 	return r.cue.ValidateFieldValue(r.types, ref, value)
-}
-
-func sourceRepoRoot() string {
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		return ""
-	}
-	return filepath.Clean(filepath.Join(filepath.Dir(file), "../.."))
 }

@@ -316,7 +316,7 @@ func timestampRecordedOperation(record OperationRecord) (OperationRecord, Operat
 }
 
 func withoutDiagnosticOwner(diagnostics []model.Diagnostic, owner model.DiagnosticOwner) []model.Diagnostic {
-	filtered := diagnostics[:0]
+	filtered := make([]model.Diagnostic, 0, len(diagnostics))
 	for _, diagnostic := range diagnostics {
 		if diagnostic.Owner == owner {
 			continue
@@ -510,7 +510,11 @@ func (op LoadOperation) Apply(context.Context, model.EffectiveState) (model.Effe
 	timestamp := operationTimestamp(firstTime(op.Timestamp, op.Input.Timestamp))
 	values := make(map[string]string, len(op.Input.Dotenv))
 	sources := make(map[string]model.Source, len(op.Input.Dotenv))
+	collisions := make(map[string]model.Source)
 	for _, variable := range op.Input.Dotenv {
+		if _, exists := values[variable.Key]; exists {
+			collisions[variable.Key] = variable.Source
+		}
 		values[variable.Key] = variable.Value
 		if variable.Source.Name != "" {
 			sources[variable.Key] = variable.Source
@@ -521,12 +525,33 @@ func (op LoadOperation) Apply(context.Context, model.EffectiveState) (model.Effe
 	if source.Name == "" {
 		source = model.Source{Name: ".env", Kind: "dotenv"}
 	}
-	return dotenv.IngestDotenv(values, dotenv.DotenvIngestOptions{
+	state := dotenv.IngestDotenv(values, dotenv.DotenvIngestOptions{
 		Source:       source,
 		Sources:      sources,
 		Declarations: declarations,
 		Clock:        func() time.Time { return timestamp },
-	}), nil
+	})
+	collisionKeys := make([]string, 0, len(collisions))
+	for key := range collisions {
+		collisionKeys = append(collisionKeys, key)
+	}
+	sort.Strings(collisionKeys)
+	for _, key := range collisionKeys {
+		fieldRef, _, _ := findBinding(state.Bindings, key)
+		winner := collisions[key].Name
+		if winner == "" {
+			winner = source.Name
+		}
+		state.Diagnostics = append(state.Diagnostics, model.Diagnostic{
+			Severity: model.DiagnosticWarning,
+			Code:     "dotenv.key-collision",
+			Message:  fmt.Sprintf("dotenv key is defined by multiple sources; keeping the value from %q", winner),
+			Key:      key,
+			FieldRef: fieldRef,
+			Owner:    model.DiagnosticOwnerProjection,
+		})
+	}
+	return state, nil
 }
 
 func (op UpdateOperation) Apply(_ context.Context, state model.EffectiveState) (model.EffectiveState, error) {
@@ -610,7 +635,7 @@ func (op DeleteOperation) Apply(_ context.Context, state model.EffectiveState) (
 	if len(deleted) == 0 {
 		return state, nil
 	}
-	bindings := state.Bindings[:0]
+	bindings := make([]model.Binding, 0, len(state.Bindings))
 	for _, binding := range state.Bindings {
 		if _, ok := deleted[binding.FieldRef]; ok {
 			continue
@@ -745,7 +770,7 @@ func (s *Store) Snapshot(policy SnapshotPolicy) ([]SnapshotItem, error) {
 			if items[i].Order > 0 && items[j].Order > 0 && items[i].Order != items[j].Order {
 				return items[i].Order < items[j].Order
 			}
-			if items[i].Order > 0 != (items[j].Order > 0) {
+			if (items[i].Order > 0) != (items[j].Order > 0) {
 				return items[i].Order > 0
 			}
 		}
@@ -891,25 +916,23 @@ func LoadInputFromSourceBytes(envs, specs []SourceBytes) (LoadInput, error) {
 		DotenvSource: sourceFor(envs, ".env", "dotenv"),
 	}
 
-	values := make(map[string]DotenvVariable)
+	var values []DotenvVariable
 	for _, env := range envs {
 		source := model.Source{Name: env.Name, Kind: "dotenv"}
 		parsed, err := dotenv.ParseDotenvValues(env.Raw)
 		if err != nil {
 			return LoadInput{}, err
 		}
-		for key, value := range parsed {
-			values[key] = DotenvVariable{Key: key, Value: value, Source: source}
+		keys := make([]string, 0, len(parsed))
+		for key := range parsed {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			values = append(values, DotenvVariable{Key: key, Value: parsed[key], Source: source})
 		}
 	}
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		load.Dotenv = append(load.Dotenv, values[key])
-	}
+	load.Dotenv = values
 
 	var order uint
 	for _, spec := range specs {

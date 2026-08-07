@@ -23,7 +23,7 @@ func invalidTypeDiagnostic(code string, name string, value model.Value, err erro
 }
 
 func diagnosticValueLabel(value model.Value) string {
-	if value.Sensitivity == model.SensitivitySensitive || value.Visibility == model.VisibilityMasked || value.Visibility == model.VisibilityHidden {
+	if value.Sensitivity != model.SensitivityPlaintext || value.Exposure != model.ExposureClear || value.Visibility != model.VisibilityLiteral {
 		return "value"
 	}
 	return fmt.Sprintf("value %q", value.Resolved)

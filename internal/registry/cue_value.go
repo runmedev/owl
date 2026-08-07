@@ -7,7 +7,7 @@ import (
 )
 
 func ValidateCUEValue(root string, typeID model.TypeID, raw string) error {
-	catalog, err := newCUECatalog(root)
+	catalog, err := newDirectoryCUECatalog(root)
 	if err != nil {
 		return err
 	}
@@ -15,7 +15,7 @@ func ValidateCUEValue(root string, typeID model.TypeID, raw string) error {
 }
 
 func ValidateCUEFieldValue(root string, types map[model.TypeID]model.TypeDef, ref model.FieldRef, raw string) error {
-	catalog, err := newCUECatalog(root)
+	catalog, err := newDirectoryCUECatalog(root)
 	if err != nil {
 		return err
 	}

@@ -690,12 +690,12 @@ func sortSnapshotEnvs(envs []SnapshotEnv) {
 
 func renderSource(w io.Writer, result *SourceResult, req SourceRequest) error {
 	for _, kv := range result.Envs {
-		parts := strings.Split(kv, "=")
-		if len(parts) < 2 {
+		key, value, ok := strings.Cut(kv, "=")
+		if !ok {
 			return errors.Errorf("invalid key-value pair: %s", kv)
 		}
 
-		envVar := fmt.Sprintf("%s=%q", parts[0], strings.Join(parts[1:], "="))
+		envVar := fmt.Sprintf("%s=%q", key, value)
 		if req.Export {
 			envVar = fmt.Sprintf("export %s", envVar)
 		}
