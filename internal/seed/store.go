@@ -83,7 +83,7 @@ func newBaseStore(req baseStoreRequest) (*owl.Store, error) {
 			if !ok {
 				continue
 			}
-			storeOpts = append(storeOpts, owl.WithDotenv(file, bytes.NewReader(raw)))
+			storeOpts = append(storeOpts, owl.WithDotenv(sourceNameForPath(opts.WorkDir, file), bytes.NewReader(raw)))
 		}
 	}
 
