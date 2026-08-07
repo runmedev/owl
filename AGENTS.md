@@ -116,9 +116,6 @@ old v1 GraphQL-backed runtime as a second owner of state semantics
   - `!` -> required
 - Unknown old custom specs should stay conservative and diagnostic-driven until
   explicitly mapped. Do not auto-promote them into `universe/*`.
-- Move dotenv-comment parser helpers into `internal/projection/dotenv` before
-  deleting or shrinking `internal/owl`.
-
 ## Verification
 
 Before committing Owl code changes, run:
