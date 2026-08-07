@@ -85,6 +85,72 @@ func TestNewStoreAttributesMatchingObservedEnvToDirenv(t *testing.T) {
 	assert.Equal(t, owl.Source{Name: ".envrc", Kind: "direnv"}, env.Source)
 }
 
+func TestNewStoreDefaultsDirenvToWarn(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	specFile := filepath.Join(dir, ".env.example")
+	require.NoError(t, os.WriteFile(specFile, []byte("DIRENV_DEFAULT=\"Direnv default\" # Plain!\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".envrc"), []byte("export DIRENV_DEFAULT=from-direnv\n"), 0o600))
+
+	result, err := NewStore(context.Background(), Options{
+		SpecFiles: []string{specFile},
+		Observed: []ObservedSource{
+			{Source: owl.Source{Name: "[process]", Kind: "process"}},
+		},
+		WorkDir: dir,
+		DirenvRunner: func(context.Context, string) (map[string]string, error) {
+			return map[string]string{"DIRENV_DEFAULT": "from-direnv"}, nil
+		},
+	})
+	require.NoError(t, err)
+
+	_, err = result.Store.Resolve(context.Background(), owl.ResolveInput{
+		Process: result.Catalog.ProcessResolverInput(),
+		Dotenv:  result.Catalog.DotenvResolverInput(),
+	})
+	require.NoError(t, err)
+
+	items, err := result.Store.Snapshot(owl.SnapshotPolicy{})
+	require.NoError(t, err)
+	env := snapshotItemByName(items)["DIRENV_DEFAULT"]
+	assert.Equal(t, "from-direnv", env.Value)
+	assert.Equal(t, owl.Source{Name: ".envrc", Kind: "direnv"}, env.Source)
+}
+
+func TestNewStoreExplicitDirenvDisabledSkipsRunner(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	specFile := filepath.Join(dir, ".env.example")
+	require.NoError(t, os.WriteFile(specFile, []byte("DIRENV_DISABLED=\"Direnv disabled\" # Plain\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".envrc"), []byte("export DIRENV_DISABLED=from-direnv\n"), 0o600))
+
+	result, err := NewStore(context.Background(), Options{
+		SpecFiles: []string{specFile},
+		Observed: []ObservedSource{
+			{Source: owl.Source{Name: "[process]", Kind: "process"}},
+		},
+		WorkDir: dir,
+		Direnv:  DirenvDisabled,
+		DirenvRunner: func(context.Context, string) (map[string]string, error) {
+			t.Fatal("direnv runner should not run when disabled")
+			return nil, nil
+		},
+	})
+	require.NoError(t, err)
+	assert.Empty(t, result.Catalog.DotenvResolverInput())
+}
+
+func TestDirenvPolicyStringDefaultsToWarn(t *testing.T) {
+	t.Parallel()
+
+	var policy DirenvPolicy
+	assert.Equal(t, string(DirenvEnabledWarn), policy.String())
+	policy = DirenvDisabled
+	assert.Equal(t, string(DirenvDisabled), policy.String())
+}
+
 func TestNewStoreSkipsMissingEnvFiles(t *testing.T) {
 	t.Parallel()
 

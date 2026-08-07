@@ -39,7 +39,7 @@ type direnvVariablesRequest struct {
 
 func (p *DirenvPolicy) String() string {
 	if p == nil || *p == "" {
-		return string(DirenvDisabled)
+		return string(DirenvEnabledWarn)
 	}
 	return string(*p)
 }
@@ -63,7 +63,7 @@ func direnvVariables(ctx context.Context, req direnvVariablesRequest) ([]owl.Dot
 	opts := req.options
 	policy := opts.Direnv
 	if policy == "" {
-		policy = DirenvDisabled
+		policy = DirenvEnabledWarn
 	}
 	if policy == DirenvDisabled {
 		return nil, nil, nil
