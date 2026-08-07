@@ -410,6 +410,29 @@ func TestLocalStoreClientDirenvWarnRecordsDiagnosticAndContinues(t *testing.T) {
 	assert.Contains(t, check.Diagnostics[0], "warning direnv.export")
 }
 
+func TestLocalStoreClientZeroValueDirenvUsesWarn(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	specFile := filepath.Join(dir, ".env.example")
+	require.NoError(t, os.WriteFile(specFile, []byte("OWL_DIRENV_DEFAULT=\"Direnv default\" # Plain!\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".envrc"), []byte("export OWL_DIRENV_DEFAULT=from-direnv\n"), 0o600))
+	client := NewLocalStoreClient(LocalStoreOptions{
+		SpecFiles:  []string{specFile},
+		ProcessEnv: []string{},
+		DirenvDir:  dir,
+		DirenvRunner: func(context.Context, string) (map[string]string, error) {
+			return map[string]string{"OWL_DIRENV_DEFAULT": "from-direnv"}, nil
+		},
+	})
+
+	snapshot, err := client.Snapshot(context.Background(), SnapshotRequest{})
+	require.NoError(t, err)
+	env := snapshotByName(snapshot.Envs)["OWL_DIRENV_DEFAULT"]
+	assert.Equal(t, "from-direnv", env.Value)
+	assert.Equal(t, ".envrc", env.Source)
+}
+
 func TestLocalStoreClientDirenvErrorFails(t *testing.T) {
 	t.Parallel()
 
