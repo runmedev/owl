@@ -85,6 +85,113 @@ func TestNewStoreAttributesMatchingObservedEnvToDirenv(t *testing.T) {
 	assert.Equal(t, owl.Source{Name: ".envrc", Kind: "direnv"}, env.Source)
 }
 
+func TestNewStoreSkipsMissingEnvFiles(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	envFile := filepath.Join(dir, ".env")
+	require.NoError(t, os.WriteFile(envFile, []byte("PRESENT=from-dotenv\n"), 0o600))
+
+	result, err := NewStore(context.Background(), Options{
+		WorkDir:  dir,
+		EnvFiles: []string{".env.local", ".env"},
+		Observed: []ObservedSource{
+			{Source: owl.Source{Name: "[process]", Kind: "process"}},
+		},
+	})
+	require.NoError(t, err)
+
+	dotenvVars := result.Catalog.DotenvResolverInput()
+	require.Len(t, dotenvVars, 1)
+	assert.Equal(t, "PRESENT", dotenvVars[0].Key)
+	assert.Equal(t, "from-dotenv", dotenvVars[0].Value)
+	assert.Equal(t, owl.Source{Name: envFile, Kind: "dotenv"}, dotenvVars[0].Source)
+}
+
+func TestNewStoreUsesDefaultEnvFilesInPrecedenceOrder(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env"), []byte("DEFAULT_ORDER=from-env\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DEFAULT_ORDER=from-env-local\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env.development"), []byte("DEFAULT_ORDER=from-env-development\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env.dev"), []byte("DEFAULT_ORDER=from-env-dev\n"), 0o600))
+
+	result, err := NewStore(context.Background(), Options{
+		WorkDir: dir,
+		Observed: []ObservedSource{
+			{Source: owl.Source{Name: "[process]", Kind: "process"}},
+		},
+	})
+	require.NoError(t, err)
+
+	dotenvVars := result.Catalog.DotenvResolverInput()
+	require.Len(t, dotenvVars, 4)
+	assert.Equal(t, "from-env-dev", dotenvVars[0].Value)
+	assert.Equal(t, ".env.dev", filepath.Base(dotenvVars[0].Source.Name))
+	assert.Equal(t, "from-env-development", dotenvVars[1].Value)
+	assert.Equal(t, ".env.development", filepath.Base(dotenvVars[1].Source.Name))
+	assert.Equal(t, "from-env-local", dotenvVars[2].Value)
+	assert.Equal(t, ".env.local", filepath.Base(dotenvVars[2].Source.Name))
+	assert.Equal(t, "from-env", dotenvVars[3].Value)
+	assert.Equal(t, ".env", filepath.Base(dotenvVars[3].Source.Name))
+}
+
+func TestNewRawValueStoreSkipsMissingEnvFiles(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env"), []byte("PRESENT=from-dotenv\n"), 0o600))
+
+	store, err := NewRawValueStore(Options{
+		WorkDir:  dir,
+		EnvFiles: []string{".env.local", ".env"},
+	}, false)
+	require.NoError(t, err)
+
+	items, err := store.Snapshot(owl.SnapshotPolicy{Reveal: true})
+	require.NoError(t, err)
+	env := snapshotItemByName(items)["PRESENT"]
+	assert.Equal(t, "from-dotenv", env.Value)
+	assert.Equal(t, owl.VisibilityLiteral, env.Visibility)
+	assert.Equal(t, "dotenv", env.Source.Kind)
+	assert.Equal(t, ".env", filepath.Base(env.Source.Name))
+}
+
+func TestNewRawValueStoreUsesDefaultEnvFilesInOrder(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env"), []byte("DEFAULT_ORDER=from-env\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DEFAULT_ORDER=from-env-local\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env.development"), []byte("DEFAULT_ORDER=from-env-development\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env.dev"), []byte("DEFAULT_ORDER=from-env-dev\n"), 0o600))
+
+	store, err := NewRawValueStore(Options{WorkDir: dir}, false)
+	require.NoError(t, err)
+
+	items, err := store.Snapshot(owl.SnapshotPolicy{Reveal: true})
+	require.NoError(t, err)
+	env := snapshotItemByName(items)["DEFAULT_ORDER"]
+	assert.Equal(t, "from-env-dev", env.Value)
+	assert.Equal(t, ".env.dev", filepath.Base(env.Source.Name))
+}
+
+func TestDotenvVariablesReturnsEnvFileReadErrorsExceptMissing(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	notFile := filepath.Join(dir, "not-a-file")
+	require.NoError(t, os.Mkdir(notFile, 0o700))
+
+	_, err := dotenvVariables(Options{
+		WorkDir:  dir,
+		EnvFiles: []string{".env.local", "not-a-file"},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not-a-file")
+}
+
 func TestProcessEnvDotenvQuotesValuesAndSkipsInvalidKeys(t *testing.T) {
 	t.Parallel()
 

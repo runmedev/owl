@@ -9,6 +9,8 @@ import (
 	"github.com/runmedev/owl/internal/requirements"
 )
 
+var defaultEnvFiles = []string{".env", ".env.local", ".env.development", ".env.dev"}
+
 func resolveConfigPath(workDir string, explicit string, required bool) (string, error) {
 	if explicit != "" {
 		path := pathInWorkDir(workDir, explicit)
@@ -84,6 +86,17 @@ func filesOrDefaults(workDir string, files []string, defaults ...string) ([]stri
 	}
 
 	return existing, nil
+}
+
+func readOptionalEnvFile(path string) ([]byte, bool, error) {
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return raw, true, nil
 }
 
 func pathInWorkDir(workDir string, path string) string {
