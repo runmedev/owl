@@ -2,7 +2,6 @@ package registry
 
 import (
 	"fmt"
-	"path/filepath"
 
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/cuecontext"
@@ -15,16 +14,21 @@ type cueTypeSpec struct {
 	importPath string
 	definition string
 	name       string
+	id         model.TypeID
 }
 
 var builtInCUETypes = []cueTypeSpec{
-	{importPath: "./types/core/opaque", definition: "#Opaque", name: "opaque"},
-	{importPath: "./types/core/plain", definition: "#Plain", name: "plain"},
-	{importPath: "./types/core/secret", definition: "#Secret", name: "secret"},
-	{importPath: "./types/core/url", definition: "#URL", name: "url"},
-	{importPath: "./types/universe/redis", definition: "#Redis", name: "redis"},
-	{importPath: "./types/universe/openai", definition: "#OpenAI", name: "openai"},
-	{importPath: "./types/universe/anthropic", definition: "#Anthropic", name: "anthropic"},
+	{importPath: "./types/core/opaque", definition: "#Opaque", name: "opaque", id: model.TypeCoreOpaque},
+	{importPath: "./types/core/plain", definition: "#Plain", name: "plain", id: model.TypeCorePlain},
+	{importPath: "./types/core/secret", definition: "#Secret", name: "secret", id: model.TypeCoreSecret},
+	{importPath: "./types/core/url", definition: "#URL", name: "url", id: model.TypeCoreURL},
+	{importPath: "./types/universe/redis", definition: "#Redis", name: "redis", id: model.TypeUniverseRedis},
+	{importPath: "./types/universe/openai", definition: "#OpenAI", name: "openai", id: model.TypeUniverseOpenAI},
+	{importPath: "./types/universe/anthropic", definition: "#Anthropic", name: "anthropic", id: model.TypeUniverseAnthropic},
+}
+
+type cueCatalogSource interface {
+	LoadConfig() (load.Config, error)
 }
 
 type cueCatalog struct {
@@ -37,15 +41,16 @@ type cueCatalog struct {
 	valuesBySpec map[cueTypeSpec]cue.Value
 }
 
-func newCUECatalog(root string) (*cueCatalog, error) {
-	if root == "" {
-		return nil, fmt.Errorf("cue root is not configured")
-	}
-	return newCUECatalogWithConfig(load.Config{Dir: filepath.Clean(root)})
+func newEmbeddedCUECatalog() (*cueCatalog, error) {
+	return newCUECatalog(embeddedCUECatalogSource{})
 }
 
-func newEmbeddedCUECatalog() (*cueCatalog, error) {
-	cfg, err := embeddedCUEConfig()
+func newDirectoryCUECatalog(root string) (*cueCatalog, error) {
+	return newCUECatalog(directoryCUECatalogSource{root: root})
+}
+
+func newCUECatalog(source cueCatalogSource) (*cueCatalog, error) {
+	cfg, err := source.LoadConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -77,6 +82,12 @@ func newCUECatalogWithConfig(cfg load.Config) (*cueCatalog, error) {
 		typeID, err := model.ParseTypeID(id)
 		if err != nil {
 			return nil, fmt.Errorf("cue type %s %s: %w", spec.importPath, spec.definition, err)
+		}
+		if typeID != spec.id {
+			return nil, fmt.Errorf("cue type %s %s: expected id %q, got %q", spec.importPath, spec.definition, spec.id, typeID)
+		}
+		if _, exists := catalog.specsByID[typeID]; exists {
+			return nil, fmt.Errorf("cue type %s %s: duplicate id %q", spec.importPath, spec.definition, typeID)
 		}
 		catalog.specsByID[typeID] = spec
 		catalog.valuesByID[typeID] = value

@@ -1,8 +1,10 @@
 package registry
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"cuelang.org/go/cue/cuecontext"
@@ -81,7 +83,7 @@ func TestLoadBuiltInCUETypeDefs(t *testing.T) {
 	assert.Equal(t, model.SensitivityPlaintext, anthropic.Fields["baseURL"].Sensitivity)
 }
 
-func TestTrimpathBinaryUsesEmbeddedCUECatalog(t *testing.T) {
+func TestTrimpathBinaryUsesEmbeddedAndDirectoryCUECatalogs(t *testing.T) {
 	root := repoRoot(t)
 	binary := filepath.Join(t.TempDir(), "owl")
 	build := exec.Command("go", "build", "-trimpath", "-o", binary, filepath.Join(root, "main.go"))
@@ -95,21 +97,35 @@ func TestTrimpathBinaryUsesEmbeddedCUECatalog(t *testing.T) {
 		"--env-file", filepath.Join(root, "cmd/testdata/cli/redis.env"),
 	)
 	run.Dir = t.TempDir()
+	run.Env = environWithout(os.Environ(), "OWL_CUE_ROOT")
+	output, err = run.CombinedOutput()
+	require.NoError(t, err, string(output))
+	assert.Contains(t, string(output), "ok:")
+	assert.NotContains(t, string(output), "type.invalid-")
+
+	run = exec.Command(binary,
+		"check",
+		"--config", filepath.Join(root, "examples/redis/owl.toml"),
+		"--env-file", filepath.Join(root, "cmd/testdata/cli/redis.env"),
+	)
+	run.Dir = t.TempDir()
+	run.Env = append(environWithout(os.Environ(), "OWL_CUE_ROOT"), "OWL_CUE_ROOT="+root)
 	output, err = run.CombinedOutput()
 	require.NoError(t, err, string(output))
 	assert.Contains(t, string(output), "ok:")
 	assert.NotContains(t, string(output), "type.invalid-")
 }
 
-func TestNewBuiltInCUERegistry(t *testing.T) {
+func TestNewBuiltInRegistryFromDirectoryRetainsGoMetadata(t *testing.T) {
 	t.Parallel()
 
-	registry, err := NewBuiltInCUERegistry(repoRoot(t))
+	registry, err := NewBuiltInRegistryFromDirectory(repoRoot(t))
 	require.NoError(t, err)
 
 	def, ok := registry.ResolveType(model.TypeUniverseRedis)
 	require.True(t, ok)
-	assert.Equal(t, "builtin-cue", def.Source)
+	assert.Equal(t, "builtin-go", def.Source)
+	assert.Equal(t, "REDIS_HOST", def.Fields["host"].PreferredDotenvKey)
 
 	def, ok, err = registry.ResolveTypeRef("universe/redis")
 	require.NoError(t, err)
@@ -127,10 +143,10 @@ func TestNewBuiltInCUERegistry(t *testing.T) {
 	assert.Equal(t, model.TypeUniverseAnthropic, def.ID)
 }
 
-func TestBuiltInCUERegistryValidatesValues(t *testing.T) {
+func TestDirectoryBuiltInRegistryValidatesValues(t *testing.T) {
 	t.Parallel()
 
-	registry, err := NewBuiltInCUERegistry(repoRoot(t))
+	registry, err := NewBuiltInRegistryFromDirectory(repoRoot(t))
 	require.NoError(t, err)
 
 	redisHost := model.FieldRef{TypeID: model.TypeUniverseRedis, Instance: "queues", Field: "host"}
@@ -159,6 +175,82 @@ func TestBuiltInCUERegistryValidatesValues(t *testing.T) {
 	anthropicBaseURL := model.FieldRef{TypeID: model.TypeUniverseAnthropic, Instance: "default", Field: "baseURL"}
 	assert.NoError(t, registry.ValidateFieldValue(anthropicBaseURL, "https://api.anthropic.com"))
 	assert.Error(t, registry.ValidateFieldValue(anthropicBaseURL, "api.anthropic.com"))
+}
+
+func TestCatalogSourcesValidateIdentically(t *testing.T) {
+	t.Parallel()
+
+	embedded := NewBuiltInRegistry()
+	directory, err := NewBuiltInRegistryFromDirectory(repoRoot(t))
+	require.NoError(t, err)
+
+	tests := []struct {
+		ref   model.FieldRef
+		value string
+	}{
+		{ref: model.FieldRef{TypeID: model.TypeUniverseRedis, Field: "host"}, value: "redis.internal"},
+		{ref: model.FieldRef{TypeID: model.TypeUniverseRedis, Field: "host"}, value: "not a host"},
+		{ref: model.FieldRef{TypeID: model.TypeUniverseRedis, Field: "port"}, value: "6379"},
+		{ref: model.FieldRef{TypeID: model.TypeUniverseRedis, Field: "port"}, value: "70000"},
+		{ref: model.FieldRef{TypeID: model.TypeUniverseOpenAI, Field: "baseURL"}, value: "https://api.openai.com/v1"},
+		{ref: model.FieldRef{TypeID: model.TypeUniverseOpenAI, Field: "baseURL"}, value: "api.openai.com/v1"},
+	}
+	for _, tt := range tests {
+		embeddedErr := embedded.ValidateFieldValue(tt.ref, tt.value)
+		directoryErr := directory.ValidateFieldValue(tt.ref, tt.value)
+		assert.Equal(t, embeddedErr == nil, directoryErr == nil, "%s %q", tt.ref.Field, tt.value)
+	}
+}
+
+func TestDirectoryCatalogRejectsInvalidRoots(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		root func(*testing.T) string
+		want string
+	}{
+		{name: "empty", root: func(*testing.T) string { return "" }, want: "root is empty"},
+		{name: "missing", root: func(t *testing.T) string { return filepath.Join(t.TempDir(), "missing") }, want: "access CUE catalog root"},
+		{name: "not a directory", root: func(t *testing.T) string {
+			path := filepath.Join(t.TempDir(), "catalog")
+			require.NoError(t, os.WriteFile(path, []byte("not a directory"), 0o600))
+			return path
+		}, want: "is not a directory"},
+		{name: "incomplete", root: func(t *testing.T) string { return t.TempDir() }, want: "is incomplete"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewBuiltInRegistryFromDirectory(tt.root(t))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.want)
+		})
+	}
+}
+
+func TestDirectoryCatalogRejectsMalformedAndMismatchedTypes(t *testing.T) {
+	t.Parallel()
+
+	t.Run("malformed", func(t *testing.T) {
+		root := copyCUECatalog(t)
+		path := filepath.Join(root, "types/core/plain/type.cue")
+		require.NoError(t, os.WriteFile(path, []byte("not valid CUE {{{"), 0o600))
+		_, err := NewBuiltInRegistryFromDirectory(root)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "types/core/plain")
+	})
+
+	t.Run("wrong built-in id", func(t *testing.T) {
+		root := copyCUECatalog(t)
+		path := filepath.Join(root, "types/core/plain/type.cue")
+		raw, err := os.ReadFile(path)
+		require.NoError(t, err)
+		raw = []byte(strings.ReplaceAll(string(raw), "types/core/plain", "types/core/secret"))
+		require.NoError(t, os.WriteFile(path, raw, 0o600))
+		_, err = NewBuiltInRegistryFromDirectory(root)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "expected id")
+	})
 }
 
 func TestCUETypeDefRequiresExplicitFieldRequiredness(t *testing.T) {
@@ -196,4 +288,26 @@ func repoRoot(t *testing.T) string {
 	root, err := filepath.Abs("../..")
 	require.NoError(t, err)
 	return root
+}
+
+func copyCUECatalog(t *testing.T) string {
+	t.Helper()
+
+	root := repoRoot(t)
+	destination := t.TempDir()
+	for _, name := range []string{"cue.mod", "schema", "types"} {
+		require.NoError(t, os.CopyFS(filepath.Join(destination, name), os.DirFS(filepath.Join(root, name))))
+	}
+	return destination
+}
+
+func environWithout(environ []string, key string) []string {
+	filtered := make([]string, 0, len(environ))
+	prefix := key + "="
+	for _, item := range environ {
+		if !strings.HasPrefix(item, prefix) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
 }

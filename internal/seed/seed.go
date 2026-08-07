@@ -3,6 +3,7 @@ package seed
 import (
 	"context"
 
+	"github.com/runmedev/owl/internal/registry"
 	"github.com/runmedev/owl/pkg/owl"
 )
 
@@ -15,6 +16,7 @@ type Options struct {
 	WorkDir      string
 	Direnv       DirenvPolicy
 	DirenvRunner DirenvExportRunner
+	TypeProvider registry.TypeProvider
 }
 
 // ObservedSource is an environment-shaped snapshot with caller-provided provenance.

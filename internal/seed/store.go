@@ -22,6 +22,9 @@ type baseStoreRequest struct {
 func newBaseStore(req baseStoreRequest) (*owl.Store, error) {
 	opts := req.options
 	var storeOpts []owl.StoreOption
+	if opts.TypeProvider != nil {
+		storeOpts = append(storeOpts, owl.WithTypeProvider(opts.TypeProvider))
+	}
 
 	var configPath string
 	if req.loadConfig {

@@ -9,23 +9,21 @@ import (
 )
 
 func LoadBuiltInCUETypeDefs(root string) (map[model.TypeID]model.TypeDef, error) {
-	catalog, err := newCUECatalog(root)
+	catalog, err := newDirectoryCUECatalog(root)
 	if err != nil {
 		return nil, err
 	}
 	return catalog.LoadTypeDefs()
 }
 
-func NewBuiltInCUERegistry(root string) (BuiltInRegistry, error) {
-	catalog, err := newCUECatalog(root)
+// NewBuiltInRegistryFromDirectory returns the built-in Go registry with value
+// validation supplied by a complete directory-backed CUE module.
+func NewBuiltInRegistryFromDirectory(root string) (BuiltInRegistry, error) {
+	catalog, err := newDirectoryCUECatalog(root)
 	if err != nil {
 		return BuiltInRegistry{}, err
 	}
-	types, err := catalog.LoadTypeDefs()
-	if err != nil {
-		return BuiltInRegistry{}, err
-	}
-	return BuiltInRegistry{types: types, cue: catalog}, nil
+	return newBuiltInRegistry(catalog), nil
 }
 
 func cueTypeDefFromValue(spec cueTypeSpec, value cue.Value, types map[model.TypeID]model.TypeDef) (model.TypeDef, error) {

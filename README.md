@@ -59,6 +59,27 @@ SOME_OTHER_VAR=Needs a matching value # Regex(/^[a-z...a. -]+\.)
 
 ## Extensible at every stage
 
+### Development CUE catalog override
+
+Owl binaries validate built-in types with an embedded CUE catalog. Developers
+and deployment packagers can replace those validation definitions with a
+complete directory-backed Owl CUE module by setting `OWL_CUE_ROOT`:
+
+```sh
+OWL_CUE_ROOT=/absolute/path/to/owl owl check
+```
+
+Relative paths resolve from the Owl process working directory. The directory
+must contain the complete built-in `cue.mod`, `schema`, and `types` trees; an
+empty, missing, incomplete, or invalid override fails the command instead of
+falling back to embedded definitions.
+
+`OWL_CUE_ROOT` is a developer/deployment control, not project configuration or
+a custom-type frontend. It changes CUE validation only: Owl continues to own
+the known built-in type metadata, sensitivity rules, and dotenv projection
+conventions in Go. The control variable itself is excluded from observed
+environment-store values.
+
 #### Resolution (e.g. translated `env.owl.yaml` or JS/Golang/Java/etc SDKs)
 
 ```graphql {"id":"01HSXDJ4HAGVVT62961TK2NTBT","interpreter":"cat"}

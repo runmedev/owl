@@ -23,6 +23,18 @@ type BuiltInRegistry struct {
 }
 
 func NewBuiltInRegistry() BuiltInRegistry {
+	catalog, err := newEmbeddedCUECatalog()
+	if err != nil {
+		panic("load embedded CUE catalog: " + err.Error())
+	}
+	return newBuiltInRegistry(catalog)
+}
+
+func newBuiltInRegistry(catalog *cueCatalog) BuiltInRegistry {
+	return BuiltInRegistry{types: builtInTypeDefs(), cue: catalog}
+}
+
+func builtInTypeDefs() map[model.TypeID]model.TypeDef {
 	types := map[model.TypeID]model.TypeDef{
 		model.TypeCoreOpaque: {
 			ID:          model.TypeCoreOpaque,
@@ -178,11 +190,7 @@ func NewBuiltInRegistry() BuiltInRegistry {
 			},
 		},
 	}
-	catalog, err := newEmbeddedCUECatalog()
-	if err != nil {
-		panic("load embedded CUE catalog: " + err.Error())
-	}
-	return BuiltInRegistry{types: types, cue: catalog}
+	return types
 }
 
 func (r BuiltInRegistry) ResolveType(id model.TypeID) (model.TypeDef, bool) {

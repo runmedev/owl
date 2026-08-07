@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/runmedev/owl/internal/model"
+	"github.com/runmedev/owl/internal/registry"
 	"github.com/runmedev/owl/pkg/owl"
 )
 
@@ -96,6 +98,38 @@ func TestProcessEnvDotenvQuotesValuesAndSkipsInvalidKeys(t *testing.T) {
 	assert.NotContains(t, rendered, "BAD-KEY")
 }
 
+func TestStoreBuildersUseConfiguredTypeProvider(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	specFile := filepath.Join(dir, ".env.example")
+	envFile := filepath.Join(dir, ".env")
+	require.NoError(t, os.WriteFile(specFile, []byte("SERVICE_URL=\"Service URL\" # Plain!\n"), 0o600))
+	require.NoError(t, os.WriteFile(envFile, []byte("SERVICE_URL=https://example.com\n"), 0o600))
+
+	seededProvider := &seedTrackingTypeProvider{BuiltInRegistry: registry.NewBuiltInRegistry()}
+	result, err := NewStore(context.Background(), Options{
+		SpecFiles:    []string{specFile},
+		Observed:     []ObservedSource{{Environ: []string{"SERVICE_URL=https://example.com"}}},
+		TypeProvider: seededProvider,
+	})
+	require.NoError(t, err)
+	_, err = result.Store.Resolve(context.Background(), owl.ResolveInput{Process: result.Catalog.ProcessResolverInput()})
+	require.NoError(t, err)
+	_ = result.Store.Check()
+	assert.Positive(t, seededProvider.validations)
+
+	rawProvider := &seedTrackingTypeProvider{BuiltInRegistry: registry.NewBuiltInRegistry()}
+	rawStore, err := NewRawValueStore(Options{
+		EnvFiles:     []string{envFile},
+		SpecFiles:    []string{specFile},
+		TypeProvider: rawProvider,
+	}, false)
+	require.NoError(t, err)
+	_ = rawStore.Check()
+	assert.Positive(t, rawProvider.validations)
+}
+
 func TestRunDirenvExportJSONParsesStdoutWhenDirenvLogsToStderr(t *testing.T) {
 	binDir := t.TempDir()
 	writeFakeDirenv(t, binDir, `#!/bin/sh
@@ -176,6 +210,21 @@ func writeFakeDirenv(t *testing.T, dir string, script string) {
 
 	path := filepath.Join(dir, "direnv")
 	require.NoError(t, os.WriteFile(path, []byte(strings.TrimSpace(script)+"\n"), 0o700))
+}
+
+type seedTrackingTypeProvider struct {
+	registry.BuiltInRegistry
+	validations int
+}
+
+func (p *seedTrackingTypeProvider) ValidateValue(id model.TypeID, value string) error {
+	p.validations++
+	return p.BuiltInRegistry.ValidateValue(id, value)
+}
+
+func (p *seedTrackingTypeProvider) ValidateFieldValue(ref model.FieldRef, value string) error {
+	p.validations++
+	return p.BuiltInRegistry.ValidateFieldValue(ref, value)
 }
 
 func snapshotItemByName(items []owl.SnapshotItem) map[string]owl.SnapshotItem {

@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/runmedev/owl/internal/model"
+	"github.com/runmedev/owl/internal/registry"
 	"github.com/runmedev/owl/internal/requirements"
 	"github.com/runmedev/owl/internal/seed"
 	"github.com/runmedev/owl/pkg/owl"
@@ -22,6 +23,7 @@ type LocalStoreOptions struct {
 	Direnv       seed.DirenvPolicy
 	DirenvDir    string
 	DirenvRunner seed.DirenvExportRunner
+	TypeProvider registry.TypeProvider
 }
 
 type LocalStoreClient struct {
@@ -48,7 +50,13 @@ func NewLocalCommands() []*cobra.Command {
 
 	opts := StoreCommandOptions{
 		ClientFactory: func(cmd *cobra.Command) (StoreClient, error) {
-			return NewLocalStoreClient(options), nil
+			types, err := commandTypeProvider()
+			if err != nil {
+				return nil, err
+			}
+			clientOptions := options
+			clientOptions.TypeProvider = types
+			return NewLocalStoreClient(clientOptions), nil
 		},
 		ConfigureSnapshotCommand:   configureLocalFlags,
 		ConfigureSourceCommand:     configureLocalFlags,
@@ -236,14 +244,23 @@ func seedOptions(options LocalStoreOptions) seed.Options {
 		WorkDir:      options.DirenvDir,
 		Direnv:       options.Direnv,
 		DirenvRunner: options.DirenvRunner,
+		TypeProvider: options.TypeProvider,
 	}
 }
 
 func processEnvForOptions(options LocalStoreOptions) []string {
-	if options.ProcessEnv != nil {
-		return options.ProcessEnv
+	environ := options.ProcessEnv
+	if environ == nil {
+		environ = processEnviron()
 	}
-	return processEnviron()
+	filtered := make([]string, 0, len(environ))
+	for _, item := range environ {
+		key, _, _ := strings.Cut(item, "=")
+		if key != cueRootEnv {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
 }
 
 func (c *LocalStoreClient) ProjectSpec(_ context.Context, req ProjectSpecRequest) (*ProjectSpecResult, error) {
@@ -255,7 +272,11 @@ func (c *LocalStoreClient) ProjectSpec(_ context.Context, req ProjectSpecRequest
 	if err != nil {
 		return nil, err
 	}
-	store, err := owl.NewStore(owl.WithConfigSource(configPath, input))
+	storeOptions := []owl.StoreOption{owl.WithConfigSource(configPath, input)}
+	if c.options.TypeProvider != nil {
+		storeOptions = append(storeOptions, owl.WithTypeProvider(c.options.TypeProvider))
+	}
+	store, err := owl.NewStore(storeOptions...)
 	if err != nil {
 		return nil, err
 	}
