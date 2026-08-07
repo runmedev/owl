@@ -171,7 +171,7 @@ func TestNewStoreSkipsMissingEnvFiles(t *testing.T) {
 	require.Len(t, dotenvVars, 1)
 	assert.Equal(t, "PRESENT", dotenvVars[0].Key)
 	assert.Equal(t, "from-dotenv", dotenvVars[0].Value)
-	assert.Equal(t, owl.Source{Name: envFile, Kind: "dotenv"}, dotenvVars[0].Source)
+	assert.Equal(t, owl.Source{Name: ".env", Kind: "dotenv"}, dotenvVars[0].Source)
 }
 
 func TestNewStoreUsesDefaultEnvFilesInPrecedenceOrder(t *testing.T) {
@@ -194,13 +194,13 @@ func TestNewStoreUsesDefaultEnvFilesInPrecedenceOrder(t *testing.T) {
 	dotenvVars := result.Catalog.DotenvResolverInput()
 	require.Len(t, dotenvVars, 4)
 	assert.Equal(t, "from-env-dev", dotenvVars[0].Value)
-	assert.Equal(t, ".env.dev", filepath.Base(dotenvVars[0].Source.Name))
+	assert.Equal(t, ".env.dev", dotenvVars[0].Source.Name)
 	assert.Equal(t, "from-env-development", dotenvVars[1].Value)
-	assert.Equal(t, ".env.development", filepath.Base(dotenvVars[1].Source.Name))
+	assert.Equal(t, ".env.development", dotenvVars[1].Source.Name)
 	assert.Equal(t, "from-env-local", dotenvVars[2].Value)
-	assert.Equal(t, ".env.local", filepath.Base(dotenvVars[2].Source.Name))
+	assert.Equal(t, ".env.local", dotenvVars[2].Source.Name)
 	assert.Equal(t, "from-env", dotenvVars[3].Value)
-	assert.Equal(t, ".env", filepath.Base(dotenvVars[3].Source.Name))
+	assert.Equal(t, ".env", dotenvVars[3].Source.Name)
 }
 
 func TestNewRawValueStoreSkipsMissingEnvFiles(t *testing.T) {
@@ -221,7 +221,7 @@ func TestNewRawValueStoreSkipsMissingEnvFiles(t *testing.T) {
 	assert.Equal(t, "from-dotenv", env.Value)
 	assert.Equal(t, owl.VisibilityLiteral, env.Visibility)
 	assert.Equal(t, "dotenv", env.Source.Kind)
-	assert.Equal(t, ".env", filepath.Base(env.Source.Name))
+	assert.Equal(t, ".env", env.Source.Name)
 }
 
 func TestNewRawValueStoreUsesDefaultEnvFilesInOrder(t *testing.T) {
@@ -240,7 +240,24 @@ func TestNewRawValueStoreUsesDefaultEnvFilesInOrder(t *testing.T) {
 	require.NoError(t, err)
 	env := snapshotItemByName(items)["DEFAULT_ORDER"]
 	assert.Equal(t, "from-env-dev", env.Value)
-	assert.Equal(t, ".env.dev", filepath.Base(env.Source.Name))
+	assert.Equal(t, ".env.dev", env.Source.Name)
+}
+
+func TestDotenvVariablesKeepAbsoluteSourceOutsideWorkDir(t *testing.T) {
+	t.Parallel()
+
+	workDir := t.TempDir()
+	outsideDir := t.TempDir()
+	outsideEnvFile := filepath.Join(outsideDir, ".env")
+	require.NoError(t, os.WriteFile(outsideEnvFile, []byte("OUTSIDE=from-outside\n"), 0o600))
+
+	vars, err := dotenvVariables(Options{
+		WorkDir:  workDir,
+		EnvFiles: []string{outsideEnvFile},
+	})
+	require.NoError(t, err)
+	require.Len(t, vars, 1)
+	assert.Equal(t, owl.Source{Name: outsideEnvFile, Kind: "dotenv"}, vars[0].Source)
 }
 
 func TestDotenvVariablesReturnsEnvFileReadErrorsExceptMissing(t *testing.T) {
