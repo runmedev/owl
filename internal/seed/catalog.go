@@ -2,7 +2,6 @@ package seed
 
 import (
 	"context"
-	"os"
 	"sort"
 	"strings"
 
@@ -90,15 +89,18 @@ func observedVariables(sources []ObservedSource) []owl.DotenvVariable {
 }
 
 func dotenvVariables(opts Options) ([]owl.DotenvVariable, error) {
-	envFiles, err := filesOrDefaults(opts.WorkDir, opts.EnvFiles, ".env")
+	envFiles, err := filesOrDefaults(opts.WorkDir, opts.EnvFiles, defaultEnvFiles...)
 	if err != nil {
 		return nil, err
 	}
 	var vars []owl.DotenvVariable
 	for _, file := range envFiles {
-		raw, err := os.ReadFile(file)
+		raw, ok, err := readOptionalEnvFile(file)
 		if err != nil {
 			return nil, err
+		}
+		if !ok {
+			continue
 		}
 		parsed, err := dotenv.ParseDotenvValues(raw)
 		if err != nil {

@@ -70,15 +70,18 @@ func newBaseStore(req baseStoreRequest) (*owl.Store, error) {
 	}
 
 	if req.loadValues {
-		envFiles, err := filesOrDefaults(opts.WorkDir, opts.EnvFiles, ".env")
+		envFiles, err := filesOrDefaults(opts.WorkDir, opts.EnvFiles, defaultEnvFiles...)
 		if err != nil {
 			return nil, err
 		}
 		storeOpts = append(storeOpts, owl.WithDotenv("[process]", strings.NewReader(processEnvDotenv(flattenObservedEnviron(opts.Observed)))))
 		for _, file := range envFiles {
-			raw, err := os.ReadFile(file)
+			raw, ok, err := readOptionalEnvFile(file)
 			if err != nil {
 				return nil, err
+			}
+			if !ok {
+				continue
 			}
 			storeOpts = append(storeOpts, owl.WithDotenv(file, bytes.NewReader(raw)))
 		}
