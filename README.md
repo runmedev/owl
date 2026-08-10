@@ -80,30 +80,23 @@ the known built-in type metadata, sensitivity rules, and dotenv projection
 conventions in Go. The control variable itself is excluded from observed
 environment-store values.
 
-#### Resolution (e.g. translated `env.owl.yaml` or JS/Golang/Java/etc SDKs)
+#### Owl v2 resolver compatibility
 
-```graphql {"id":"01HSXDJ4HAGVVT62961TK2NTBT","interpreter":"cat"}
-query ResolveEnv(...) {
-   ...
-   render {
-      withCell(ulid: "01HRA297WC2HJP7X48FM3DR1V0") {
-         withShell(command: "terraform output -json | jq -r .workspace_vars.value.{}") {
-            command
-            withWebhook(url: "https://secrets.platform.runme.dev/resolver") {
-               url
-               withStateful(org: "acme-corp") {
-                  org
-                  dotenv(prefix: "VITE_REACT_APP_", export: false)
-                  snapshot {
-                     ...
-                  }
-               }
-            }
-         }
-      }
-   }
-}
-```
+Owl v2 intentionally does not carry forward the Owl v1 CRD-based resolver
+surface. The old `.runme/owl.yaml` `EnvResolution` shape is not accepted as Owl
+v2 migration input.
+
+That break is deliberate. Owl v2 focuses on typed environment state, projections,
+validation, safe snapshots, provenance, and a cleaner GraphQL-backed core. New
+resolver behavior is built on Owl v2's resolver model instead of preserving the
+old provider-specific GraphQL path.
+
+If you depend on Owl v1 CRD / `EnvResolution` behavior, keep using the v1 path or
+resolve those values outside Owl until equivalent v2 resolver support exists.
+Do not expect Owl v2 to translate legacy resolver configuration automatically.
+
+See [Owl v2 migration notes](docs/owl-v2-migration.md) for the focused
+compatibility summary.
 
 #### .env-Frontend (query ASTs rendered in text for illustration)
 
