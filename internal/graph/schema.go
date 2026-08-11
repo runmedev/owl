@@ -9,6 +9,7 @@ import (
 	"github.com/graphql-go/graphql"
 
 	"github.com/runmedev/owl/internal/model"
+	"github.com/runmedev/owl/internal/requirements"
 	"github.com/runmedev/owl/internal/resolver"
 	"github.com/runmedev/owl/internal/store"
 )
@@ -359,6 +360,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 		Fields: graphql.Fields{
 			"ok":          &graphql.Field{Type: graphql.Boolean},
 			"diagnostics": &graphql.Field{Type: graphql.NewList(diagnosticType)},
+			"checked":     &graphql.Field{Type: graphql.Int},
 		},
 	})
 	snapshotItemType := graphql.NewObject(graphql.ObjectConfig{
@@ -485,6 +487,13 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 						check := store.NewState(gctx.State, gctx.Types).Check()
 						check.Diagnostics = sortedDiagnostics(check.Diagnostics)
 						return check, nil
+					},
+				},
+				"dotenvSpec": &graphql.Field{
+					Type: graphql.String,
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						gctx := p.Source.(Context)
+						return requirements.RenderDotenvSpec(contractsFromState(gctx.State), gctx.Types)
 					},
 				},
 				"get": &graphql.Field{
@@ -662,6 +671,46 @@ func contextFromParams(p graphql.ResolveParams) context.Context {
 		return context.Background()
 	}
 	return p.Context
+}
+
+func contractsFromState(state model.EffectiveState) []store.EnvContract {
+	type contractKey struct {
+		source     model.Source
+		projection model.ProjectionID
+	}
+	positions := make(map[contractKey]int)
+	var contracts []store.EnvContract
+	for _, binding := range state.Bindings {
+		source := binding.Origin
+		key := contractKey{source: source, projection: binding.ProjectionID}
+		position, ok := positions[key]
+		if !ok {
+			position = len(contracts)
+			positions[key] = position
+			contracts = append(contracts, store.EnvContract{
+				Source:     source,
+				Projection: binding.ProjectionID,
+			})
+		}
+		contracts[position].Bindings = append(contracts[position].Bindings, store.EnvBinding{
+			FieldRef:    binding.FieldRef,
+			Key:         string(binding.Key),
+			Projection:  binding.ProjectionID,
+			Required:    binding.Required,
+			Description: binding.Description,
+			Source:      source,
+			Order:       binding.Order,
+			Sensitivity: state.Values[binding.FieldRef].Sensitivity,
+			Exposure:    state.Values[binding.FieldRef].Exposure,
+		})
+	}
+	sort.SliceStable(contracts, func(i, j int) bool {
+		if contracts[i].Source.Name != contracts[j].Source.Name {
+			return contracts[i].Source.Name < contracts[j].Source.Name
+		}
+		return contracts[i].Projection < contracts[j].Projection
+	})
+	return contracts
 }
 
 func decodeLoadInput(raw map[string]interface{}) store.LoadInput {
@@ -990,6 +1039,20 @@ func uintValue(raw interface{}) uint {
 		if value > 0 {
 			return uint(value)
 		}
+	}
+	return 0
+}
+
+func intValue(raw interface{}) int {
+	switch value := raw.(type) {
+	case int:
+		return value
+	case int32:
+		return int(value)
+	case int64:
+		return int(value)
+	case float64:
+		return int(value)
 	}
 	return 0
 }

@@ -34,14 +34,14 @@ func TestV2PublicAPI(t *testing.T) {
 		"REDIS_PASSWORD=hunter2",
 	}, envs)
 
-	got, ok, err := store.Get("API_KEY", owl.GetPolicy{})
+	got, ok, err := store.Get(context.Background(), owl.GetInput{Key: "API_KEY"})
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, "[masked]", got.Value)
 
-	keys, err := store.SensitiveKeys()
+	keys, err := store.SensitiveKeys(context.Background(), owl.SensitiveKeysInput{})
 	require.NoError(t, err)
-	assert.Equal(t, []string{"API_KEY"}, keys)
+	assert.Equal(t, []string{"API_KEY"}, keys.Keys)
 
 	envelope, err := store.StateEnvelope(context.Background())
 	require.NoError(t, err)
@@ -51,13 +51,13 @@ func TestV2PublicAPI(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, next.LoadDotenvLines("[override]", "API_URL=https://next.example.com"))
 
-	got, ok, err = next.Get("API_URL", owl.GetPolicy{Reveal: true})
+	got, ok, err = next.Get(context.Background(), owl.GetInput{Key: "API_URL", Policy: owl.GetPolicy{Reveal: true}})
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, "https://next.example.com", got.Value)
 
 	require.NoError(t, next.Delete(context.Background(), "API_KEY"))
-	_, ok, err = next.Get("API_KEY", owl.GetPolicy{Reveal: true})
+	_, ok, err = next.Get(context.Background(), owl.GetInput{Key: "API_KEY", Policy: owl.GetPolicy{Reveal: true}})
 	require.NoError(t, err)
 	assert.False(t, ok)
 }
@@ -97,6 +97,9 @@ func TestPublicAPIOperationsUseGraphShapedLoadInput(t *testing.T) {
 	for _, op := range []owl.GraphOperation{
 		mustBuildSnapshotOperation(t, store),
 		mustBuildSourceOperation(t, store),
+		mustBuildGetOperation(t, store),
+		mustBuildSensitiveKeysOperation(t, store),
+		mustBuildDotenvSpecOperation(t, store),
 		mustBuildCheckOperation(t, store),
 	} {
 		require.Contains(t, op.Variables, "input")
@@ -120,6 +123,33 @@ func mustBuildSourceOperation(t *testing.T, store *owl.Store) owl.GraphOperation
 	op, err := store.BuildSourceOperation(context.Background(), owl.SourceInput{})
 	require.NoError(t, err)
 	assert.Equal(t, "OwlDotenv", op.Name)
+	assert.Contains(t, op.Document, "$input: LoadInput!")
+	return op
+}
+
+func mustBuildGetOperation(t *testing.T, store *owl.Store) owl.GraphOperation {
+	t.Helper()
+	op, err := store.BuildGetOperation(context.Background(), owl.GetInput{Key: "API_KEY"})
+	require.NoError(t, err)
+	assert.Equal(t, "OwlGet", op.Name)
+	assert.Contains(t, op.Document, "$input: LoadInput!")
+	return op
+}
+
+func mustBuildSensitiveKeysOperation(t *testing.T, store *owl.Store) owl.GraphOperation {
+	t.Helper()
+	op, err := store.BuildSensitiveKeysOperation(context.Background(), owl.SensitiveKeysInput{})
+	require.NoError(t, err)
+	assert.Equal(t, "OwlSensitiveKeys", op.Name)
+	assert.Contains(t, op.Document, "$input: LoadInput!")
+	return op
+}
+
+func mustBuildDotenvSpecOperation(t *testing.T, store *owl.Store) owl.GraphOperation {
+	t.Helper()
+	op, err := store.BuildDotenvSpecOperation(context.Background(), owl.DotenvSpecInput{})
+	require.NoError(t, err)
+	assert.Equal(t, "OwlDotenvSpec", op.Name)
 	assert.Contains(t, op.Document, "$input: LoadInput!")
 	return op
 }
@@ -275,27 +305,27 @@ func TestPublicAPIGetRevealPolicy(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	got, ok, err := store.Get("API_KEY", owl.GetPolicy{})
+	got, ok, err := store.Get(context.Background(), owl.GetInput{Key: "API_KEY"})
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, "[masked]", got.Value)
 	assert.Equal(t, owl.VisibilityMasked, got.Visibility)
 	assert.Equal(t, owl.ExposureClear, got.Exposure)
 
-	got, ok, err = store.Get("API_KEY", owl.GetPolicy{Reveal: true})
+	got, ok, err = store.Get(context.Background(), owl.GetInput{Key: "API_KEY", Policy: owl.GetPolicy{Reveal: true}})
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, "secret", got.Value)
 	assert.Equal(t, owl.VisibilityLiteral, got.Visibility)
 
-	got, ok, err = store.Get("DATABASE_URL", owl.GetPolicy{})
+	got, ok, err = store.Get(context.Background(), owl.GetInput{Key: "DATABASE_URL"})
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, "[hidden]", got.Value)
 	assert.Equal(t, owl.VisibilityHidden, got.Visibility)
 	assert.Equal(t, owl.ExposureOpaque, got.Exposure)
 
-	got, ok, err = store.Get("DATABASE_URL", owl.GetPolicy{Reveal: true})
+	got, ok, err = store.Get(context.Background(), owl.GetInput{Key: "DATABASE_URL", Policy: owl.GetPolicy{Reveal: true}})
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, "postgres://example", got.Value)
@@ -357,13 +387,13 @@ func TestPublicAPIStateEnvelopeRoundTrip(t *testing.T) {
 	assert.Equal(t, snapshotByName(snapshot)["DATABASE_URL"].Exposure, snapshotByName(roundTrippedSnapshot)["DATABASE_URL"].Exposure)
 
 	require.NoError(t, roundTripped.LoadDotenvLines("[override]", "API_URL=https://next.example.com"))
-	got, ok, err := roundTripped.Get("API_URL", owl.GetPolicy{Reveal: true})
+	got, ok, err := roundTripped.Get(context.Background(), owl.GetInput{Key: "API_URL", Policy: owl.GetPolicy{Reveal: true}})
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, "https://next.example.com", got.Value)
 
 	require.NoError(t, roundTripped.Delete(context.Background(), "API_KEY"))
-	_, ok, err = roundTripped.Get("API_KEY", owl.GetPolicy{Reveal: true})
+	_, ok, err = roundTripped.Get(context.Background(), owl.GetInput{Key: "API_KEY", Policy: owl.GetPolicy{Reveal: true}})
 	require.NoError(t, err)
 	assert.False(t, ok)
 }
@@ -410,7 +440,7 @@ func TestPublicAPIStateEnvelopeRoundTripPreservesResolverAttempts(t *testing.T) 
 	assert.Equal(t, attempt.FinishedAt, gotAttempt.FinishedAt)
 	assert.Empty(t, gotAttempt.Diagnostics)
 
-	got, ok, err := roundTripped.Get("API_URL", owl.GetPolicy{Reveal: true})
+	got, ok, err := roundTripped.Get(context.Background(), owl.GetInput{Key: "API_URL", Policy: owl.GetPolicy{Reveal: true}})
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, "https://api.example.com", got.Value)
@@ -456,13 +486,13 @@ func TestPublicAPIUpdatesMaterializeFromOperationLog(t *testing.T) {
 
 	require.NoError(t, store.Update(context.Background(), []string{"API_URL=https://one.example.com"}, nil))
 	require.NoError(t, store.Update(context.Background(), []string{"API_URL=https://two.example.com"}, nil))
-	got, ok, err := store.Get("API_URL", owl.GetPolicy{Reveal: true})
+	got, ok, err := store.Get(context.Background(), owl.GetInput{Key: "API_URL", Policy: owl.GetPolicy{Reveal: true}})
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, "https://two.example.com", got.Value)
 
 	require.NoError(t, store.Delete(context.Background(), "API_KEY"))
-	_, ok, err = store.Get("API_KEY", owl.GetPolicy{Reveal: true})
+	_, ok, err = store.Get(context.Background(), owl.GetInput{Key: "API_KEY", Policy: owl.GetPolicy{Reveal: true}})
 	require.NoError(t, err)
 	assert.False(t, ok)
 
@@ -470,7 +500,7 @@ func TestPublicAPIUpdatesMaterializeFromOperationLog(t *testing.T) {
 	require.NoError(t, err)
 	roundTripped, err := owl.NewStore(owl.WithStateEnvelope(envelope))
 	require.NoError(t, err)
-	got, ok, err = roundTripped.Get("API_URL", owl.GetPolicy{Reveal: true})
+	got, ok, err = roundTripped.Get(context.Background(), owl.GetInput{Key: "API_URL", Policy: owl.GetPolicy{Reveal: true}})
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, "https://two.example.com", got.Value)
@@ -582,7 +612,7 @@ func TestPublicAPIWithConfigMapsRedisRequirement(t *testing.T) {
 	assert.Equal(t, owl.VisibilityUnresolved, byName["REDIS_AUTH_TOKEN"].Visibility)
 	assert.Equal(t, "[config]", byName["REDIS_AUTH_TOKEN"].Origin.Name)
 
-	dotenvSpec, err := store.DotenvSpec()
+	dotenvSpec, err := store.DotenvSpec(context.Background(), owl.DotenvSpecInput{})
 	require.NoError(t, err)
 	assert.Equal(t, strings.Join([]string{
 		"# Generated by Owl from Owl config. Do not edit by hand.",
@@ -591,7 +621,7 @@ func TestPublicAPIWithConfigMapsRedisRequirement(t *testing.T) {
 		`QUEUES_REDIS_PORT="Redis server port"     # Plain!`,
 		`REDIS_AUTH_TOKEN="Redis password"         # Secret!`,
 		"",
-	}, "\n"), dotenvSpec)
+	}, "\n"), dotenvSpec.Rendered)
 
 	check := store.CheckState()
 	assert.False(t, check.OK)
@@ -619,7 +649,7 @@ func TestPublicAPIWithConfigValidatesRedisPort(t *testing.T) {
 	assert.False(t, check.OK)
 	assert.Contains(t, diagnosticCodes(check.Diagnostics), "type.invalid-port")
 
-	port, ok, err := store.Get("QUEUES_REDIS_PORT", owl.GetPolicy{Reveal: true})
+	port, ok, err := store.Get(context.Background(), owl.GetInput{Key: "QUEUES_REDIS_PORT", Policy: owl.GetPolicy{Reveal: true}})
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, `universe/redis("queues").port`, port.Field.String())

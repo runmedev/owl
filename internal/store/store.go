@@ -100,6 +100,7 @@ type SnapshotItem struct {
 type CheckResult struct {
 	OK          bool
 	Diagnostics []model.Diagnostic
+	Checked     int
 }
 
 type GetPolicy struct {
@@ -857,6 +858,7 @@ func (s *Store) Check() CheckResult {
 	result := CheckResult{
 		OK:          true,
 		Diagnostics: append([]model.Diagnostic{}, s.state.Diagnostics...),
+		Checked:     len(s.state.Bindings),
 	}
 	for _, diagnostic := range result.Diagnostics {
 		if diagnostic.Severity == model.DiagnosticError {

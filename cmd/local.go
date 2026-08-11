@@ -267,7 +267,7 @@ func processEnvForOptions(options LocalStoreOptions) []string {
 	return filtered
 }
 
-func (c *LocalStoreClient) ProjectSpec(_ context.Context, req ProjectSpecRequest) (*ProjectSpecResult, error) {
+func (c *LocalStoreClient) ProjectSpec(ctx context.Context, req ProjectSpecRequest) (*ProjectSpecResult, error) {
 	configPath, err := resolveConfigPath(req.ConfigPath, true)
 	if err != nil {
 		return nil, err
@@ -284,20 +284,21 @@ func (c *LocalStoreClient) ProjectSpec(_ context.Context, req ProjectSpecRequest
 	if err != nil {
 		return nil, err
 	}
-	rendered, err := store.DotenvSpec()
+	rendered, err := store.DotenvSpec(ctx, owl.DotenvSpecInput{})
 	if err != nil {
 		return nil, err
 	}
+	outputText := rendered.Rendered
 	output := req.Output
 	if req.Write {
 		output = ".env.spec"
 	}
 	if output != "" && output != "-" {
-		if err := writeGeneratedDotenvSpec(output, rendered); err != nil {
+		if err := writeGeneratedDotenvSpec(output, outputText); err != nil {
 			return nil, err
 		}
 	}
-	return &ProjectSpecResult{Rendered: rendered}, nil
+	return &ProjectSpecResult{Rendered: outputText}, nil
 }
 
 func resolveConfigPath(explicit string, required bool) (string, error) {

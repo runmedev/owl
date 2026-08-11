@@ -118,11 +118,8 @@ func DotenvOperation(input LoadInput, policy DotenvPolicy) Operation {
 }
 
 func (r *Runtime) Get(ctx context.Context, input LoadInput, key string, policy GetPolicy) (GetResult, bool, error) {
-	result, err := r.do(ctx, getQuery, map[string]interface{}{
-		"input":  marshalInput(input),
-		"key":    key,
-		"reveal": policy.Reveal,
-	})
+	op := GetOperation(input, key, policy)
+	result, err := r.do(ctx, op.Document, op.Variables)
 	if err != nil {
 		return GetResult{}, false, err
 	}
@@ -136,10 +133,21 @@ func (r *Runtime) Get(ctx context.Context, input LoadInput, key string, policy G
 	return decodeGet(raw), true, nil
 }
 
+func GetOperation(input LoadInput, key string, policy GetPolicy) Operation {
+	return Operation{
+		Name:     "OwlGet",
+		Document: getQuery,
+		Variables: map[string]interface{}{
+			"input":  marshalInput(input),
+			"key":    key,
+			"reveal": policy.Reveal,
+		},
+	}
+}
+
 func (r *Runtime) SensitiveKeys(ctx context.Context, input LoadInput) ([]string, error) {
-	result, err := r.do(ctx, sensitiveKeysQuery, map[string]interface{}{
-		"input": marshalInput(input),
-	})
+	op := SensitiveKeysOperation(input)
+	result, err := r.do(ctx, op.Document, op.Variables)
 	if err != nil {
 		return nil, err
 	}
@@ -148,6 +156,39 @@ func (r *Runtime) SensitiveKeys(ctx context.Context, input LoadInput) ([]string,
 		return nil, err
 	}
 	return decodeStringList(raw), nil
+}
+
+func SensitiveKeysOperation(input LoadInput) Operation {
+	return Operation{
+		Name:     "OwlSensitiveKeys",
+		Document: sensitiveKeysQuery,
+		Variables: map[string]interface{}{
+			"input": marshalInput(input),
+		},
+	}
+}
+
+func (r *Runtime) DotenvSpec(ctx context.Context, input LoadInput) (string, error) {
+	op := DotenvSpecOperation(input)
+	result, err := r.do(ctx, op.Document, op.Variables)
+	if err != nil {
+		return "", err
+	}
+	raw, err := extractPath(result.Data, "Environment", "load", "normalize", "validate", "render", "dotenvSpec")
+	if err != nil {
+		return "", err
+	}
+	return stringValue(raw), nil
+}
+
+func DotenvSpecOperation(input LoadInput) Operation {
+	return Operation{
+		Name:     "OwlDotenvSpec",
+		Document: dotenvSpecQuery,
+		Variables: map[string]interface{}{
+			"input": marshalInput(input),
+		},
+	}
 }
 
 func (r *Runtime) StateEnvelope(ctx context.Context, input LoadInput) (StateEnvelope, error) {
@@ -666,6 +707,7 @@ func decodeCheck(raw interface{}) CheckResult {
 	return CheckResult{
 		OK:          boolValue(row["ok"]),
 		Diagnostics: decodeDiagnostics(row["diagnostics"]),
+		Checked:     intValue(row["checked"]),
 	}
 }
 
@@ -904,7 +946,22 @@ query OwlCheck($input: LoadInput!) {
       normalize {
         validate {
           render {
-            check { ok diagnostics { severity code message details key field owner } }
+            check { ok checked diagnostics { severity code message details key field owner } }
+          }
+        }
+      }
+    }
+  }
+}`
+
+const dotenvSpecQuery = `
+query OwlDotenvSpec($input: LoadInput!) {
+  Environment {
+    load(input: $input) {
+      normalize {
+        validate {
+          render {
+            dotenvSpec
           }
         }
       }

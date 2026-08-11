@@ -167,6 +167,30 @@ type SourceOutput struct {
 	Envs []string
 }
 
+type GetInput struct {
+	Load   LoadInput
+	Key    string
+	Policy GetPolicy
+}
+
+type GetOutput = GetResult
+
+type SensitiveKeysInput struct {
+	Load LoadInput
+}
+
+type SensitiveKeysOutput struct {
+	Keys []string
+}
+
+type DotenvSpecInput struct {
+	Load LoadInput
+}
+
+type DotenvSpecOutput struct {
+	Rendered string
+}
+
 type CheckInput struct {
 	Load LoadInput
 }
@@ -355,7 +379,11 @@ func (s *Store) BuildSnapshotOperation(ctx context.Context, input SnapshotInput)
 }
 
 func (s *Store) SnapshotItems(policy SnapshotPolicy) ([]SnapshotItem, error) {
-	return store.NewState(s.state, s.types).Snapshot(policy)
+	output, err := s.Snapshot(context.Background(), SnapshotInput{Policy: policy, Filter: SnapshotFilter{All: true}})
+	if err != nil {
+		return nil, err
+	}
+	return output.Envs, nil
 }
 
 func snapshotEnvsForInput(items []SnapshotItem, input SnapshotInput) []SnapshotEnv {
@@ -397,26 +425,89 @@ func (s *Store) BuildSourceOperation(ctx context.Context, input SourceInput) (Gr
 }
 
 func (s *Store) Dotenv(policy DotenvPolicy) ([]string, error) {
-	return store.NewState(s.state, s.types).Dotenv(policy)
+	output, err := s.Source(context.Background(), SourceInput{Policy: policy})
+	if err != nil {
+		return nil, err
+	}
+	return output.Envs, nil
 }
 
-func (s *Store) DotenvSpec() (string, error) {
-	if len(s.operations) == 0 || s.operations[0].Kind != store.OperationRecordLoad {
-		return requirements.RenderDotenvSpec(nil, s.types)
+func (s *Store) DotenvSpec(ctx context.Context, input DotenvSpecInput) (DotenvSpecOutput, error) {
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	return requirements.RenderDotenvSpec(s.operations[0].Load.Contracts, s.types)
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return DotenvSpecOutput{}, err
+	}
+	rendered, err := s.runtime.DotenvSpec(ctx, load)
+	if err != nil {
+		return DotenvSpecOutput{}, err
+	}
+	return DotenvSpecOutput{Rendered: rendered}, nil
+}
+
+func (s *Store) BuildDotenvSpecOperation(ctx context.Context, input DotenvSpecInput) (GraphOperation, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return GraphOperation{}, err
+	}
+	return graphOperation(graph.DotenvSpecOperation(load)), nil
 }
 
 func (s *Store) Type(policy TypePolicy) (TypeResult, error) {
 	return store.NewState(s.state, s.types).Type(policy)
 }
 
-func (s *Store) Get(key string, policy GetPolicy) (GetResult, bool, error) {
-	return store.NewState(s.state, s.types).Get(key, policy)
+func (s *Store) Get(ctx context.Context, input GetInput) (GetOutput, bool, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return GetOutput{}, false, err
+	}
+	return s.runtime.Get(ctx, load, input.Key, input.Policy)
 }
 
-func (s *Store) SensitiveKeys() ([]string, error) {
-	return store.NewState(s.state, s.types).SensitiveKeys()
+func (s *Store) BuildGetOperation(ctx context.Context, input GetInput) (GraphOperation, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return GraphOperation{}, err
+	}
+	return graphOperation(graph.GetOperation(load, input.Key, input.Policy)), nil
+}
+
+func (s *Store) SensitiveKeys(ctx context.Context, input SensitiveKeysInput) (SensitiveKeysOutput, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return SensitiveKeysOutput{}, err
+	}
+	keys, err := s.runtime.SensitiveKeys(ctx, load)
+	if err != nil {
+		return SensitiveKeysOutput{}, err
+	}
+	return SensitiveKeysOutput{Keys: keys}, nil
+}
+
+func (s *Store) BuildSensitiveKeysOperation(ctx context.Context, input SensitiveKeysInput) (GraphOperation, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return GraphOperation{}, err
+	}
+	return graphOperation(graph.SensitiveKeysOperation(load)), nil
 }
 
 func (s *Store) Check(ctx context.Context, input CheckInput) (CheckOutput, error) {
@@ -431,14 +522,10 @@ func (s *Store) Check(ctx context.Context, input CheckInput) (CheckOutput, error
 	if err != nil {
 		return CheckOutput{}, err
 	}
-	snapshot, err := s.runtime.Snapshot(ctx, load, SnapshotPolicy{})
-	if err != nil {
-		return CheckOutput{}, err
-	}
 	return CheckOutput{
 		OK:          check.OK,
 		Diagnostics: check.Diagnostics,
-		Checked:     len(snapshot),
+		Checked:     check.Checked,
 	}, nil
 }
 
@@ -454,7 +541,15 @@ func (s *Store) BuildCheckOperation(ctx context.Context, input CheckInput) (Grap
 }
 
 func (s *Store) CheckState() store.CheckResult {
-	return store.NewState(s.state, s.types).Check()
+	envelope, err := s.StateEnvelope(context.Background())
+	if err != nil {
+		return store.CheckResult{}
+	}
+	check, err := s.runtime.Check(context.Background(), LoadInput{Envelope: &envelope})
+	if err != nil {
+		return store.CheckResult{}
+	}
+	return check
 }
 
 func (s *Store) ExecuteGraphQL(ctx context.Context, req GraphQLRequest) (GraphQLResult, error) {
@@ -607,7 +702,10 @@ func (s *Store) Delete(ctx context.Context, keys ...string) error {
 }
 
 func (s *Store) StateEnvelope(ctx context.Context) (StateEnvelope, error) {
-	return store.NewState(s.state, s.types).StateEnvelope(), nil
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return s.runtime.StateEnvelopeForOperations(ctx, s.operations)
 }
 
 func (s *Store) loadInputForOperation(ctx context.Context, input LoadInput) (LoadInput, error) {
