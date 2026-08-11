@@ -395,31 +395,10 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 				},
 			},
 			"field": &graphql.Field{
-				Type: graphql.String,
+				Type: fieldRefType,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					item := p.Source.(store.SnapshotItem)
-					return item.Field.String(), nil
-				},
-			},
-			"fieldTypeID": &graphql.Field{
-				Type: graphql.String,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					item := p.Source.(store.SnapshotItem)
-					return string(item.Field.TypeID), nil
-				},
-			},
-			"fieldInstance": &graphql.Field{
-				Type: graphql.String,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					item := p.Source.(store.SnapshotItem)
-					return item.Field.Instance, nil
-				},
-			},
-			"fieldName": &graphql.Field{
-				Type: graphql.String,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					item := p.Source.(store.SnapshotItem)
-					return item.Field.Field, nil
+					return fieldRefView(item.Field), nil
 				},
 			},
 			"source": &graphql.Field{

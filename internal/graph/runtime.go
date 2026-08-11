@@ -702,10 +702,7 @@ query OwlSnapshot($input: LoadInput!, $reveal: Boolean = false) {
               value
               originalValue
               type
-              field
-              fieldTypeID
-              fieldInstance
-              fieldName
+              field { typeID instance field }
               source { name kind }
               origin { name kind }
               explicit
@@ -739,20 +736,16 @@ func decodeSnapshot(raw interface{}) []SnapshotItem {
 			Value:         stringValue(item["value"]),
 			OriginalValue: stringValue(item["originalValue"]),
 			Type:          model.TypeID(stringValue(item["type"])),
-			Field: model.FieldRef{
-				TypeID:   model.TypeID(stringValue(item["fieldTypeID"])),
-				Instance: stringValue(item["fieldInstance"]),
-				Field:    stringValue(item["fieldName"]),
-			},
-			Source:      decodeSource(item["source"]),
-			Origin:      decodeSource(item["origin"]),
-			Explicit:    boolValue(item["explicit"]),
-			Confidence:  model.BindingConfidence(stringValue(item["confidence"])),
-			Visibility:  model.Visibility(stringValue(item["visibility"])),
-			Exposure:    model.Exposure(stringValue(item["exposure"])),
-			Description: stringValue(item["description"]),
-			UpdatedAt:   timeValue(item["updatedAt"]),
-			Diagnostics: decodeDiagnostics(item["diagnostics"]),
+			Field:         decodeFieldRef(item["field"]),
+			Source:        decodeSource(item["source"]),
+			Origin:        decodeSource(item["origin"]),
+			Explicit:      boolValue(item["explicit"]),
+			Confidence:    model.BindingConfidence(stringValue(item["confidence"])),
+			Visibility:    model.Visibility(stringValue(item["visibility"])),
+			Exposure:      model.Exposure(stringValue(item["exposure"])),
+			Description:   stringValue(item["description"]),
+			UpdatedAt:     timeValue(item["updatedAt"]),
+			Diagnostics:   decodeDiagnostics(item["diagnostics"]),
 		})
 	}
 	return items
