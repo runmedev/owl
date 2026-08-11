@@ -82,12 +82,15 @@ func (c *LocalStoreClient) Snapshot(ctx context.Context, req SnapshotRequest) (*
 		return nil, err
 	}
 
-	items, err := store.Snapshot(owl.SnapshotPolicy{Reveal: req.Reveal && req.Insecure})
+	snapshot, err := store.Snapshot(ctx, owl.SnapshotInput{
+		Policy: owl.SnapshotPolicy{Reveal: req.Reveal && req.Insecure},
+		Filter: owl.SnapshotFilter{All: req.All, Limit: req.Limit},
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	return &SnapshotResult{Envs: snapshotEnvsFromItems(items)}, nil
+	return &SnapshotResult{Envs: snapshotEnvsFromItems(snapshot.Envs)}, nil
 }
 
 func (c *LocalStoreClient) Source(ctx context.Context, req SourceRequest) (*SourceResult, error) {
@@ -96,12 +99,14 @@ func (c *LocalStoreClient) Source(ctx context.Context, req SourceRequest) (*Sour
 		return nil, err
 	}
 
-	envs, err := store.Dotenv(owl.DotenvPolicy{Insecure: req.Insecure})
+	source, err := store.Source(ctx, owl.SourceInput{
+		Policy: owl.DotenvPolicy{Insecure: req.Insecure},
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	return &SourceResult{Envs: envs}, nil
+	return &SourceResult{Envs: source.Envs}, nil
 }
 
 func (c *LocalStoreClient) Check(ctx context.Context, req CheckRequest) (*CheckResult, error) {
@@ -110,15 +115,14 @@ func (c *LocalStoreClient) Check(ctx context.Context, req CheckRequest) (*CheckR
 		return nil, err
 	}
 
-	check := store.Check()
-	items, err := store.Snapshot(owl.SnapshotPolicy{})
+	check, err := store.Check(ctx, owl.CheckInput{})
 	if err != nil {
 		return nil, err
 	}
 	return &CheckResult{
 		OK:          check.OK,
 		Diagnostics: append(diagnosticStrings(c.lastSourceDiagnostics, req.Details), diagnosticStrings(check.Diagnostics, req.Details)...),
-		Checked:     len(items),
+		Checked:     check.Checked,
 	}, nil
 }
 

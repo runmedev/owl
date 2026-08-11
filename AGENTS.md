@@ -93,6 +93,26 @@ Avoid:
 old v1 GraphQL-backed runtime as a second owner of state semantics
 ```
 
+## Graph Facade Layering
+
+Keep Owl operation facades layered deliberately:
+
+- Friendly API: typed Owl input to typed Owl output. Normal Go callers should
+  use methods such as `Store.Snapshot`, `Store.Source`, `Store.Check`,
+  `Store.Resolve`, and `Store.ApplyPromptAnswers`.
+- Operation builders: typed Owl input to canonical GraphQL document plus
+  schema-shaped variables. Builders such as `BuildSnapshotOperation` should be
+  pure and useful for tests, bindings, and debug tooling.
+- Graph escape hatch: caller-provided GraphQL document plus variables to raw
+  graph result. Expose as an advanced/debug path such as `ExecuteGraphQL`, not
+  as the normal CLI, Extension, or Runme API.
+
+Edges own I/O. CLI, Extension, Runme gRPC, and resolver/provider code should
+read files, process env, protobuf streams, prompts, and external systems before
+calling Owl. Graph execution receives already-materialized bytes/strings and
+typed variables; it should not open project files, read process env, prompt
+users, call secret managers, or speak gRPC directly.
+
 ## Store Cutover Decisions
 
 - Implement the cutover as one cohesive PR with focused commits, not separate

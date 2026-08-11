@@ -28,7 +28,7 @@ func TestNewStoreReturnsSeededStore(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, result.Diagnostics)
 
-	items, err := result.Store.Snapshot(owl.SnapshotPolicy{Reveal: true})
+	items, err := result.Store.SnapshotItems(owl.SnapshotPolicy{Reveal: true})
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 	assert.Equal(t, "API_KEY", items[0].Name)
@@ -52,7 +52,7 @@ func TestNewStoreSkipsMissingEnvFiles(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, result.Diagnostics)
 
-	items, err := result.Store.Snapshot(owl.SnapshotPolicy{Reveal: true})
+	items, err := result.Store.SnapshotItems(owl.SnapshotPolicy{Reveal: true})
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 	assert.Equal(t, "PRESENT", items[0].Name)
@@ -79,7 +79,7 @@ func TestNewStoreUsesDefaultEnvFilesInOrder(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, result.Diagnostics)
 
-	items, err := result.Store.Snapshot(owl.SnapshotPolicy{Reveal: true})
+	items, err := result.Store.SnapshotItems(owl.SnapshotPolicy{Reveal: true})
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 	assert.Equal(t, "DEFAULT_ORDER", items[0].Name)

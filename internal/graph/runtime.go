@@ -40,6 +40,16 @@ type CheckResult = store.CheckResult
 
 type StateEnvelope = store.StateEnvelope
 
+type Operation struct {
+	Name      string
+	Document  string
+	Variables map[string]interface{}
+}
+
+type ExecuteResult struct {
+	Data json.RawMessage
+}
+
 var traceGraphQLQuery func(query string, vars map[string]interface{})
 
 func NewRuntime(types registry.TypeProvider) (*Runtime, error) {
@@ -56,10 +66,8 @@ func NewRuntime(types registry.TypeProvider) (*Runtime, error) {
 }
 
 func (r *Runtime) Snapshot(ctx context.Context, input LoadInput, policy SnapshotPolicy) ([]SnapshotItem, error) {
-	result, err := r.do(ctx, snapshotQuery, map[string]interface{}{
-		"input":  marshalInput(input),
-		"reveal": policy.Reveal,
-	})
+	op := SnapshotOperation(input, policy)
+	result, err := r.do(ctx, op.Document, op.Variables)
 	if err != nil {
 		return nil, err
 	}
@@ -70,11 +78,20 @@ func (r *Runtime) Snapshot(ctx context.Context, input LoadInput, policy Snapshot
 	return decodeSnapshot(raw), nil
 }
 
+func SnapshotOperation(input LoadInput, policy SnapshotPolicy) Operation {
+	return Operation{
+		Name:     "OwlSnapshot",
+		Document: snapshotQuery,
+		Variables: map[string]interface{}{
+			"input":  marshalInput(input),
+			"reveal": policy.Reveal,
+		},
+	}
+}
+
 func (r *Runtime) Dotenv(ctx context.Context, input LoadInput, policy DotenvPolicy) ([]string, error) {
-	result, err := r.do(ctx, dotenvQuery, map[string]interface{}{
-		"input":    marshalInput(input),
-		"insecure": policy.Insecure,
-	})
+	op := DotenvOperation(input, policy)
+	result, err := r.do(ctx, op.Document, op.Variables)
 	if err != nil {
 		return nil, err
 	}
@@ -87,6 +104,17 @@ func (r *Runtime) Dotenv(ctx context.Context, input LoadInput, policy DotenvPoli
 		return nil, err
 	}
 	return envs, nil
+}
+
+func DotenvOperation(input LoadInput, policy DotenvPolicy) Operation {
+	return Operation{
+		Name:     "OwlDotenv",
+		Document: dotenvQuery,
+		Variables: map[string]interface{}{
+			"input":    marshalInput(input),
+			"insecure": policy.Insecure,
+		},
+	}
 }
 
 func (r *Runtime) Get(ctx context.Context, input LoadInput, key string, policy GetPolicy) (GetResult, bool, error) {
@@ -165,9 +193,8 @@ func (r *Runtime) StateEnvelopeAfter(ctx context.Context, input LoadInput, patch
 }
 
 func (r *Runtime) Check(ctx context.Context, input LoadInput) (CheckResult, error) {
-	result, err := r.do(ctx, checkQuery, map[string]interface{}{
-		"input": marshalInput(input),
-	})
+	op := CheckOperation(input)
+	result, err := r.do(ctx, op.Document, op.Variables)
 	if err != nil {
 		return CheckResult{}, err
 	}
@@ -176,6 +203,28 @@ func (r *Runtime) Check(ctx context.Context, input LoadInput) (CheckResult, erro
 		return CheckResult{}, err
 	}
 	return decodeCheck(raw), nil
+}
+
+func CheckOperation(input LoadInput) Operation {
+	return Operation{
+		Name:     "OwlCheck",
+		Document: checkQuery,
+		Variables: map[string]interface{}{
+			"input": marshalInput(input),
+		},
+	}
+}
+
+func (r *Runtime) Execute(ctx context.Context, query string, vars map[string]interface{}) (ExecuteResult, error) {
+	result, err := r.do(ctx, query, vars)
+	if err != nil {
+		return ExecuteResult{}, err
+	}
+	raw, err := json.Marshal(result.Data)
+	if err != nil {
+		return ExecuteResult{}, err
+	}
+	return ExecuteResult{Data: raw}, nil
 }
 
 func (r *Runtime) SchemaJSON(ctx context.Context) (string, error) {
@@ -558,7 +607,9 @@ query OwlSnapshot($input: LoadInput!, $reveal: Boolean = false) {
               fieldInstance
               fieldName
               source
+              sourceRef { name kind }
               origin
+              originRef { name kind }
               explicit
               confidence
               visibility
@@ -595,8 +646,8 @@ func decodeSnapshot(raw interface{}) []SnapshotItem {
 				Instance: stringValue(item["fieldInstance"]),
 				Field:    stringValue(item["fieldName"]),
 			},
-			Source:      model.Source{Name: stringValue(item["source"])},
-			Origin:      model.Source{Name: stringValue(item["origin"])},
+			Source:      decodeSnapshotSource(item["sourceRef"], item["source"]),
+			Origin:      decodeSnapshotSource(item["originRef"], item["origin"]),
 			Explicit:    boolValue(item["explicit"]),
 			Confidence:  model.BindingConfidence(stringValue(item["confidence"])),
 			Visibility:  model.Visibility(stringValue(item["visibility"])),
@@ -607,6 +658,14 @@ func decodeSnapshot(raw interface{}) []SnapshotItem {
 		})
 	}
 	return items
+}
+
+func decodeSnapshotSource(raw, fallback interface{}) model.Source {
+	source := decodeSource(raw)
+	if source.Name == "" && source.Kind == "" {
+		source.Name = stringValue(fallback)
+	}
+	return source
 }
 
 func decodeCheck(raw interface{}) CheckResult {

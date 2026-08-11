@@ -99,7 +99,7 @@ func seedInheritedValues(store *owl.Store, catalog Catalog) error {
 }
 
 func explicitSnapshotKeys(store *owl.Store) (map[string]struct{}, error) {
-	items, err := store.Snapshot(owl.SnapshotPolicy{})
+	items, err := store.SnapshotItems(owl.SnapshotPolicy{})
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +141,7 @@ func loadInheritedVariables(store *owl.Store, vars []owl.DotenvVariable, explici
 }
 
 func projectionKeys(store *owl.Store) map[string]struct{} {
-	items, err := store.Snapshot(owl.SnapshotPolicy{})
+	items, err := store.SnapshotItems(owl.SnapshotPolicy{})
 	if err != nil {
 		return nil
 	}

@@ -2,6 +2,7 @@ package owl
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -22,6 +23,7 @@ type (
 	TypePolicy     = store.TypePolicy
 	GetPolicy      = store.GetPolicy
 	SnapshotItem   = store.SnapshotItem
+	SnapshotEnv    = store.SnapshotItem
 	TypeResult     = store.TypeResult
 	TypeProposal   = store.TypeProposal
 	GetResult      = store.GetResult
@@ -44,6 +46,7 @@ type (
 	DotenvVariable         = store.DotenvVariable
 	EnvContract            = store.EnvContract
 	EnvBinding             = store.EnvBinding
+	LoadInput              = store.LoadInput
 	StateEnvelope          = store.StateEnvelope
 	StateProvenance        = store.StateProvenance
 	Visibility             = model.Visibility
@@ -137,6 +140,56 @@ type ResolveInput struct {
 	Dotenv  []DotenvVariable
 	Policy  ResolvePolicy
 	Chain   ChainConfig
+}
+
+type SnapshotInput struct {
+	Load   LoadInput
+	Policy SnapshotPolicy
+	Filter SnapshotFilter
+}
+
+type SnapshotFilter struct {
+	All   bool
+	Limit int
+}
+
+type SnapshotOutput struct {
+	Envs        []SnapshotEnv
+	Diagnostics []Diagnostic
+}
+
+type SourceInput struct {
+	Load   LoadInput
+	Policy DotenvPolicy
+}
+
+type SourceOutput struct {
+	Envs []string
+}
+
+type CheckInput struct {
+	Load LoadInput
+}
+
+type CheckOutput struct {
+	OK          bool
+	Diagnostics []Diagnostic
+	Checked     int
+}
+
+type GraphOperation struct {
+	Name      string
+	Document  string
+	Variables map[string]interface{}
+}
+
+type GraphQLRequest struct {
+	Document  string
+	Variables map[string]interface{}
+}
+
+type GraphQLResult struct {
+	Data json.RawMessage
 }
 
 func ContextWithExecutionInfo(ctx context.Context, info ExecutionInfo) context.Context {
@@ -275,8 +328,72 @@ func withClock(clock model.Clock) StoreOption {
 	}
 }
 
-func (s *Store) Snapshot(policy SnapshotPolicy) ([]SnapshotItem, error) {
+func (s *Store) Snapshot(ctx context.Context, input SnapshotInput) (SnapshotOutput, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return SnapshotOutput{}, err
+	}
+	items, err := s.runtime.Snapshot(ctx, load, input.Policy)
+	if err != nil {
+		return SnapshotOutput{}, err
+	}
+	return SnapshotOutput{Envs: snapshotEnvsForInput(items, input)}, nil
+}
+
+func (s *Store) BuildSnapshotOperation(ctx context.Context, input SnapshotInput) (GraphOperation, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return GraphOperation{}, err
+	}
+	return graphOperation(graph.SnapshotOperation(load, input.Policy)), nil
+}
+
+func (s *Store) SnapshotItems(policy SnapshotPolicy) ([]SnapshotItem, error) {
 	return store.NewState(s.state, s.types).Snapshot(policy)
+}
+
+func snapshotEnvsForInput(items []SnapshotItem, input SnapshotInput) []SnapshotEnv {
+	envs := make([]SnapshotEnv, 0, len(items))
+	limit := input.Filter.Limit
+	for i, item := range items {
+		if limit > 0 && !input.Filter.All && i >= limit {
+			break
+		}
+		envs = append(envs, item)
+	}
+	return envs
+}
+
+func (s *Store) Source(ctx context.Context, input SourceInput) (SourceOutput, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return SourceOutput{}, err
+	}
+	envs, err := s.runtime.Dotenv(ctx, load, input.Policy)
+	if err != nil {
+		return SourceOutput{}, err
+	}
+	return SourceOutput{Envs: envs}, nil
+}
+
+func (s *Store) BuildSourceOperation(ctx context.Context, input SourceInput) (GraphOperation, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return GraphOperation{}, err
+	}
+	return graphOperation(graph.DotenvOperation(load, input.Policy)), nil
 }
 
 func (s *Store) Dotenv(policy DotenvPolicy) ([]string, error) {
@@ -302,8 +419,53 @@ func (s *Store) SensitiveKeys() ([]string, error) {
 	return store.NewState(s.state, s.types).SensitiveKeys()
 }
 
-func (s *Store) Check() CheckResult {
+func (s *Store) Check(ctx context.Context, input CheckInput) (CheckOutput, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return CheckOutput{}, err
+	}
+	check, err := s.runtime.Check(ctx, load)
+	if err != nil {
+		return CheckOutput{}, err
+	}
+	snapshot, err := s.runtime.Snapshot(ctx, load, SnapshotPolicy{})
+	if err != nil {
+		return CheckOutput{}, err
+	}
+	return CheckOutput{
+		OK:          check.OK,
+		Diagnostics: check.Diagnostics,
+		Checked:     len(snapshot),
+	}, nil
+}
+
+func (s *Store) BuildCheckOperation(ctx context.Context, input CheckInput) (GraphOperation, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return GraphOperation{}, err
+	}
+	return graphOperation(graph.CheckOperation(load)), nil
+}
+
+func (s *Store) CheckState() store.CheckResult {
 	return store.NewState(s.state, s.types).Check()
+}
+
+func (s *Store) ExecuteGraphQL(ctx context.Context, req GraphQLRequest) (GraphQLResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	result, err := s.runtime.Execute(ctx, req.Document, req.Variables)
+	if err != nil {
+		return GraphQLResult{}, err
+	}
+	return GraphQLResult{Data: result.Data}, nil
 }
 
 func (s *Store) ResolverAttempts() []ResolverAttempt {
@@ -446,6 +608,33 @@ func (s *Store) Delete(ctx context.Context, keys ...string) error {
 
 func (s *Store) StateEnvelope(ctx context.Context) (StateEnvelope, error) {
 	return store.NewState(s.state, s.types).StateEnvelope(), nil
+}
+
+func (s *Store) loadInputForOperation(ctx context.Context, input LoadInput) (LoadInput, error) {
+	if !isZeroLoadInput(input) {
+		return input, nil
+	}
+	envelope, err := s.StateEnvelope(ctx)
+	if err != nil {
+		return LoadInput{}, err
+	}
+	return LoadInput{Envelope: &envelope}, nil
+}
+
+func isZeroLoadInput(input LoadInput) bool {
+	return input.DotenvSource == (Source{}) &&
+		len(input.Dotenv) == 0 &&
+		len(input.Contracts) == 0 &&
+		input.Envelope == nil &&
+		input.Timestamp.IsZero()
+}
+
+func graphOperation(op graph.Operation) GraphOperation {
+	return GraphOperation{
+		Name:      op.Name,
+		Document:  op.Document,
+		Variables: op.Variables,
+	}
 }
 
 func (s *Store) GraphQLSchema() (string, error) {

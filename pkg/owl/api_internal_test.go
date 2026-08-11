@@ -25,21 +25,21 @@ func TestPublicAPIUpdateTimestampsOnlyChangedItems(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	initial, err := store.Snapshot(SnapshotPolicy{Reveal: true})
+	initial, err := store.SnapshotItems(SnapshotPolicy{Reveal: true})
 	require.NoError(t, err)
 	initialByName := snapshotItemsByName(initial)
 	assert.Equal(t, timestamps.At(0), initialByName["API_URL"].UpdatedAt)
 	assert.Equal(t, timestamps.At(0), initialByName["TOKEN"].UpdatedAt)
 
 	require.NoError(t, store.Update(context.Background(), []string{"API_URL=https://two.example.com"}, nil))
-	afterAPIURLUpdate, err := store.Snapshot(SnapshotPolicy{Reveal: true})
+	afterAPIURLUpdate, err := store.SnapshotItems(SnapshotPolicy{Reveal: true})
 	require.NoError(t, err)
 	afterAPIURLUpdateByName := snapshotItemsByName(afterAPIURLUpdate)
 	assert.Equal(t, timestamps.At(1), afterAPIURLUpdateByName["API_URL"].UpdatedAt)
 	assert.Equal(t, timestamps.At(0), afterAPIURLUpdateByName["TOKEN"].UpdatedAt)
 
 	require.NoError(t, store.Update(context.Background(), []string{"TOKEN=two"}, nil))
-	afterTokenUpdate, err := store.Snapshot(SnapshotPolicy{Reveal: true})
+	afterTokenUpdate, err := store.SnapshotItems(SnapshotPolicy{Reveal: true})
 	require.NoError(t, err)
 	afterTokenUpdateByName := snapshotItemsByName(afterTokenUpdate)
 	assert.Equal(t, timestamps.At(1), afterTokenUpdateByName["API_URL"].UpdatedAt)
@@ -59,7 +59,7 @@ func TestPublicAPIUpdateClearsResolvedRequiredDiagnostics(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	initial, err := store.Snapshot(SnapshotPolicy{Reveal: true})
+	initial, err := store.SnapshotItems(SnapshotPolicy{Reveal: true})
 	require.NoError(t, err)
 	initialByName := snapshotItemsByName(initial)
 	require.Contains(t, initialByName, "TOKEN")
@@ -68,7 +68,7 @@ func TestPublicAPIUpdateClearsResolvedRequiredDiagnostics(t *testing.T) {
 	ctx := ContextWithExecutionInfo(context.Background(), ExecutionInfo{ExecContext: "direnv"})
 	require.NoError(t, store.Update(ctx, []string{"TOKEN=secret"}, nil))
 
-	updated, err := store.Snapshot(SnapshotPolicy{Reveal: true})
+	updated, err := store.SnapshotItems(SnapshotPolicy{Reveal: true})
 	require.NoError(t, err)
 	updatedByName := snapshotItemsByName(updated)
 	assert.Equal(t, "secret", updatedByName["TOKEN"].Value)
@@ -110,7 +110,7 @@ func TestPublicAPIStateEnvelopePreservesOperationTimestamps(t *testing.T) {
 	assert.Contains(t, operationTimestamps(roundTrippedEnvelope.Provenance.Operations), timestamps.At(1))
 
 	require.NoError(t, roundTripped.Update(context.Background(), []string{"API_URL=https://three.example.com"}, nil))
-	snapshot, err := roundTripped.Snapshot(SnapshotPolicy{Reveal: true})
+	snapshot, err := roundTripped.SnapshotItems(SnapshotPolicy{Reveal: true})
 	require.NoError(t, err)
 	assert.Equal(t, timestamps.At(2), snapshotItemsByName(snapshot)["API_URL"].UpdatedAt)
 }
