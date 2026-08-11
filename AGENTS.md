@@ -15,7 +15,7 @@ The core ownership boundaries are:
   as the generic known non-sensitive env string type in the store cutover.
 - `internal/projection/dotenv`: dotenv projection, legacy `.env.example`
   comment parsing, materialization, and dotenv rendering.
-- `internal/store`: target home for the v2 store lifecycle.
+- `internal/state`: EffectiveState machine, projections, and envelopes.
 - `pkg/owl`: small public API. Export what callers need; do not re-export every
   internal model detail by default.
 - `cmd`: command wiring and rendering only.
@@ -112,6 +112,15 @@ read files, process env, protobuf streams, prompts, and external systems before
 calling Owl. Graph execution receives already-materialized bytes/strings and
 typed variables; it should not open project files, read process env, prompt
 users, call secret managers, or speak gRPC directly.
+
+`cmd/` is a public consumer. CLI code may use `pkg/...` APIs and command-local
+wiring only; it must not import `github.com/runmedev/owl/internal/...`
+packages. Move needed behavior behind `pkg/owl` or `pkg/owl/seed` instead.
+
+Normal command/public paths must not call legacy helper shapes such as
+`SnapshotItems`, `Dotenv(policy)`, `CheckState`, `LoadDotenv`,
+`LoadDotenvLines`, or legacy `Update`/`Delete` helpers. Use typed graph-backed
+facades such as `Snapshot`, `Source`, `Check`, and `ApplyUpdate`.
 
 ## Store Cutover Decisions
 

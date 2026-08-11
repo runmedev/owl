@@ -2,6 +2,7 @@ package seed
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"sort"
@@ -99,12 +100,14 @@ func seedInheritedValues(store *owl.Store, catalog Catalog) error {
 }
 
 func explicitSnapshotKeys(store *owl.Store) (map[string]struct{}, error) {
-	items, err := store.SnapshotItems(owl.SnapshotPolicy{})
+	snapshot, err := store.Snapshot(context.Background(), owl.SnapshotInput{
+		Filter: owl.SnapshotFilter{All: true},
+	})
 	if err != nil {
 		return nil, err
 	}
-	keys := make(map[string]struct{}, len(items))
-	for _, item := range items {
+	keys := make(map[string]struct{}, len(snapshot.Envs))
+	for _, item := range snapshot.Envs {
 		if item.Explicit {
 			keys[item.Name] = struct{}{}
 		}
@@ -133,7 +136,10 @@ func loadInheritedVariables(store *owl.Store, vars []owl.DotenvVariable, explici
 		groups[index].vars = append(groups[index].vars, variable)
 	}
 	for _, group := range groups {
-		if err := store.LoadDotenv(group.source, group.vars); err != nil {
+		if err := store.ApplyUpdate(context.Background(), owl.UpdateInput{
+			Source: group.source,
+			Dotenv: group.vars,
+		}); err != nil {
 			return err
 		}
 	}
@@ -141,12 +147,14 @@ func loadInheritedVariables(store *owl.Store, vars []owl.DotenvVariable, explici
 }
 
 func projectionKeys(store *owl.Store) map[string]struct{} {
-	items, err := store.SnapshotItems(owl.SnapshotPolicy{})
+	snapshot, err := store.Snapshot(context.Background(), owl.SnapshotInput{
+		Filter: owl.SnapshotFilter{All: true},
+	})
 	if err != nil {
 		return nil
 	}
-	keys := make(map[string]struct{}, len(items))
-	for _, item := range items {
+	keys := make(map[string]struct{}, len(snapshot.Envs))
+	for _, item := range snapshot.Envs {
 		if item.Name != "" {
 			keys[item.Name] = struct{}{}
 		}

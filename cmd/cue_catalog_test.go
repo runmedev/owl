@@ -11,9 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/runmedev/owl/internal/model"
-	"github.com/runmedev/owl/internal/registry"
-	"github.com/runmedev/owl/internal/seed"
+	"github.com/runmedev/owl/pkg/owl"
+	"github.com/runmedev/owl/pkg/owl/seed"
 )
 
 func TestCommandCUECatalogPrecedence(t *testing.T) {
@@ -91,7 +90,7 @@ func TestCUERootControlVariableIsNotObserved(t *testing.T) {
 func TestProjectSpecReceivesSelectedTypeProvider(t *testing.T) {
 	t.Parallel()
 
-	provider := &trackingTypeProvider{BuiltInRegistry: registry.NewBuiltInRegistry()}
+	provider := &trackingTypeProvider{TypeProvider: owl.NewBuiltInTypeProvider()}
 	client := NewLocalStoreClient(LocalStoreOptions{TypeProvider: provider})
 	result, err := client.ProjectSpec(context.Background(), ProjectSpecRequest{
 		ConfigPath: filepath.Join(commandRepoRoot(t), "examples/redis/owl.toml"),
@@ -102,13 +101,13 @@ func TestProjectSpecReceivesSelectedTypeProvider(t *testing.T) {
 }
 
 type trackingTypeProvider struct {
-	registry.BuiltInRegistry
+	owl.TypeProvider
 	resolveTypeRefs int
 }
 
-func (p *trackingTypeProvider) ResolveTypeRef(ref string) (model.TypeDef, bool, error) {
+func (p *trackingTypeProvider) ResolveTypeRef(ref string) (owl.TypeDef, bool, error) {
 	p.resolveTypeRefs++
-	return p.BuiltInRegistry.ResolveTypeRef(ref)
+	return p.TypeProvider.ResolveTypeRef(ref)
 }
 
 func withLookupEnv(t *testing.T, fn func(string) (string, bool)) {

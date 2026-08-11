@@ -8,11 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/runmedev/owl/internal/model"
-	"github.com/runmedev/owl/internal/registry"
-	"github.com/runmedev/owl/internal/requirements"
-	"github.com/runmedev/owl/internal/seed"
 	"github.com/runmedev/owl/pkg/owl"
+	"github.com/runmedev/owl/pkg/owl/seed"
 )
 
 type LocalStoreOptions struct {
@@ -23,7 +20,7 @@ type LocalStoreOptions struct {
 	Direnv       seed.DirenvPolicy
 	DirenvDir    string
 	DirenvRunner seed.DirenvExportRunner
-	TypeProvider registry.TypeProvider
+	TypeProvider owl.TypeProvider
 }
 
 type LocalStoreClient struct {
@@ -272,25 +269,17 @@ func (c *LocalStoreClient) ProjectSpec(ctx context.Context, req ProjectSpecReque
 	if err != nil {
 		return nil, err
 	}
-	input, err := requirements.ReadConfigFile(configPath)
-	if err != nil {
-		return nil, err
-	}
 	types := c.options.TypeProvider
 	if types == nil {
-		types = registry.NewBuiltInRegistry()
+		types = owl.NewBuiltInTypeProvider()
 	}
-	contracts, err := requirements.ContractsFromConfig(input, model.Source{Name: configPath, Kind: "owl-config"}, types)
-	if err != nil {
-		return nil, err
-	}
-	storeOptions := []owl.StoreOption{owl.WithTypeProvider(types)}
+	storeOptions := []owl.StoreOption{owl.WithTypeProvider(types), owl.WithConfigFile(configPath)}
 	store, err := owl.NewStore(storeOptions...)
 	if err != nil {
 		return nil, err
 	}
 	rendered, err := store.ProjectSpec(ctx, owl.ProjectSpecInput{
-		Load: owl.LoadInput{Contracts: contracts},
+		Load: owl.LoadInput{},
 	})
 	if err != nil {
 		return nil, err
@@ -348,7 +337,7 @@ func writeGeneratedDotenvSpec(path string, rendered string) error {
 }
 
 func isGeneratedDotenvSpec(raw []byte) bool {
-	return strings.HasPrefix(string(raw), requirements.GeneratedDotenvSpecHeaderPrefix)
+	return strings.HasPrefix(string(raw), owl.GeneratedDotenvSpecHeaderPrefix)
 }
 
 func renderDotenvSpecTypeProposals(proposals []owl.TypeProposal) string {
@@ -541,7 +530,7 @@ func resolveResultFromOwl(result owl.ResolveResult) *ResolveResult {
 				ProjectionKey: string(action.Prompt.ProjectionKey),
 				Label:         action.Prompt.Label,
 				Description:   action.Prompt.Description,
-				Sensitive:     action.Prompt.Sensitivity == model.SensitivitySensitive,
+				Sensitive:     action.Prompt.Sensitivity == owl.SensitivitySensitive,
 				Required:      action.Prompt.Required,
 				AllowEmpty:    action.Prompt.AllowEmpty,
 			}

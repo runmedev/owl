@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/runmedev/owl/internal/version"
+	"github.com/runmedev/owl/pkg/owl"
 )
 
 var errSilentExit = stderrors.New("silent exit")
@@ -18,7 +18,7 @@ func NewRootCommand() *cobra.Command {
 	cmd := cobra.Command{
 		Use:           "owl",
 		Short:         "Typed environment variable store",
-		Version:       version.BaseVersionInfo(),
+		Version:       owl.BaseVersionInfo(),
 		SilenceErrors: true,
 		SilenceUsage:  true,
 	}

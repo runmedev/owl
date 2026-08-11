@@ -10,6 +10,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func snapshotItems(t *testing.T, store *Store, policy SnapshotPolicy) []SnapshotItem {
+	t.Helper()
+	output, err := store.Snapshot(context.Background(), SnapshotInput{
+		Policy: policy,
+		Filter: SnapshotFilter{All: true},
+	})
+	require.NoError(t, err)
+	return output.Envs
+}
+
+func applyUpdateLines(ctx context.Context, t *testing.T, store *Store, source Source, lines []string, deleted []string) {
+	t.Helper()
+	var vars []DotenvVariable
+	for _, line := range lines {
+		key, value, ok := strings.Cut(line, "=")
+		require.True(t, ok, "update line must be KEY=value")
+		vars = append(vars, DotenvVariable{Key: key, Value: value, Source: source})
+	}
+	require.NoError(t, store.ApplyUpdate(ctx, UpdateInput{
+		Source: source,
+		Dotenv: vars,
+		Delete: deleted,
+	}))
+}
+
 func TestPublicAPIUpdateTimestampsOnlyChangedItems(t *testing.T) {
 	t.Parallel()
 
@@ -25,22 +50,19 @@ func TestPublicAPIUpdateTimestampsOnlyChangedItems(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	initial, err := store.SnapshotItems(SnapshotPolicy{Reveal: true})
-	require.NoError(t, err)
+	initial := snapshotItems(t, store, SnapshotPolicy{Reveal: true})
 	initialByName := snapshotItemsByName(initial)
 	assert.Equal(t, timestamps.At(0), initialByName["API_URL"].UpdatedAt)
 	assert.Equal(t, timestamps.At(0), initialByName["TOKEN"].UpdatedAt)
 
-	require.NoError(t, store.Update(context.Background(), []string{"API_URL=https://two.example.com"}, nil))
-	afterAPIURLUpdate, err := store.SnapshotItems(SnapshotPolicy{Reveal: true})
-	require.NoError(t, err)
+	applyUpdateLines(context.Background(), t, store, Source{Name: "[update]", Kind: "dotenv"}, []string{"API_URL=https://two.example.com"}, nil)
+	afterAPIURLUpdate := snapshotItems(t, store, SnapshotPolicy{Reveal: true})
 	afterAPIURLUpdateByName := snapshotItemsByName(afterAPIURLUpdate)
 	assert.Equal(t, timestamps.At(1), afterAPIURLUpdateByName["API_URL"].UpdatedAt)
 	assert.Equal(t, timestamps.At(0), afterAPIURLUpdateByName["TOKEN"].UpdatedAt)
 
-	require.NoError(t, store.Update(context.Background(), []string{"TOKEN=two"}, nil))
-	afterTokenUpdate, err := store.SnapshotItems(SnapshotPolicy{Reveal: true})
-	require.NoError(t, err)
+	applyUpdateLines(context.Background(), t, store, Source{Name: "[update]", Kind: "dotenv"}, []string{"TOKEN=two"}, nil)
+	afterTokenUpdate := snapshotItems(t, store, SnapshotPolicy{Reveal: true})
 	afterTokenUpdateByName := snapshotItemsByName(afterTokenUpdate)
 	assert.Equal(t, timestamps.At(1), afterTokenUpdateByName["API_URL"].UpdatedAt)
 	assert.Equal(t, timestamps.At(2), afterTokenUpdateByName["TOKEN"].UpdatedAt)
@@ -59,17 +81,15 @@ func TestPublicAPIUpdateClearsResolvedRequiredDiagnostics(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	initial, err := store.SnapshotItems(SnapshotPolicy{Reveal: true})
-	require.NoError(t, err)
+	initial := snapshotItems(t, store, SnapshotPolicy{Reveal: true})
 	initialByName := snapshotItemsByName(initial)
 	require.Contains(t, initialByName, "TOKEN")
 	assert.Contains(t, diagnosticCodes(initialByName["TOKEN"].Diagnostics), "dotenv.unresolved-required")
 
 	ctx := ContextWithExecutionInfo(context.Background(), ExecutionInfo{ExecContext: "direnv"})
-	require.NoError(t, store.Update(ctx, []string{"TOKEN=secret"}, nil))
+	applyUpdateLines(ctx, t, store, Source{Name: "[direnv]", Kind: "direnv"}, []string{"TOKEN=secret"}, nil)
 
-	updated, err := store.SnapshotItems(SnapshotPolicy{Reveal: true})
-	require.NoError(t, err)
+	updated := snapshotItems(t, store, SnapshotPolicy{Reveal: true})
 	updatedByName := snapshotItemsByName(updated)
 	assert.Equal(t, "secret", updatedByName["TOKEN"].Value)
 	assert.Equal(t, "[direnv]", updatedByName["TOKEN"].Source.Name)
@@ -91,7 +111,7 @@ func TestPublicAPIStateEnvelopePreservesOperationTimestamps(t *testing.T) {
 		withClock(timestamps.Next),
 	)
 	require.NoError(t, err)
-	require.NoError(t, store.Update(context.Background(), []string{"API_URL=https://two.example.com"}, nil))
+	applyUpdateLines(context.Background(), t, store, Source{Name: "[update]", Kind: "dotenv"}, []string{"API_URL=https://two.example.com"}, nil)
 
 	envelope, err := store.StateEnvelope(context.Background())
 	require.NoError(t, err)
@@ -109,9 +129,8 @@ func TestPublicAPIStateEnvelopePreservesOperationTimestamps(t *testing.T) {
 	assert.Contains(t, operationTimestamps(roundTrippedEnvelope.Provenance.Operations), timestamps.At(0))
 	assert.Contains(t, operationTimestamps(roundTrippedEnvelope.Provenance.Operations), timestamps.At(1))
 
-	require.NoError(t, roundTripped.Update(context.Background(), []string{"API_URL=https://three.example.com"}, nil))
-	snapshot, err := roundTripped.SnapshotItems(SnapshotPolicy{Reveal: true})
-	require.NoError(t, err)
+	applyUpdateLines(context.Background(), t, roundTripped, Source{Name: "[update]", Kind: "dotenv"}, []string{"API_URL=https://three.example.com"}, nil)
+	snapshot := snapshotItems(t, roundTripped, SnapshotPolicy{Reveal: true})
 	assert.Equal(t, timestamps.At(2), snapshotItemsByName(snapshot)["API_URL"].UpdatedAt)
 }
 

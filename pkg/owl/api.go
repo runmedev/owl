@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"strings"
 	"time"
 
 	"github.com/runmedev/owl/internal/graph"
@@ -37,6 +36,8 @@ type (
 	PromptAnswer   = resolver.PromptAnswer
 
 	TypeID                 = model.TypeID
+	TypeDef                = model.TypeDef
+	TypeProvider           = registry.TypeProvider
 	FieldRef               = model.FieldRef
 	ConfigInput            = model.ConfigInput
 	NeedInput              = model.NeedInput
@@ -49,6 +50,7 @@ type (
 	LoadInput              = state.LoadInput
 	StateEnvelope          = state.StateEnvelope
 	StateProvenance        = state.StateProvenance
+	Sensitivity            = model.Sensitivity
 	Visibility             = model.Visibility
 	Exposure               = model.Exposure
 	Diagnostic             = model.Diagnostic
@@ -66,12 +68,28 @@ type (
 	ProposedValue          = resolver.ProposedValue
 )
 
+func NewBuiltInTypeProvider() TypeProvider {
+	return registry.NewBuiltInRegistry()
+}
+
+func NewTypeProviderFromDirectory(root string) (TypeProvider, error) {
+	return registry.NewBuiltInRegistryFromDirectory(root)
+}
+
+func ReadConfigFile(path string) (ConfigInput, error) {
+	return requirements.ReadConfigFile(path)
+}
+
 const (
 	TypeCoreOpaque    = model.TypeCoreOpaque
 	TypeCorePlain     = model.TypeCorePlain
 	TypeCoreSecret    = model.TypeCoreSecret
 	TypeCoreURL       = model.TypeCoreURL
 	TypeUniverseRedis = model.TypeUniverseRedis
+
+	SensitivityUnknown   = model.SensitivityUnknown
+	SensitivityPlaintext = model.SensitivityPlaintext
+	SensitivitySensitive = model.SensitivitySensitive
 
 	VisibilityLiteral    = model.VisibilityLiteral
 	VisibilityUnresolved = model.VisibilityUnresolved
@@ -99,6 +117,8 @@ const (
 
 	UnresolvedMissing = model.UnresolvedReasonMissing
 	UnresolvedInvalid = model.UnresolvedReasonInvalid
+
+	GeneratedDotenvSpecHeaderPrefix = requirements.GeneratedDotenvSpecHeaderPrefix
 )
 
 type Store struct {
@@ -338,6 +358,20 @@ func WithConfigSource(source string, input ConfigInput) StoreOption {
 	}
 }
 
+func WithConfigFile(path string) StoreOption {
+	return func(cfg *config) error {
+		input, err := requirements.ReadConfigFile(path)
+		if err != nil {
+			return err
+		}
+		cfg.configs = append(cfg.configs, configInputSource{
+			source: model.Source{Name: path, Kind: "owl-config"},
+			input:  input,
+		})
+		return nil
+	}
+}
+
 func WithEnvContract(contract EnvContract) StoreOption {
 	return func(cfg *config) error {
 		cfg.contracts = append(cfg.contracts, contract)
@@ -399,14 +433,6 @@ func (s *Store) BuildSnapshotOperation(ctx context.Context, input SnapshotInput)
 	return graphOperation(graph.SnapshotOperation(load, input.Policy)), nil
 }
 
-func (s *Store) SnapshotItems(policy SnapshotPolicy) ([]SnapshotItem, error) {
-	output, err := s.Snapshot(context.Background(), SnapshotInput{Policy: policy, Filter: SnapshotFilter{All: true}})
-	if err != nil {
-		return nil, err
-	}
-	return output.Envs, nil
-}
-
 func snapshotEnvsForInput(items []SnapshotItem, input SnapshotInput) []SnapshotEnv {
 	envs := make([]SnapshotEnv, 0, len(items))
 	limit := input.Filter.Limit
@@ -443,14 +469,6 @@ func (s *Store) BuildSourceOperation(ctx context.Context, input SourceInput) (Gr
 		return GraphOperation{}, err
 	}
 	return graphOperation(graph.DotenvOperation(load, input.Policy)), nil
-}
-
-func (s *Store) Dotenv(policy DotenvPolicy) ([]string, error) {
-	output, err := s.Source(context.Background(), SourceInput{Policy: policy})
-	if err != nil {
-		return nil, err
-	}
-	return output.Envs, nil
 }
 
 func (s *Store) DotenvSpec(ctx context.Context, input DotenvSpecInput) (DotenvSpecOutput, error) {
@@ -605,18 +623,6 @@ func (s *Store) BuildCheckOperation(ctx context.Context, input CheckInput) (Grap
 	return graphOperation(graph.CheckOperation(load)), nil
 }
 
-func (s *Store) CheckState() state.CheckResult {
-	envelope, err := s.StateEnvelope(context.Background())
-	if err != nil {
-		return state.CheckResult{}
-	}
-	check, err := s.runtime.Check(context.Background(), LoadInput{Envelope: &envelope})
-	if err != nil {
-		return state.CheckResult{}
-	}
-	return check
-}
-
 func (s *Store) ExecuteGraphQL(ctx context.Context, req GraphQLRequest) (GraphQLResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -752,42 +758,11 @@ func (s *Store) resolverState(ctx context.Context) (model.EffectiveState, error)
 	return envelope.State, nil
 }
 
-func (s *Store) LoadDotenv(source Source, vars []DotenvVariable) error {
-	return s.applyDotenv(source, vars, nil)
-}
-
-func (s *Store) LoadDotenvLines(source string, envs ...string) error {
-	raw := strings.Join(envs, "\n")
-	if raw != "" {
-		raw += "\n"
-	}
-	input, err := state.LoadInputFromSourceBytes([]state.SourceBytes{{Name: source, Raw: []byte(raw)}}, nil)
-	if err != nil {
-		return err
-	}
-	return s.LoadDotenv(input.DotenvSource, input.Dotenv)
-}
-
-func (s *Store) Update(ctx context.Context, newOrUpdated, deleted []string) error {
+func (s *Store) ApplyUpdate(ctx context.Context, input UpdateInput) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	raw := strings.Join(newOrUpdated, "\n")
-	if raw != "" {
-		raw += "\n"
-	}
-	input, err := state.LoadInputFromSourceBytes([]state.SourceBytes{{Name: "[update]", Raw: []byte(raw)}}, nil)
-	if err != nil {
-		return err
-	}
-	return s.applyDotenvWithContext(ctx, sourceFromContext(ctx, input.DotenvSource), input.Dotenv, deleted)
-}
-
-func (s *Store) Delete(ctx context.Context, keys ...string) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return s.applyDotenvWithContext(ctx, sourceFromContext(ctx, Source{}), nil, keys)
+	return s.applyUpdateWithContext(ctx, input)
 }
 
 func (s *Store) BuildUpdateOperation(ctx context.Context, input UpdateInput) (GraphOperation, error) {
@@ -883,36 +858,36 @@ func Diagnostics(err error) []Diagnostic {
 	return state.Diagnostics(err)
 }
 
-func (s *Store) applyDotenv(source Source, vars []DotenvVariable, deleted []string) error {
-	return s.applyDotenvWithContext(context.Background(), source, vars, deleted)
-}
-
-func (s *Store) applyDotenvWithContext(ctx context.Context, source Source, vars []DotenvVariable, deleted []string) error {
+func (s *Store) applyUpdateWithContext(ctx context.Context, input UpdateInput) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if len(vars) == 0 && len(deleted) == 0 {
+	if len(input.Dotenv) == 0 && len(input.Delete) == 0 {
 		return nil
 	}
-	if len(vars) > 0 {
+	source := input.Source
+	if source == (Source{}) {
+		source = sourceFromContext(ctx, Source{Name: "[update]", Kind: "dotenv"})
+	}
+	if len(input.Dotenv) > 0 {
 		timestamp := s.clock()
 		s.operations = append(s.operations, state.OperationRecord{
 			Kind:      state.OperationRecordUpdate,
 			Timestamp: timestamp,
 			Update: state.UpdateOperation{
 				Source:    source,
-				Dotenv:    vars,
+				Dotenv:    append([]DotenvVariable{}, input.Dotenv...),
 				Timestamp: timestamp,
 			},
 		})
 	}
-	if len(deleted) > 0 {
+	if len(input.Delete) > 0 {
 		timestamp := s.clock()
 		s.operations = append(s.operations, state.OperationRecord{
 			Kind:      state.OperationRecordDelete,
 			Timestamp: timestamp,
 			Delete: state.DeleteOperation{
-				Keys:      append([]string{}, deleted...),
+				Keys:      append([]string{}, input.Delete...),
 				Source:    source,
 				Timestamp: timestamp,
 			},
