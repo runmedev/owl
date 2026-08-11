@@ -19,7 +19,7 @@ type Runtime struct {
 	types  registry.TypeProvider
 }
 
-type Context struct {
+type GraphContext struct {
 	State model.EffectiveState
 	Types registry.TypeProvider
 }

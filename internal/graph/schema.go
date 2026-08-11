@@ -337,7 +337,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"envelope": &graphql.Field{
 				Type: stateEnvelopeType,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					gctx := p.Source.(Context)
+					gctx := p.Source.(GraphContext)
 					return stateEnvelopeView(state.MachineFromState(gctx.State, gctx.Types).StateEnvelope()), nil
 				},
 			},
@@ -461,7 +461,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 						"all": &graphql.ArgumentConfig{Type: graphql.Boolean, DefaultValue: false},
 					},
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						gctx := p.Source.(Context)
+						gctx := p.Source.(GraphContext)
 						all, _ := p.Args["all"].(bool)
 						result, err := state.MachineFromState(gctx.State, gctx.Types).Type(state.TypePolicy{All: all})
 						if err != nil {
@@ -484,7 +484,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 						"reveal": &graphql.ArgumentConfig{Type: graphql.Boolean, DefaultValue: false},
 					},
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						gctx := p.Source.(Context)
+						gctx := p.Source.(GraphContext)
 						reveal, _ := p.Args["reveal"].(bool)
 						return state.MachineFromState(gctx.State, gctx.Types).Snapshot(state.SnapshotPolicy{Reveal: reveal})
 					},
@@ -495,7 +495,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 						"insecure": &graphql.ArgumentConfig{Type: graphql.Boolean, DefaultValue: false},
 					},
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						gctx := p.Source.(Context)
+						gctx := p.Source.(GraphContext)
 						insecure, _ := p.Args["insecure"].(bool)
 						return state.MachineFromState(gctx.State, gctx.Types).Dotenv(state.DotenvPolicy{Insecure: insecure})
 					},
@@ -503,7 +503,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 				"check": &graphql.Field{
 					Type: checkType,
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						gctx := p.Source.(Context)
+						gctx := p.Source.(GraphContext)
 						check := state.MachineFromState(gctx.State, gctx.Types).Check()
 						check.Diagnostics = sortedDiagnostics(check.Diagnostics)
 						return check, nil
@@ -512,7 +512,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 				"dotenvSpec": &graphql.Field{
 					Type: graphql.String,
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						gctx := p.Source.(Context)
+						gctx := p.Source.(GraphContext)
 						return requirements.RenderDotenvSpec(contractsFromState(gctx.State), gctx.Types)
 					},
 				},
@@ -523,7 +523,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 						"reveal": &graphql.ArgumentConfig{Type: graphql.Boolean, DefaultValue: false},
 					},
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						gctx := p.Source.(Context)
+						gctx := p.Source.(GraphContext)
 						key := p.Args["key"].(string)
 						reveal, _ := p.Args["reveal"].(bool)
 						result, ok, err := state.MachineFromState(gctx.State, gctx.Types).Get(key, state.GetPolicy{Reveal: reveal})
@@ -536,7 +536,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 				"sensitiveKeys": &graphql.Field{
 					Type: graphql.NewList(graphql.String),
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						gctx := p.Source.(Context)
+						gctx := p.Source.(GraphContext)
 						return state.MachineFromState(gctx.State, gctx.Types).SensitiveKeys()
 					},
 				},
@@ -555,13 +555,13 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 					},
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 						input := decodeLoadInput(p.Args["input"].(map[string]interface{}))
-						gctx := p.Source.(Context)
+						gctx := p.Source.(GraphContext)
 						s := state.MachineFromState(gctx.State, gctx.Types)
 						state, err := s.Apply(contextFromParams(p), state.LoadOperation{Input: input, Timestamp: input.Timestamp})
 						if err != nil {
 							return nil, err
 						}
-						return Context{State: state, Types: gctx.Types}, nil
+						return GraphContext{State: state, Types: gctx.Types}, nil
 					},
 				},
 				"update": &graphql.Field{
@@ -570,14 +570,14 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 						"dotenv": &graphql.ArgumentConfig{Type: dotenvInput},
 					},
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						gctx := p.Source.(Context)
+						gctx := p.Source.(GraphContext)
 						input := decodeDotenvInput(p.Args["dotenv"])
 						s := state.MachineFromState(gctx.State, gctx.Types)
 						state, err := s.Apply(contextFromParams(p), state.UpdateOperation{Source: input.DotenvSource, Dotenv: input.Dotenv, Timestamp: input.Timestamp})
 						if err != nil {
 							return nil, err
 						}
-						return Context{State: state, Types: gctx.Types}, nil
+						return GraphContext{State: state, Types: gctx.Types}, nil
 					},
 				},
 				"delete": &graphql.Field{
@@ -586,13 +586,13 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 						"keys": &graphql.ArgumentConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.String))},
 					},
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						gctx := p.Source.(Context)
+						gctx := p.Source.(GraphContext)
 						s := state.MachineFromState(gctx.State, gctx.Types)
 						state, err := s.Apply(contextFromParams(p), state.DeleteOperation{Keys: decodeStringList(p.Args["keys"])})
 						if err != nil {
 							return nil, err
 						}
-						return Context{State: state, Types: gctx.Types}, nil
+						return GraphContext{State: state, Types: gctx.Types}, nil
 					},
 				},
 				"recordResolverAttempt": &graphql.Field{
@@ -601,14 +601,14 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 						"attempt": &graphql.ArgumentConfig{Type: graphql.NewNonNull(resolverAttemptInput)},
 					},
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						gctx := p.Source.(Context)
+						gctx := p.Source.(GraphContext)
 						attempt := decodeResolverAttemptInput(p.Args["attempt"])
 						s := state.MachineFromState(gctx.State, gctx.Types)
 						state, err := s.Apply(contextFromParams(p), state.RecordResolverAttemptOperation{Attempt: attempt})
 						if err != nil {
 							return nil, err
 						}
-						return Context{State: state, Types: gctx.Types}, nil
+						return GraphContext{State: state, Types: gctx.Types}, nil
 					},
 				},
 				"applyResolverProposal": &graphql.Field{
@@ -618,7 +618,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 						"timestamp": &graphql.ArgumentConfig{Type: graphql.String},
 					},
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						gctx := p.Source.(Context)
+						gctx := p.Source.(GraphContext)
 						proposal := decodeResolverProposalInput(p.Args["proposal"])
 						s := state.MachineFromState(gctx.State, gctx.Types)
 						state, err := s.Apply(contextFromParams(p), state.ApplyResolverProposalOperation{
@@ -628,31 +628,31 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 						if err != nil {
 							return nil, err
 						}
-						return Context{State: state, Types: gctx.Types}, nil
+						return GraphContext{State: state, Types: gctx.Types}, nil
 					},
 				},
 				"normalize": &graphql.Field{
 					Type: environmentType,
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						gctx := p.Source.(Context)
+						gctx := p.Source.(GraphContext)
 						s := state.MachineFromState(gctx.State, gctx.Types)
 						state, err := s.Apply(contextFromParams(p), state.NormalizeOperation{})
 						if err != nil {
 							return nil, err
 						}
-						return Context{State: state, Types: gctx.Types}, nil
+						return GraphContext{State: state, Types: gctx.Types}, nil
 					},
 				},
 				"validate": &graphql.Field{
 					Type: environmentType,
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						gctx := p.Source.(Context)
+						gctx := p.Source.(GraphContext)
 						s := state.MachineFromState(gctx.State, gctx.Types)
 						state, err := s.Apply(contextFromParams(p), state.IntegrityOperation{Types: gctx.Types})
 						if err != nil {
 							return nil, err
 						}
-						return Context{State: state, Types: gctx.Types}, nil
+						return GraphContext{State: state, Types: gctx.Types}, nil
 					},
 				},
 				"render": &graphql.Field{
@@ -683,7 +683,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"Environment": &graphql.Field{
 				Type: environmentType,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					return Context{State: model.NewEffectiveState(), Types: r.types}, nil
+					return GraphContext{State: model.NewEffectiveState(), Types: r.types}, nil
 				},
 			},
 		},
