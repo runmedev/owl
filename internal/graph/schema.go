@@ -14,206 +14,149 @@ import (
 )
 
 func (r *Runtime) newSchema() (graphql.Schema, error) {
-	sourceInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "SourceInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"name": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-			"kind": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-		},
-	})
-	fieldRefInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "FieldRefInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"typeID":   &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-			"instance": &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"field":    &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-		},
-	})
-	dotenvVariableInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "DotenvVariableInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"key":    &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-			"value":  &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"source": &graphql.InputObjectFieldConfig{Type: sourceInput},
-		},
-	})
-	dotenvInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "DotenvInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"source":    &graphql.InputObjectFieldConfig{Type: sourceInput},
-			"variables": &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(dotenvVariableInput))},
-			"timestamp": &graphql.InputObjectFieldConfig{Type: graphql.String},
-		},
-	})
-	envBindingInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "EnvBindingInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"field":       &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(fieldRefInput)},
-			"key":         &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"projection":  &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"required":    &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
-			"description": &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"source":      &graphql.InputObjectFieldConfig{Type: sourceInput},
-			"order":       &graphql.InputObjectFieldConfig{Type: graphql.Int},
-			"sensitivity": &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"exposure":    &graphql.InputObjectFieldConfig{Type: graphql.String},
-		},
-	})
-	envContractInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "EnvContractInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"source":     &graphql.InputObjectFieldConfig{Type: sourceInput},
-			"projection": &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"bindings":   &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(envBindingInput))},
-		},
-	})
-	diagnosticInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "DiagnosticInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"severity": &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"code":     &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"message":  &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"details":  &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.String)},
-			"key":      &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"field":    &graphql.InputObjectFieldConfig{Type: fieldRefInput},
-			"owner":    &graphql.InputObjectFieldConfig{Type: graphql.String},
-		},
-	})
-	resolverAttemptInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "ResolverAttemptInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"id":            &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"resolverID":    &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-			"field":         &graphql.InputObjectFieldConfig{Type: fieldRefInput},
-			"projectionKey": &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"outcome":       &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-			"message":       &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"source":        &graphql.InputObjectFieldConfig{Type: sourceInput},
-			"startedAt":     &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"finishedAt":    &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"diagnostics":   &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(diagnosticInput))},
-		},
-	})
-	proposedValueInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "ProposedValueInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"value":       &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-			"source":      &graphql.InputObjectFieldConfig{Type: sourceInput},
-			"sensitivity": &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"exposure":    &graphql.InputObjectFieldConfig{Type: graphql.String},
-		},
-	})
-	resolverProposalInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "ResolverProposalInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"needID":        &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"attemptID":     &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"resolverID":    &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-			"field":         &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(fieldRefInput)},
-			"projectionKey": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-			"value":         &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(proposedValueInput)},
-		},
-	})
-	unresolvedNeedInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "UnresolvedNeedInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"id":                 &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"field":              &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(fieldRefInput)},
-			"projectionKey":      &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"required":           &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
-			"blocking":           &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
-			"reason":             &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"description":        &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"sensitivity":        &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"exposure":           &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"source":             &graphql.InputObjectFieldConfig{Type: sourceInput},
-			"origin":             &graphql.InputObjectFieldConfig{Type: sourceInput},
-			"resolverAttemptIDs": &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.String)},
-		},
-	})
-	unresolvedFrontierInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "UnresolvedFrontierInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"needs": &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(unresolvedNeedInput))},
-		},
-	})
-	stateValueInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "StateValueInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"field":       &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(fieldRefInput)},
-			"original":    &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"resolved":    &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"visibility":  &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"sensitivity": &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"exposure":    &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"origin":      &graphql.InputObjectFieldConfig{Type: sourceInput},
-			"source":      &graphql.InputObjectFieldConfig{Type: sourceInput},
-			"createdAt":   &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"updatedAt":   &graphql.InputObjectFieldConfig{Type: graphql.String},
-		},
-	})
-	stateBindingInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "StateBindingInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"id":          &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"field":       &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(fieldRefInput)},
-			"projection":  &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"key":         &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"description": &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"source":      &graphql.InputObjectFieldConfig{Type: sourceInput},
-			"origin":      &graphql.InputObjectFieldConfig{Type: sourceInput},
-			"confidence":  &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"explicit":    &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
-			"order":       &graphql.InputObjectFieldConfig{Type: graphql.Int},
-			"preserveKey": &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
-			"required":    &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
-		},
-	})
-	effectiveStateInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "EffectiveStateInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"values":             &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(stateValueInput))},
-			"bindings":           &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(stateBindingInput))},
-			"resolverAttempts":   &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(resolverAttemptInput))},
-			"unresolvedFrontier": &graphql.InputObjectFieldConfig{Type: unresolvedFrontierInput},
-			"diagnostics":        &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(diagnosticInput))},
-		},
-	})
-	operationMetadataInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "OperationMetadataInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"id":         &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"kind":       &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"timestamp":  &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"actor":      &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"source":     &graphql.InputObjectFieldConfig{Type: sourceInput},
-			"projection": &graphql.InputObjectFieldConfig{Type: graphql.String},
-		},
-	})
-	stateProvenanceInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "StateProvenanceInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"sources":    &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(sourceInput))},
-			"operations": &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(operationMetadataInput))},
-		},
-	})
-	stateEnvelopeInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "StateEnvelopeInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"modelVersion": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-			"state":        &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(effectiveStateInput)},
-			"provenance":   &graphql.InputObjectFieldConfig{Type: stateProvenanceInput},
-		},
-	})
-	loadInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "LoadInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"dotenv":    &graphql.InputObjectFieldConfig{Type: dotenvInput},
-			"contracts": &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(envContractInput))},
-			"envelope":  &graphql.InputObjectFieldConfig{Type: stateEnvelopeInput},
-			"timestamp": &graphql.InputObjectFieldConfig{Type: graphql.String},
-		},
-	})
+	sourceInput := graphInputObject("SourceInput",
+		graphInput("name", graphql.NewNonNull(graphql.String)),
+		graphInput("kind", graphql.NewNonNull(graphql.String)),
+	)
+	fieldRefInput := graphInputObject("FieldRefInput",
+		graphInput("typeID", graphql.NewNonNull(graphql.String)),
+		graphInput("instance", graphql.String),
+		graphInput("field", graphql.NewNonNull(graphql.String)),
+	)
+	dotenvVariableInput := graphInputObject("DotenvVariableInput",
+		graphInput("key", graphql.NewNonNull(graphql.String)),
+		graphInput("value", graphql.String),
+		graphInput("source", sourceInput),
+	)
+	dotenvInput := graphInputObject("DotenvInput",
+		graphInput("source", sourceInput),
+		graphInput("variables", graphql.NewList(graphql.NewNonNull(dotenvVariableInput))),
+		graphInput("timestamp", graphql.String),
+	)
+	envBindingInput := graphInputObject("EnvBindingInput",
+		graphInput("field", graphql.NewNonNull(fieldRefInput)),
+		graphInput("key", graphql.String),
+		graphInput("projection", graphql.String),
+		graphInput("required", graphql.Boolean),
+		graphInput("description", graphql.String),
+		graphInput("source", sourceInput),
+		graphInput("order", graphql.Int),
+		graphInput("sensitivity", graphql.String),
+		graphInput("exposure", graphql.String),
+	)
+	envContractInput := graphInputObject("EnvContractInput",
+		graphInput("source", sourceInput),
+		graphInput("projection", graphql.String),
+		graphInput("bindings", graphql.NewList(graphql.NewNonNull(envBindingInput))),
+	)
+	diagnosticInput := graphInputObject("DiagnosticInput",
+		graphInput("severity", graphql.String),
+		graphInput("code", graphql.String),
+		graphInput("message", graphql.String),
+		graphInput("details", graphql.NewList(graphql.String)),
+		graphInput("key", graphql.String),
+		graphInput("field", fieldRefInput),
+		graphInput("owner", graphql.String),
+	)
+	resolverAttemptInput := graphInputObject("ResolverAttemptInput",
+		graphInput("id", graphql.String),
+		graphInput("resolverID", graphql.NewNonNull(graphql.String)),
+		graphInput("field", fieldRefInput),
+		graphInput("projectionKey", graphql.String),
+		graphInput("outcome", graphql.NewNonNull(graphql.String)),
+		graphInput("message", graphql.String),
+		graphInput("source", sourceInput),
+		graphInput("startedAt", graphql.String),
+		graphInput("finishedAt", graphql.String),
+		graphInput("diagnostics", graphql.NewList(graphql.NewNonNull(diagnosticInput))),
+	)
+	proposedValueInput := graphInputObject("ProposedValueInput",
+		graphInput("value", graphql.NewNonNull(graphql.String)),
+		graphInput("source", sourceInput),
+		graphInput("sensitivity", graphql.String),
+		graphInput("exposure", graphql.String),
+	)
+	resolverProposalInput := graphInputObject("ResolverProposalInput",
+		graphInput("needID", graphql.String),
+		graphInput("attemptID", graphql.String),
+		graphInput("resolverID", graphql.NewNonNull(graphql.String)),
+		graphInput("field", graphql.NewNonNull(fieldRefInput)),
+		graphInput("projectionKey", graphql.NewNonNull(graphql.String)),
+		graphInput("value", graphql.NewNonNull(proposedValueInput)),
+	)
+	unresolvedNeedInput := graphInputObject("UnresolvedNeedInput",
+		graphInput("id", graphql.String),
+		graphInput("field", graphql.NewNonNull(fieldRefInput)),
+		graphInput("projectionKey", graphql.String),
+		graphInput("required", graphql.Boolean),
+		graphInput("blocking", graphql.Boolean),
+		graphInput("reason", graphql.String),
+		graphInput("description", graphql.String),
+		graphInput("sensitivity", graphql.String),
+		graphInput("exposure", graphql.String),
+		graphInput("source", sourceInput),
+		graphInput("origin", sourceInput),
+		graphInput("resolverAttemptIDs", graphql.NewList(graphql.String)),
+	)
+	unresolvedFrontierInput := graphInputObject("UnresolvedFrontierInput",
+		graphInput("needs", graphql.NewList(graphql.NewNonNull(unresolvedNeedInput))),
+	)
+	stateValueInput := graphInputObject("StateValueInput",
+		graphInput("field", graphql.NewNonNull(fieldRefInput)),
+		graphInput("original", graphql.String),
+		graphInput("resolved", graphql.String),
+		graphInput("visibility", graphql.String),
+		graphInput("sensitivity", graphql.String),
+		graphInput("exposure", graphql.String),
+		graphInput("origin", sourceInput),
+		graphInput("source", sourceInput),
+		graphInput("createdAt", graphql.String),
+		graphInput("updatedAt", graphql.String),
+	)
+	stateBindingInput := graphInputObject("StateBindingInput",
+		graphInput("id", graphql.String),
+		graphInput("field", graphql.NewNonNull(fieldRefInput)),
+		graphInput("projection", graphql.String),
+		graphInput("key", graphql.String),
+		graphInput("description", graphql.String),
+		graphInput("source", sourceInput),
+		graphInput("origin", sourceInput),
+		graphInput("confidence", graphql.String),
+		graphInput("explicit", graphql.Boolean),
+		graphInput("order", graphql.Int),
+		graphInput("preserveKey", graphql.Boolean),
+		graphInput("required", graphql.Boolean),
+	)
+	effectiveStateInput := graphInputObject("EffectiveStateInput",
+		graphInput("values", graphql.NewList(graphql.NewNonNull(stateValueInput))),
+		graphInput("bindings", graphql.NewList(graphql.NewNonNull(stateBindingInput))),
+		graphInput("resolverAttempts", graphql.NewList(graphql.NewNonNull(resolverAttemptInput))),
+		graphInput("unresolvedFrontier", unresolvedFrontierInput),
+		graphInput("diagnostics", graphql.NewList(graphql.NewNonNull(diagnosticInput))),
+	)
+	operationMetadataInput := graphInputObject("OperationMetadataInput",
+		graphInput("id", graphql.String),
+		graphInput("kind", graphql.String),
+		graphInput("timestamp", graphql.String),
+		graphInput("actor", graphql.String),
+		graphInput("source", sourceInput),
+		graphInput("projection", graphql.String),
+	)
+	stateProvenanceInput := graphInputObject("StateProvenanceInput",
+		graphInput("sources", graphql.NewList(graphql.NewNonNull(sourceInput))),
+		graphInput("operations", graphql.NewList(graphql.NewNonNull(operationMetadataInput))),
+	)
+	stateEnvelopeInput := graphInputObject("StateEnvelopeInput",
+		graphInput("modelVersion", graphql.NewNonNull(graphql.String)),
+		graphInput("state", graphql.NewNonNull(effectiveStateInput)),
+		graphInput("provenance", stateProvenanceInput),
+	)
+	loadInput := graphInputObject("LoadInput",
+		graphInput("dotenv", dotenvInput),
+		graphInput("contracts", graphql.NewList(graphql.NewNonNull(envContractInput))),
+		graphInput("envelope", stateEnvelopeInput),
+		graphInput("timestamp", graphql.String),
+	)
 
 	diagnosticType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "Diagnostic",

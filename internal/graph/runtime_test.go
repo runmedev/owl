@@ -2,6 +2,8 @@ package graph
 
 import (
 	"context"
+	"encoding/json"
+	"sort"
 	"testing"
 	"time"
 
@@ -163,6 +165,69 @@ func TestRuntimeSchemaUsesVisibilityAndExposureNames(t *testing.T) {
 	} {
 		assert.NotContains(t, schemaJSON, oldName)
 	}
+}
+
+func TestRuntimeSchemaInputFieldsMatchBoundaryDescriptors(t *testing.T) {
+	t.Parallel()
+
+	runtime, err := NewRuntime(nil)
+	require.NoError(t, err)
+
+	schemaJSON, err := runtime.SchemaJSON(context.Background())
+	require.NoError(t, err)
+
+	fieldsByInput := introspectionInputFields(t, schemaJSON)
+	for inputName, want := range map[string][]string{
+		"SourceInput":             {"kind", "name"},
+		"FieldRefInput":           {"field", "instance", "typeID"},
+		"DotenvVariableInput":     {"key", "source", "value"},
+		"DotenvInput":             {"source", "timestamp", "variables"},
+		"EnvBindingInput":         {"description", "exposure", "field", "key", "order", "projection", "required", "sensitivity", "source"},
+		"EnvContractInput":        {"bindings", "projection", "source"},
+		"DiagnosticInput":         {"code", "details", "field", "key", "message", "owner", "severity"},
+		"ResolverAttemptInput":    {"diagnostics", "field", "finishedAt", "id", "message", "outcome", "projectionKey", "resolverID", "source", "startedAt"},
+		"ResolverProposalInput":   {"attemptID", "field", "needID", "projectionKey", "resolverID", "value"},
+		"StateEnvelopeInput":      {"modelVersion", "provenance", "state"},
+		"LoadInput":               {"contracts", "dotenv", "envelope", "timestamp"},
+		"OperationMetadataInput":  {"actor", "id", "kind", "projection", "source", "timestamp"},
+		"StateProvenanceInput":    {"operations", "sources"},
+		"EffectiveStateInput":     {"bindings", "diagnostics", "resolverAttempts", "unresolvedFrontier", "values"},
+		"UnresolvedFrontierInput": {"needs"},
+	} {
+		got, ok := fieldsByInput[inputName]
+		require.True(t, ok, "missing input %s", inputName)
+		assert.Equal(t, want, got, inputName)
+	}
+}
+
+func introspectionInputFields(t *testing.T, schemaJSON string) map[string][]string {
+	t.Helper()
+
+	var payload struct {
+		Schema struct {
+			Types []struct {
+				Name        string `json:"name"`
+				InputFields []struct {
+					Name string `json:"name"`
+				} `json:"inputFields"`
+			} `json:"types"`
+		} `json:"__schema"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(schemaJSON), &payload))
+
+	fieldsByInput := make(map[string][]string)
+	for _, typ := range payload.Schema.Types {
+		if len(typ.InputFields) == 0 {
+			continue
+		}
+		fields := make([]string, 0, len(typ.InputFields))
+		for _, field := range typ.InputFields {
+			fields = append(fields, field.Name)
+		}
+		sort.Strings(fields)
+		fieldsByInput[typ.Name] = fields
+	}
+	return fieldsByInput
 }
 
 func TestPlanStateEnvelopeQueryStacksOperationRecords(t *testing.T) {
