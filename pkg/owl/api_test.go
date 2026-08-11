@@ -3,6 +3,8 @@ package owl_test
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -99,6 +101,17 @@ func applyUpdateLines(ctx context.Context, t *testing.T, store *owl.Store, sourc
 	}))
 }
 
+func copyCUECatalog(t *testing.T) string {
+	t.Helper()
+	root, err := filepath.Abs("../..")
+	require.NoError(t, err)
+	destination := t.TempDir()
+	for _, name := range []string{"cue.mod", "schema", "types"} {
+		require.NoError(t, os.CopyFS(filepath.Join(destination, name), os.DirFS(filepath.Join(root, name))))
+	}
+	return destination
+}
+
 func TestPublicAPIOperationsUseGraphShapedLoadInput(t *testing.T) {
 	t.Parallel()
 
@@ -147,6 +160,36 @@ func TestPublicAPIOperationsUseGraphShapedLoadInput(t *testing.T) {
 		}
 		assert.NotEmpty(t, op.Variables)
 	}
+}
+
+func TestTypeProviderFromCatalogInput(t *testing.T) {
+	t.Parallel()
+
+	builtin, err := owl.TypeProviderFromCatalogInput(owl.TypeCatalogInput{})
+	require.NoError(t, err)
+	_, ok, err := builtin.ResolveTypeRef("github.com/runmedev/owl/types/universe/redis")
+	require.NoError(t, err)
+	assert.True(t, ok)
+
+	_, err = owl.TypeProviderFromCatalogInput(owl.TypeCatalogInput{Root: filepath.Join(t.TempDir(), "missing")})
+	require.Error(t, err)
+
+	root := copyCUECatalog(t)
+	redisType := filepath.Join(root, "types/universe/redis/type.cue")
+	raw, err := os.ReadFile(redisType)
+	require.NoError(t, err)
+	raw = []byte(strings.Replace(string(raw), "(uint & >=1 & <=65535)", "6380", 1))
+	require.NoError(t, os.WriteFile(redisType, raw, 0o600))
+
+	types, err := owl.TypeProviderFromCatalogInput(owl.TypeCatalogInput{Root: root})
+	require.NoError(t, err)
+	validator, ok := types.(interface {
+		ValidateFieldValue(owl.FieldRef, string) error
+	})
+	require.True(t, ok)
+	ref := owl.FieldRef{TypeID: owl.TypeUniverseRedis, Instance: "queues", Field: "port"}
+	require.NoError(t, validator.ValidateFieldValue(ref, "6380"))
+	require.Error(t, validator.ValidateFieldValue(ref, "6379"))
 }
 
 func mustBuildSnapshotOperation(t *testing.T, store *owl.Store) owl.GraphOperation {

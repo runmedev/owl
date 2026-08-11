@@ -50,11 +50,9 @@ func TestCommandCUECatalogPrecedence(t *testing.T) {
 		require.Error(t, runCheck(t))
 	})
 
-	t.Run("empty is rejected", func(t *testing.T) {
+	t.Run("empty uses embedded", func(t *testing.T) {
 		withLookupEnv(t, func(string) (string, bool) { return "", true })
-		err := runCheck(t)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "OWL_CUE_ROOT is set but empty")
+		require.NoError(t, runCheck(t))
 	})
 
 	t.Run("invalid never falls back", func(t *testing.T) {

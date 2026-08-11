@@ -76,6 +76,17 @@ func NewTypeProviderFromDirectory(root string) (TypeProvider, error) {
 	return registry.NewBuiltInRegistryFromDirectory(root)
 }
 
+type TypeCatalogInput struct {
+	Root string
+}
+
+func TypeProviderFromCatalogInput(input TypeCatalogInput) (TypeProvider, error) {
+	if input.Root == "" {
+		return NewBuiltInTypeProvider(), nil
+	}
+	return NewTypeProviderFromDirectory(input.Root)
+}
+
 func ReadConfigFile(path string) (ConfigInput, error) {
 	return requirements.ReadConfigFile(path)
 }
