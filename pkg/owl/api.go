@@ -623,11 +623,19 @@ func (s *Store) ExecuteGraphQL(ctx context.Context, req GraphQLRequest) (GraphQL
 }
 
 func (s *Store) ResolverAttempts() []ResolverAttempt {
-	return append([]ResolverAttempt{}, s.state.ResolverAttempts...)
+	state, err := s.resolverState(context.Background())
+	if err != nil {
+		return nil
+	}
+	return append([]ResolverAttempt{}, state.ResolverAttempts...)
 }
 
 func (s *Store) UnresolvedFrontier() UnresolvedFrontier {
-	return UnresolvedFrontier{Needs: append([]UnresolvedNeed{}, s.state.UnresolvedFrontier.Needs...)}
+	state, err := s.resolverState(context.Background())
+	if err != nil {
+		return UnresolvedFrontier{}
+	}
+	return UnresolvedFrontier{Needs: append([]UnresolvedNeed{}, state.UnresolvedFrontier.Needs...)}
 }
 
 func (s *Store) Resolve(ctx context.Context, input ResolveInput) (ResolveResult, error) {
@@ -643,8 +651,12 @@ func (s *Store) Resolve(ctx context.Context, input ResolveInput) (ResolveResult,
 		NewAttemptID: publicAttemptIDGenerator(len(s.operations)),
 		Clock:        s.clock,
 	}
+	state, err := s.resolverState(ctx)
+	if err != nil {
+		return ResolveResult{}, err
+	}
 	result, err := runner.Resolve(ctx, resolver.RunRequest{
-		State:  s.state,
+		State:  state,
 		Policy: input.Policy,
 		Chain:  input.Chain,
 	})
@@ -661,8 +673,12 @@ func (s *Store) ApplyPromptAnswers(ctx context.Context, answers []PromptAnswer) 
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	state, err := s.resolverState(ctx)
+	if err != nil {
+		return ResolveResult{}, err
+	}
 	timestamp := s.clock()
-	needs := needsByID(s.state.UnresolvedFrontier.Needs)
+	needs := needsByID(state.UnresolvedFrontier.Needs)
 	newAttemptID := publicAttemptIDGenerator(len(s.operations))
 	var result ResolveResult
 	for _, answer := range answers {
@@ -720,6 +736,14 @@ func (s *Store) ApplyPromptAnswers(ctx context.Context, answers []PromptAnswer) 
 		return result, err
 	}
 	return result, nil
+}
+
+func (s *Store) resolverState(ctx context.Context) (model.EffectiveState, error) {
+	envelope, err := s.StateEnvelope(ctx)
+	if err != nil {
+		return model.EffectiveState{}, err
+	}
+	return envelope.State, nil
 }
 
 func (s *Store) LoadDotenv(source Source, vars []DotenvVariable) error {
