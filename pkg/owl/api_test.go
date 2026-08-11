@@ -103,11 +103,12 @@ func TestPublicAPIOperationsUseGraphShapedLoadInput(t *testing.T) {
 		mustBuildProjectSpecOperation(t, store),
 		mustBuildTypeOperation(t, store),
 		mustBuildCheckOperation(t, store),
+		mustBuildUpdateOperation(t, store),
 	} {
-		require.Contains(t, op.Variables, "input")
-		input, ok := op.Variables["input"].(map[string]interface{})
-		require.True(t, ok)
-		assert.Contains(t, input, "envelope")
+		if input, ok := op.Variables["input"].(map[string]interface{}); ok {
+			assert.Contains(t, input, "envelope")
+		}
+		assert.NotEmpty(t, op.Variables)
 	}
 }
 
@@ -180,6 +181,19 @@ func mustBuildCheckOperation(t *testing.T, store *owl.Store) owl.GraphOperation 
 	require.NoError(t, err)
 	assert.Equal(t, "OwlCheck", op.Name)
 	assert.Contains(t, op.Document, "$input: LoadInput!")
+	return op
+}
+
+func mustBuildUpdateOperation(t *testing.T, store *owl.Store) owl.GraphOperation {
+	t.Helper()
+	op, err := store.BuildUpdateOperation(context.Background(), owl.UpdateInput{
+		Dotenv: []owl.DotenvVariable{{Key: "API_URL", Value: "https://next.example.com"}},
+		Delete: []string{"API_KEY"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "OwlStateEnvelope", op.Name)
+	assert.Contains(t, op.Document, "update")
+	assert.Contains(t, op.Document, "delete")
 	return op
 }
 

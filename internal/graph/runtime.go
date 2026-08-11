@@ -264,6 +264,14 @@ func (r *Runtime) StateEnvelopeForOperations(ctx context.Context, records []stor
 	return decodeEnvelope(raw)
 }
 
+func StateEnvelopeOperation(records []store.OperationRecord) (Operation, error) {
+	plan, err := planStateEnvelopeQuery(records)
+	if err != nil {
+		return Operation{}, err
+	}
+	return Operation{Name: "OwlStateEnvelope", Document: plan.Query, Variables: plan.Vars}, nil
+}
+
 func (r *Runtime) StateEnvelopeAfter(ctx context.Context, input LoadInput, patch store.LoadInput, deleted []string) (StateEnvelope, error) {
 	records := []store.OperationRecord{{Kind: store.OperationRecordLoad, Load: input}}
 	if len(patch.Dotenv) > 0 {

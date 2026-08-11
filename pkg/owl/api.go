@@ -206,6 +206,12 @@ type ProjectSpecOutput struct {
 	Rendered string
 }
 
+type UpdateInput struct {
+	Source Source
+	Dotenv []DotenvVariable
+	Delete []string
+}
+
 type CheckInput struct {
 	Load LoadInput
 }
@@ -784,6 +790,41 @@ func (s *Store) Delete(ctx context.Context, keys ...string) error {
 	return s.applyDotenvWithContext(ctx, sourceFromContext(ctx, Source{}), nil, keys)
 }
 
+func (s *Store) BuildUpdateOperation(ctx context.Context, input UpdateInput) (GraphOperation, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	records := append([]store.OperationRecord{}, s.operations...)
+	timestamp := s.clock()
+	source := input.Source
+	if source == (Source{}) {
+		source = sourceFromContext(ctx, Source{Name: "[update]", Kind: "dotenv"})
+	}
+	if len(input.Dotenv) > 0 {
+		records = append(records, store.OperationRecord{
+			Kind:      store.OperationRecordUpdate,
+			Timestamp: timestamp,
+			Update: store.UpdateOperation{
+				Source:    source,
+				Dotenv:    append([]DotenvVariable{}, input.Dotenv...),
+				Timestamp: timestamp,
+			},
+		})
+	}
+	if len(input.Delete) > 0 {
+		records = append(records, store.OperationRecord{
+			Kind:      store.OperationRecordDelete,
+			Timestamp: timestamp,
+			Delete: store.DeleteOperation{
+				Keys:      append([]string{}, input.Delete...),
+				Source:    source,
+				Timestamp: timestamp,
+			},
+		})
+	}
+	return stateEnvelopeOperation(records)
+}
+
 func (s *Store) StateEnvelope(ctx context.Context) (StateEnvelope, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -816,6 +857,14 @@ func graphOperation(op graph.Operation) GraphOperation {
 		Document:  op.Document,
 		Variables: op.Variables,
 	}
+}
+
+func stateEnvelopeOperation(records []store.OperationRecord) (GraphOperation, error) {
+	op, err := graph.StateEnvelopeOperation(records)
+	if err != nil {
+		return GraphOperation{}, err
+	}
+	return graphOperation(op), nil
 }
 
 func (s *Store) GraphQLSchema() (string, error) {
