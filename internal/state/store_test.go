@@ -1,4 +1,4 @@
-package store
+package state
 
 import (
 	"context"
@@ -18,7 +18,7 @@ import (
 func TestStoreSnapshotSourceAndCheck(t *testing.T) {
 	t.Parallel()
 
-	s, err := NewStore(
+	s, err := NewMachine(
 		WithDotenv(".env", strings.NewReader("API_URL=https://api.example.com\nAPI_KEY=secret\nDATABASE_URL=postgres://example\n")),
 		WithEnvSpec(".env.example", strings.NewReader("API_URL=\"API URL\" # Plain\nAPI_KEY=\"API key\" # Secret!\nDATABASE_URL=\"Database URL\" # Opaque\nMISSING_TOKEN=\"Missing token\" # Secret!\n")),
 	)
@@ -55,7 +55,7 @@ func TestStoreSnapshotSourceAndCheck(t *testing.T) {
 func TestStoreSnapshotOrdersExplicitBindingsBeforeInferredBindings(t *testing.T) {
 	t.Parallel()
 
-	s, err := NewStore(
+	s, err := NewMachine(
 		WithDotenv(".env", strings.NewReader("OMEGA=value\nAPPLE=value\nZETA=value\nBETA=value\n")),
 		WithEnvSpec(".env.example", strings.NewReader("ZETA=\"Zeta\" # Plain\nBETA=\"Beta\" # Plain\n")),
 	)
@@ -74,7 +74,7 @@ func TestStoreSnapshotOrdersExplicitBindingsBeforeInferredBindings(t *testing.T)
 func TestStoreTypeProposesMissingPrimitiveTypes(t *testing.T) {
 	t.Parallel()
 
-	s, err := NewStore(
+	s, err := NewMachine(
 		WithDotenv(".env", strings.NewReader("API_URL=https://api.example.com\nAPI_KEY=secret\nSERVICE_HOST=localhost\nSERVICE_PORT=8080\nTARGET_PLATFORM=darwin/arm64\n")),
 		WithEnvSpec(".env.spec", strings.NewReader("API_URL=\"API URL\" # Plain\n")),
 	)
@@ -100,7 +100,7 @@ func TestStoreTypeProposesMissingPrimitiveTypes(t *testing.T) {
 func TestStoreTypeSkipsDefaultPlainProposalsByDefault(t *testing.T) {
 	t.Parallel()
 
-	s, err := NewStore(
+	s, err := NewMachine(
 		WithDotenv(".env", strings.NewReader("API_KEY=secret\nTARGET_PLATFORM=darwin/arm64\n")),
 	)
 	require.NoError(t, err)
@@ -206,7 +206,7 @@ func TestPrimitiveValueDiagnostics(t *testing.T) {
 func TestStoreWithDotenv(t *testing.T) {
 	t.Parallel()
 
-	s, err := NewStore(WithDotenv("[process]", strings.NewReader("REDIS_HOST=localhost\nREDIS_PORT=6379\n")))
+	s, err := NewMachine(WithDotenv("[process]", strings.NewReader("REDIS_HOST=localhost\nREDIS_PORT=6379\n")))
 	require.NoError(t, err)
 
 	snapshot, err := s.Snapshot(SnapshotPolicy{Reveal: true})
@@ -221,7 +221,7 @@ func TestStoreWithDotenv(t *testing.T) {
 func TestStorePreservesDotenvValueSource(t *testing.T) {
 	t.Parallel()
 
-	s, err := NewStore(
+	s, err := NewMachine(
 		WithDotenv("[process]", strings.NewReader("PROCESS_ONLY=from-process\nDUPLICATE_KEY=from-process\n")),
 		WithDotenv(".env", strings.NewReader("FILE_ONLY=from-file\nDUPLICATE_KEY=from-file\n")),
 	)
@@ -330,7 +330,7 @@ func TestWithoutDiagnosticOwnerDoesNotReuseInputSlice(t *testing.T) {
 func TestStoreRecordsFactOperationsOnly(t *testing.T) {
 	t.Parallel()
 
-	s, err := NewStore(WithDotenv(".env", strings.NewReader("API_URL=https://api.example.com\n")))
+	s, err := NewMachine(WithDotenv(".env", strings.NewReader("API_URL=https://api.example.com\n")))
 	require.NoError(t, err)
 
 	records := s.OperationRecords()
@@ -357,7 +357,7 @@ func TestStoreRecordsFactOperationsOnly(t *testing.T) {
 func TestStoreRecordsResolverAttemptWithoutMutatingValues(t *testing.T) {
 	t.Parallel()
 
-	s, err := NewStore(WithDotenv(".env", strings.NewReader("API_URL=https://api.example.com\n")))
+	s, err := NewMachine(WithDotenv(".env", strings.NewReader("API_URL=https://api.example.com\n")))
 	require.NoError(t, err)
 	before := s.State()
 	startedAt := time.Date(2026, 8, 3, 16, 0, 0, 0, time.UTC)
@@ -392,7 +392,7 @@ func TestStoreRecordsResolverAttemptWithoutMutatingValues(t *testing.T) {
 func TestStoreAppliesResolverProposalThroughStateOperation(t *testing.T) {
 	t.Parallel()
 
-	s, err := NewStore(WithEnvSpec(".env.example", strings.NewReader("API_KEY=\"API key\" # Secret!\n")))
+	s, err := NewMachine(WithEnvSpec(".env.example", strings.NewReader("API_KEY=\"API key\" # Secret!\n")))
 	require.NoError(t, err)
 	before := s.State()
 	require.Len(t, before.UnresolvedFrontier.Needs, 1)
@@ -437,7 +437,7 @@ func TestStoreAppliesResolverProposalThroughStateOperation(t *testing.T) {
 	assert.Equal(t, model.ResolverAttemptID("attempt-000001"), records[1].ResolverProposal.AttemptID)
 }
 
-func TestStoreProposalApplicationLeavesInvalidValuesForIntegrity(t *testing.T) {
+func TestMachineProposalApplicationLeavesInvalidValuesForIntegrity(t *testing.T) {
 	t.Parallel()
 
 	ref := model.FieldRef{TypeID: model.TypeUniverseRedis, Instance: "queues", Field: "port"}
@@ -456,7 +456,7 @@ func TestStoreProposalApplicationLeavesInvalidValuesForIntegrity(t *testing.T) {
 		Exposure:    model.ExposureClear,
 	}
 	state.UnresolvedFrontier = BuildUnresolvedFrontier(state)
-	s := NewState(state, registry.NewBuiltInRegistry())
+	s := MachineFromState(state, registry.NewBuiltInRegistry())
 
 	after, err := s.Apply(context.Background(), ApplyResolverProposalOperation{
 		Proposal: resolver.Proposal{
@@ -488,7 +488,7 @@ func TestStoreResolveSourcesAppliesDotenvResolverProposals(t *testing.T) {
 	t.Parallel()
 
 	timestamp := time.Date(2026, 8, 3, 23, 45, 0, 0, time.UTC)
-	s, err := NewStore(WithEnvSpec(".env.example", strings.NewReader("API_KEY=\"API key\" # Secret!\n")))
+	s, err := NewMachine(WithEnvSpec(".env.example", strings.NewReader("API_KEY=\"API key\" # Secret!\n")))
 	require.NoError(t, err)
 	require.Len(t, s.State().UnresolvedFrontier.Needs, 1)
 
@@ -524,7 +524,7 @@ func TestStoreResolveSourcesAppliesDotenvResolverProposals(t *testing.T) {
 func TestStoreResolveSourcesUsesDotenvBeforeProcess(t *testing.T) {
 	t.Parallel()
 
-	s, err := NewStore(WithEnvSpec(".env.example", strings.NewReader("API_KEY=\"API key\" # Secret!\n")))
+	s, err := NewMachine(WithEnvSpec(".env.example", strings.NewReader("API_KEY=\"API key\" # Secret!\n")))
 	require.NoError(t, err)
 
 	result, err := s.ResolveSources(context.Background(), ResolveSourcesInput{
@@ -554,7 +554,7 @@ func TestStoreResolveSourcesUsesDotenvBeforeProcess(t *testing.T) {
 	assert.Equal(t, model.Source{Name: ".env", Kind: "dotenv"}, value.Source)
 }
 
-func TestStoreResolveSourcesKeepsInvalidResolvedValueProvenance(t *testing.T) {
+func TestMachineResolveSourcesKeepsInvalidResolvedValueProvenance(t *testing.T) {
 	t.Parallel()
 
 	ref := model.FieldRef{TypeID: model.TypeUniverseRedis, Instance: "queues", Field: "port"}
@@ -566,7 +566,7 @@ func TestStoreResolveSourcesKeepsInvalidResolvedValueProvenance(t *testing.T) {
 		Explicit:     true,
 		Required:     true,
 	}}
-	s := NewState(state, registry.NewBuiltInRegistry())
+	s := MachineFromState(state, registry.NewBuiltInRegistry())
 
 	result, err := s.ResolveSources(context.Background(), ResolveSourcesInput{
 		Dotenv: []DotenvVariable{{

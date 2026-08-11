@@ -9,7 +9,7 @@ import (
 
 	"github.com/runmedev/owl/internal/model"
 	"github.com/runmedev/owl/internal/registry"
-	"github.com/runmedev/owl/internal/store"
+	"github.com/runmedev/owl/internal/state"
 )
 
 func TestContractsFromConfigInfersRequiredDotenvBindings(t *testing.T) {
@@ -304,8 +304,8 @@ func TestRenderDotenvSpec(t *testing.T) {
 	}, "\n"), rendered)
 }
 
-func bindingsByKey(bindings []store.EnvBinding) map[string]store.EnvBinding {
-	result := make(map[string]store.EnvBinding, len(bindings))
+func bindingsByKey(bindings []state.EnvBinding) map[string]state.EnvBinding {
+	result := make(map[string]state.EnvBinding, len(bindings))
 	for _, binding := range bindings {
 		result[binding.Key] = binding
 	}

@@ -9,211 +9,155 @@ import (
 	"github.com/graphql-go/graphql"
 
 	"github.com/runmedev/owl/internal/model"
+	"github.com/runmedev/owl/internal/requirements"
 	"github.com/runmedev/owl/internal/resolver"
-	"github.com/runmedev/owl/internal/store"
+	"github.com/runmedev/owl/internal/state"
 )
 
 func (r *Runtime) newSchema() (graphql.Schema, error) {
-	sourceInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "SourceInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"name": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-			"kind": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-		},
-	})
-	fieldRefInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "FieldRefInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"typeID":   &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-			"instance": &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"field":    &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-		},
-	})
-	dotenvVariableInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "DotenvVariableInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"key":    &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-			"value":  &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"source": &graphql.InputObjectFieldConfig{Type: sourceInput},
-		},
-	})
-	dotenvInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "DotenvInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"source":    &graphql.InputObjectFieldConfig{Type: sourceInput},
-			"variables": &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(dotenvVariableInput))},
-			"timestamp": &graphql.InputObjectFieldConfig{Type: graphql.String},
-		},
-	})
-	envBindingInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "EnvBindingInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"field":       &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(fieldRefInput)},
-			"key":         &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"projection":  &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"required":    &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
-			"description": &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"source":      &graphql.InputObjectFieldConfig{Type: sourceInput},
-			"order":       &graphql.InputObjectFieldConfig{Type: graphql.Int},
-			"sensitivity": &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"exposure":    &graphql.InputObjectFieldConfig{Type: graphql.String},
-		},
-	})
-	envContractInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "EnvContractInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"source":     &graphql.InputObjectFieldConfig{Type: sourceInput},
-			"projection": &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"bindings":   &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(envBindingInput))},
-		},
-	})
-	diagnosticInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "DiagnosticInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"severity": &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"code":     &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"message":  &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"details":  &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.String)},
-			"key":      &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"field":    &graphql.InputObjectFieldConfig{Type: fieldRefInput},
-			"owner":    &graphql.InputObjectFieldConfig{Type: graphql.String},
-		},
-	})
-	resolverAttemptInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "ResolverAttemptInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"id":            &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"resolverID":    &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-			"field":         &graphql.InputObjectFieldConfig{Type: fieldRefInput},
-			"projectionKey": &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"outcome":       &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-			"message":       &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"source":        &graphql.InputObjectFieldConfig{Type: sourceInput},
-			"startedAt":     &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"finishedAt":    &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"diagnostics":   &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(diagnosticInput))},
-		},
-	})
-	proposedValueInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "ProposedValueInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"value":       &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-			"source":      &graphql.InputObjectFieldConfig{Type: sourceInput},
-			"sensitivity": &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"exposure":    &graphql.InputObjectFieldConfig{Type: graphql.String},
-		},
-	})
-	resolverProposalInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "ResolverProposalInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"needID":        &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"attemptID":     &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"resolverID":    &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-			"field":         &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(fieldRefInput)},
-			"projectionKey": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-			"value":         &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(proposedValueInput)},
-		},
-	})
-	unresolvedNeedInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "UnresolvedNeedInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"id":                 &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"field":              &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(fieldRefInput)},
-			"projectionKey":      &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"required":           &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
-			"blocking":           &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
-			"reason":             &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"description":        &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"sensitivity":        &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"exposure":           &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"source":             &graphql.InputObjectFieldConfig{Type: sourceInput},
-			"origin":             &graphql.InputObjectFieldConfig{Type: sourceInput},
-			"resolverAttemptIDs": &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.String)},
-		},
-	})
-	unresolvedFrontierInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "UnresolvedFrontierInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"needs": &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(unresolvedNeedInput))},
-		},
-	})
-	stateValueInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "StateValueInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"field":       &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(fieldRefInput)},
-			"original":    &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"resolved":    &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"visibility":  &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"sensitivity": &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"exposure":    &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"origin":      &graphql.InputObjectFieldConfig{Type: sourceInput},
-			"source":      &graphql.InputObjectFieldConfig{Type: sourceInput},
-			"createdAt":   &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"updatedAt":   &graphql.InputObjectFieldConfig{Type: graphql.String},
-		},
-	})
-	stateBindingInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "StateBindingInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"id":          &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"field":       &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(fieldRefInput)},
-			"projection":  &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"key":         &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"description": &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"source":      &graphql.InputObjectFieldConfig{Type: sourceInput},
-			"origin":      &graphql.InputObjectFieldConfig{Type: sourceInput},
-			"confidence":  &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"explicit":    &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
-			"order":       &graphql.InputObjectFieldConfig{Type: graphql.Int},
-			"preserveKey": &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
-			"required":    &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
-		},
-	})
-	effectiveStateInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "EffectiveStateInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"values":             &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(stateValueInput))},
-			"bindings":           &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(stateBindingInput))},
-			"resolverAttempts":   &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(resolverAttemptInput))},
-			"unresolvedFrontier": &graphql.InputObjectFieldConfig{Type: unresolvedFrontierInput},
-			"diagnostics":        &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(diagnosticInput))},
-		},
-	})
-	operationMetadataInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "OperationMetadataInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"id":         &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"kind":       &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"timestamp":  &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"actor":      &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"source":     &graphql.InputObjectFieldConfig{Type: sourceInput},
-			"projection": &graphql.InputObjectFieldConfig{Type: graphql.String},
-		},
-	})
-	stateProvenanceInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "StateProvenanceInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"sources":    &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(sourceInput))},
-			"operations": &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(operationMetadataInput))},
-		},
-	})
-	stateEnvelopeInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "StateEnvelopeInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"modelVersion": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-			"state":        &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(effectiveStateInput)},
-			"provenance":   &graphql.InputObjectFieldConfig{Type: stateProvenanceInput},
-		},
-	})
-	loadInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "LoadInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"dotenv":    &graphql.InputObjectFieldConfig{Type: dotenvInput},
-			"contracts": &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(envContractInput))},
-			"envelope":  &graphql.InputObjectFieldConfig{Type: stateEnvelopeInput},
-			"timestamp": &graphql.InputObjectFieldConfig{Type: graphql.String},
-		},
-	})
+	sourceInput := graphInputObject("SourceInput",
+		graphInput("name", graphql.NewNonNull(graphql.String)),
+		graphInput("kind", graphql.NewNonNull(graphql.String)),
+	)
+	fieldRefInput := graphInputObject("FieldRefInput",
+		graphInput("typeID", graphql.NewNonNull(graphql.String)),
+		graphInput("instance", graphql.String),
+		graphInput("field", graphql.NewNonNull(graphql.String)),
+	)
+	dotenvVariableInput := graphInputObject("DotenvVariableInput",
+		graphInput("key", graphql.NewNonNull(graphql.String)),
+		graphInput("value", graphql.String),
+		graphInput("source", sourceInput),
+	)
+	dotenvInput := graphInputObject("DotenvInput",
+		graphInput("source", sourceInput),
+		graphInput("variables", graphql.NewList(graphql.NewNonNull(dotenvVariableInput))),
+		graphInput("timestamp", graphql.String),
+	)
+	envBindingInput := graphInputObject("EnvBindingInput",
+		graphInput("field", graphql.NewNonNull(fieldRefInput)),
+		graphInput("key", graphql.String),
+		graphInput("projection", graphql.String),
+		graphInput("required", graphql.Boolean),
+		graphInput("description", graphql.String),
+		graphInput("source", sourceInput),
+		graphInput("order", graphql.Int),
+		graphInput("sensitivity", graphql.String),
+		graphInput("exposure", graphql.String),
+	)
+	envContractInput := graphInputObject("EnvContractInput",
+		graphInput("source", sourceInput),
+		graphInput("projection", graphql.String),
+		graphInput("bindings", graphql.NewList(graphql.NewNonNull(envBindingInput))),
+	)
+	diagnosticInput := graphInputObject("DiagnosticInput",
+		graphInput("severity", graphql.String),
+		graphInput("code", graphql.String),
+		graphInput("message", graphql.String),
+		graphInput("details", graphql.NewList(graphql.String)),
+		graphInput("key", graphql.String),
+		graphInput("field", fieldRefInput),
+		graphInput("owner", graphql.String),
+	)
+	resolverAttemptInput := graphInputObject("ResolverAttemptInput",
+		graphInput("id", graphql.String),
+		graphInput("resolverID", graphql.NewNonNull(graphql.String)),
+		graphInput("field", fieldRefInput),
+		graphInput("projectionKey", graphql.String),
+		graphInput("outcome", graphql.NewNonNull(graphql.String)),
+		graphInput("message", graphql.String),
+		graphInput("source", sourceInput),
+		graphInput("startedAt", graphql.String),
+		graphInput("finishedAt", graphql.String),
+		graphInput("diagnostics", graphql.NewList(graphql.NewNonNull(diagnosticInput))),
+	)
+	proposedValueInput := graphInputObject("ProposedValueInput",
+		graphInput("value", graphql.NewNonNull(graphql.String)),
+		graphInput("source", sourceInput),
+		graphInput("sensitivity", graphql.String),
+		graphInput("exposure", graphql.String),
+	)
+	resolverProposalInput := graphInputObject("ResolverProposalInput",
+		graphInput("needID", graphql.String),
+		graphInput("attemptID", graphql.String),
+		graphInput("resolverID", graphql.NewNonNull(graphql.String)),
+		graphInput("field", graphql.NewNonNull(fieldRefInput)),
+		graphInput("projectionKey", graphql.NewNonNull(graphql.String)),
+		graphInput("value", graphql.NewNonNull(proposedValueInput)),
+	)
+	unresolvedNeedInput := graphInputObject("UnresolvedNeedInput",
+		graphInput("id", graphql.String),
+		graphInput("field", graphql.NewNonNull(fieldRefInput)),
+		graphInput("projectionKey", graphql.String),
+		graphInput("required", graphql.Boolean),
+		graphInput("blocking", graphql.Boolean),
+		graphInput("reason", graphql.String),
+		graphInput("description", graphql.String),
+		graphInput("sensitivity", graphql.String),
+		graphInput("exposure", graphql.String),
+		graphInput("source", sourceInput),
+		graphInput("origin", sourceInput),
+		graphInput("resolverAttemptIDs", graphql.NewList(graphql.String)),
+	)
+	unresolvedFrontierInput := graphInputObject("UnresolvedFrontierInput",
+		graphInput("needs", graphql.NewList(graphql.NewNonNull(unresolvedNeedInput))),
+	)
+	stateValueInput := graphInputObject("StateValueInput",
+		graphInput("field", graphql.NewNonNull(fieldRefInput)),
+		graphInput("original", graphql.String),
+		graphInput("resolved", graphql.String),
+		graphInput("visibility", graphql.String),
+		graphInput("sensitivity", graphql.String),
+		graphInput("exposure", graphql.String),
+		graphInput("origin", sourceInput),
+		graphInput("source", sourceInput),
+		graphInput("createdAt", graphql.String),
+		graphInput("updatedAt", graphql.String),
+	)
+	stateBindingInput := graphInputObject("StateBindingInput",
+		graphInput("id", graphql.String),
+		graphInput("field", graphql.NewNonNull(fieldRefInput)),
+		graphInput("projection", graphql.String),
+		graphInput("key", graphql.String),
+		graphInput("description", graphql.String),
+		graphInput("source", sourceInput),
+		graphInput("origin", sourceInput),
+		graphInput("confidence", graphql.String),
+		graphInput("explicit", graphql.Boolean),
+		graphInput("order", graphql.Int),
+		graphInput("preserveKey", graphql.Boolean),
+		graphInput("required", graphql.Boolean),
+	)
+	effectiveStateInput := graphInputObject("EffectiveStateInput",
+		graphInput("values", graphql.NewList(graphql.NewNonNull(stateValueInput))),
+		graphInput("bindings", graphql.NewList(graphql.NewNonNull(stateBindingInput))),
+		graphInput("resolverAttempts", graphql.NewList(graphql.NewNonNull(resolverAttemptInput))),
+		graphInput("unresolvedFrontier", unresolvedFrontierInput),
+		graphInput("diagnostics", graphql.NewList(graphql.NewNonNull(diagnosticInput))),
+	)
+	operationMetadataInput := graphInputObject("OperationMetadataInput",
+		graphInput("id", graphql.String),
+		graphInput("kind", graphql.String),
+		graphInput("timestamp", graphql.String),
+		graphInput("actor", graphql.String),
+		graphInput("source", sourceInput),
+		graphInput("projection", graphql.String),
+	)
+	stateProvenanceInput := graphInputObject("StateProvenanceInput",
+		graphInput("sources", graphql.NewList(graphql.NewNonNull(sourceInput))),
+		graphInput("operations", graphql.NewList(graphql.NewNonNull(operationMetadataInput))),
+	)
+	stateEnvelopeInput := graphInputObject("StateEnvelopeInput",
+		graphInput("modelVersion", graphql.NewNonNull(graphql.String)),
+		graphInput("state", graphql.NewNonNull(effectiveStateInput)),
+		graphInput("provenance", stateProvenanceInput),
+	)
+	loadInput := graphInputObject("LoadInput",
+		graphInput("dotenv", dotenvInput),
+		graphInput("contracts", graphql.NewList(graphql.NewNonNull(envContractInput))),
+		graphInput("envelope", stateEnvelopeInput),
+		graphInput("timestamp", graphql.String),
+	)
 
 	diagnosticType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "Diagnostic",
@@ -393,10 +337,28 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"envelope": &graphql.Field{
 				Type: stateEnvelopeType,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					gctx := p.Source.(Context)
-					return stateEnvelopeView(store.NewState(gctx.State, gctx.Types).StateEnvelope()), nil
+					gctx := p.Source.(GraphContext)
+					return stateEnvelopeView(state.MachineFromState(gctx.State, gctx.Types).StateEnvelope()), nil
 				},
 			},
+		},
+	})
+	typeProposalType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "TypeProposal",
+		Fields: graphql.Fields{
+			"key":           &graphql.Field{Type: graphql.String},
+			"currentType":   &graphql.Field{Type: graphql.String},
+			"suggestedType": &graphql.Field{Type: graphql.String},
+			"confidence":    &graphql.Field{Type: graphql.String},
+			"reason":        &graphql.Field{Type: graphql.String},
+			"description":   &graphql.Field{Type: graphql.String},
+			"required":      &graphql.Field{Type: graphql.Boolean},
+		},
+	})
+	typeResultType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "TypeResult",
+		Fields: graphql.Fields{
+			"proposals": &graphql.Field{Type: graphql.NewList(typeProposalType)},
 		},
 	})
 	getResultType := graphql.NewObject(graphql.ObjectConfig{
@@ -416,6 +378,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 		Fields: graphql.Fields{
 			"ok":          &graphql.Field{Type: graphql.Boolean},
 			"diagnostics": &graphql.Field{Type: graphql.NewList(diagnosticType)},
+			"checked":     &graphql.Field{Type: graphql.Int},
 		},
 	})
 	snapshotItemType := graphql.NewObject(graphql.ObjectConfig{
@@ -427,71 +390,50 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"type": &graphql.Field{
 				Type: graphql.String,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					item := p.Source.(store.SnapshotItem)
+					item := p.Source.(state.SnapshotItem)
 					return string(item.Type), nil
 				},
 			},
 			"field": &graphql.Field{
-				Type: graphql.String,
+				Type: fieldRefType,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					item := p.Source.(store.SnapshotItem)
-					return item.Field.String(), nil
-				},
-			},
-			"fieldTypeID": &graphql.Field{
-				Type: graphql.String,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					item := p.Source.(store.SnapshotItem)
-					return string(item.Field.TypeID), nil
-				},
-			},
-			"fieldInstance": &graphql.Field{
-				Type: graphql.String,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					item := p.Source.(store.SnapshotItem)
-					return item.Field.Instance, nil
-				},
-			},
-			"fieldName": &graphql.Field{
-				Type: graphql.String,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					item := p.Source.(store.SnapshotItem)
-					return item.Field.Field, nil
+					item := p.Source.(state.SnapshotItem)
+					return fieldRefView(item.Field), nil
 				},
 			},
 			"source": &graphql.Field{
-				Type: graphql.String,
+				Type: sourceType,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					item := p.Source.(store.SnapshotItem)
-					return item.Source.Name, nil
+					item := p.Source.(state.SnapshotItem)
+					return item.Source, nil
 				},
 			},
 			"origin": &graphql.Field{
-				Type: graphql.String,
+				Type: sourceType,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					item := p.Source.(store.SnapshotItem)
-					return item.Origin.Name, nil
+					item := p.Source.(state.SnapshotItem)
+					return item.Origin, nil
 				},
 			},
 			"explicit": &graphql.Field{Type: graphql.Boolean},
 			"confidence": &graphql.Field{
 				Type: graphql.String,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					item := p.Source.(store.SnapshotItem)
+					item := p.Source.(state.SnapshotItem)
 					return string(item.Confidence), nil
 				},
 			},
 			"visibility": &graphql.Field{
 				Type: graphql.String,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					item := p.Source.(store.SnapshotItem)
+					item := p.Source.(state.SnapshotItem)
 					return string(item.Visibility), nil
 				},
 			},
 			"exposure": &graphql.Field{
 				Type: graphql.String,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					item := p.Source.(store.SnapshotItem)
+					item := p.Source.(state.SnapshotItem)
 					return string(item.Exposure), nil
 				},
 			},
@@ -500,7 +442,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"updatedAt": &graphql.Field{
 				Type: graphql.String,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					item := p.Source.(store.SnapshotItem)
+					item := p.Source.(state.SnapshotItem)
 					return timeString(item.UpdatedAt), nil
 				},
 			},
@@ -508,6 +450,29 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 	})
 
 	var environmentType *graphql.Object
+
+	assistType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "Assist",
+		Fields: graphql.FieldsThunk(func() graphql.Fields {
+			return graphql.Fields{
+				"typeSuggestions": &graphql.Field{
+					Type: typeResultType,
+					Args: graphql.FieldConfigArgument{
+						"all": &graphql.ArgumentConfig{Type: graphql.Boolean, DefaultValue: false},
+					},
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						gctx := p.Source.(GraphContext)
+						all, _ := p.Args["all"].(bool)
+						result, err := state.MachineFromState(gctx.State, gctx.Types).Type(state.TypePolicy{All: all})
+						if err != nil {
+							return nil, err
+						}
+						return typeResultView(result), nil
+					},
+				},
+			}
+		}),
+	})
 
 	renderType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "Render",
@@ -519,9 +484,9 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 						"reveal": &graphql.ArgumentConfig{Type: graphql.Boolean, DefaultValue: false},
 					},
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						gctx := p.Source.(Context)
+						gctx := p.Source.(GraphContext)
 						reveal, _ := p.Args["reveal"].(bool)
-						return store.NewState(gctx.State, gctx.Types).Snapshot(store.SnapshotPolicy{Reveal: reveal})
+						return state.MachineFromState(gctx.State, gctx.Types).Snapshot(state.SnapshotPolicy{Reveal: reveal})
 					},
 				},
 				"dotenv": &graphql.Field{
@@ -530,18 +495,25 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 						"insecure": &graphql.ArgumentConfig{Type: graphql.Boolean, DefaultValue: false},
 					},
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						gctx := p.Source.(Context)
+						gctx := p.Source.(GraphContext)
 						insecure, _ := p.Args["insecure"].(bool)
-						return store.NewState(gctx.State, gctx.Types).Dotenv(store.DotenvPolicy{Insecure: insecure})
+						return state.MachineFromState(gctx.State, gctx.Types).Dotenv(state.DotenvPolicy{Insecure: insecure})
 					},
 				},
 				"check": &graphql.Field{
 					Type: checkType,
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						gctx := p.Source.(Context)
-						check := store.NewState(gctx.State, gctx.Types).Check()
+						gctx := p.Source.(GraphContext)
+						check := state.MachineFromState(gctx.State, gctx.Types).Check()
 						check.Diagnostics = sortedDiagnostics(check.Diagnostics)
 						return check, nil
+					},
+				},
+				"dotenvSpec": &graphql.Field{
+					Type: graphql.String,
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						gctx := p.Source.(GraphContext)
+						return requirements.RenderDotenvSpec(contractsFromState(gctx.State), gctx.Types)
 					},
 				},
 				"get": &graphql.Field{
@@ -551,10 +523,10 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 						"reveal": &graphql.ArgumentConfig{Type: graphql.Boolean, DefaultValue: false},
 					},
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						gctx := p.Source.(Context)
+						gctx := p.Source.(GraphContext)
 						key := p.Args["key"].(string)
 						reveal, _ := p.Args["reveal"].(bool)
-						result, ok, err := store.NewState(gctx.State, gctx.Types).Get(key, store.GetPolicy{Reveal: reveal})
+						result, ok, err := state.MachineFromState(gctx.State, gctx.Types).Get(key, state.GetPolicy{Reveal: reveal})
 						if err != nil || !ok {
 							return nil, err
 						}
@@ -564,8 +536,8 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 				"sensitiveKeys": &graphql.Field{
 					Type: graphql.NewList(graphql.String),
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						gctx := p.Source.(Context)
-						return store.NewState(gctx.State, gctx.Types).SensitiveKeys()
+						gctx := p.Source.(GraphContext)
+						return state.MachineFromState(gctx.State, gctx.Types).SensitiveKeys()
 					},
 				},
 			}
@@ -583,13 +555,13 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 					},
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 						input := decodeLoadInput(p.Args["input"].(map[string]interface{}))
-						gctx := p.Source.(Context)
-						s := store.NewState(gctx.State, gctx.Types)
-						state, err := s.Apply(contextFromParams(p), store.LoadOperation{Input: input, Timestamp: input.Timestamp})
+						gctx := p.Source.(GraphContext)
+						s := state.MachineFromState(gctx.State, gctx.Types)
+						state, err := s.Apply(contextFromParams(p), state.LoadOperation{Input: input, Timestamp: input.Timestamp})
 						if err != nil {
 							return nil, err
 						}
-						return Context{State: state, Types: gctx.Types}, nil
+						return GraphContext{State: state, Types: gctx.Types}, nil
 					},
 				},
 				"update": &graphql.Field{
@@ -598,14 +570,14 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 						"dotenv": &graphql.ArgumentConfig{Type: dotenvInput},
 					},
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						gctx := p.Source.(Context)
+						gctx := p.Source.(GraphContext)
 						input := decodeDotenvInput(p.Args["dotenv"])
-						s := store.NewState(gctx.State, gctx.Types)
-						state, err := s.Apply(contextFromParams(p), store.UpdateOperation{Source: input.DotenvSource, Dotenv: input.Dotenv, Timestamp: input.Timestamp})
+						s := state.MachineFromState(gctx.State, gctx.Types)
+						state, err := s.Apply(contextFromParams(p), state.UpdateOperation{Source: input.DotenvSource, Dotenv: input.Dotenv, Timestamp: input.Timestamp})
 						if err != nil {
 							return nil, err
 						}
-						return Context{State: state, Types: gctx.Types}, nil
+						return GraphContext{State: state, Types: gctx.Types}, nil
 					},
 				},
 				"delete": &graphql.Field{
@@ -614,13 +586,13 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 						"keys": &graphql.ArgumentConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.String))},
 					},
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						gctx := p.Source.(Context)
-						s := store.NewState(gctx.State, gctx.Types)
-						state, err := s.Apply(contextFromParams(p), store.DeleteOperation{Keys: decodeStringList(p.Args["keys"])})
+						gctx := p.Source.(GraphContext)
+						s := state.MachineFromState(gctx.State, gctx.Types)
+						state, err := s.Apply(contextFromParams(p), state.DeleteOperation{Keys: decodeStringList(p.Args["keys"])})
 						if err != nil {
 							return nil, err
 						}
-						return Context{State: state, Types: gctx.Types}, nil
+						return GraphContext{State: state, Types: gctx.Types}, nil
 					},
 				},
 				"recordResolverAttempt": &graphql.Field{
@@ -629,14 +601,14 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 						"attempt": &graphql.ArgumentConfig{Type: graphql.NewNonNull(resolverAttemptInput)},
 					},
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						gctx := p.Source.(Context)
+						gctx := p.Source.(GraphContext)
 						attempt := decodeResolverAttemptInput(p.Args["attempt"])
-						s := store.NewState(gctx.State, gctx.Types)
-						state, err := s.Apply(contextFromParams(p), store.RecordResolverAttemptOperation{Attempt: attempt})
+						s := state.MachineFromState(gctx.State, gctx.Types)
+						state, err := s.Apply(contextFromParams(p), state.RecordResolverAttemptOperation{Attempt: attempt})
 						if err != nil {
 							return nil, err
 						}
-						return Context{State: state, Types: gctx.Types}, nil
+						return GraphContext{State: state, Types: gctx.Types}, nil
 					},
 				},
 				"applyResolverProposal": &graphql.Field{
@@ -646,41 +618,41 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 						"timestamp": &graphql.ArgumentConfig{Type: graphql.String},
 					},
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						gctx := p.Source.(Context)
+						gctx := p.Source.(GraphContext)
 						proposal := decodeResolverProposalInput(p.Args["proposal"])
-						s := store.NewState(gctx.State, gctx.Types)
-						state, err := s.Apply(contextFromParams(p), store.ApplyResolverProposalOperation{
+						s := state.MachineFromState(gctx.State, gctx.Types)
+						state, err := s.Apply(contextFromParams(p), state.ApplyResolverProposalOperation{
 							Proposal:  proposal,
 							Timestamp: timeValue(p.Args["timestamp"]),
 						})
 						if err != nil {
 							return nil, err
 						}
-						return Context{State: state, Types: gctx.Types}, nil
+						return GraphContext{State: state, Types: gctx.Types}, nil
 					},
 				},
 				"normalize": &graphql.Field{
 					Type: environmentType,
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						gctx := p.Source.(Context)
-						s := store.NewState(gctx.State, gctx.Types)
-						state, err := s.Apply(contextFromParams(p), store.NormalizeOperation{})
+						gctx := p.Source.(GraphContext)
+						s := state.MachineFromState(gctx.State, gctx.Types)
+						state, err := s.Apply(contextFromParams(p), state.NormalizeOperation{})
 						if err != nil {
 							return nil, err
 						}
-						return Context{State: state, Types: gctx.Types}, nil
+						return GraphContext{State: state, Types: gctx.Types}, nil
 					},
 				},
 				"validate": &graphql.Field{
 					Type: environmentType,
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						gctx := p.Source.(Context)
-						s := store.NewState(gctx.State, gctx.Types)
-						state, err := s.Apply(contextFromParams(p), store.IntegrityOperation{Types: gctx.Types})
+						gctx := p.Source.(GraphContext)
+						s := state.MachineFromState(gctx.State, gctx.Types)
+						state, err := s.Apply(contextFromParams(p), state.IntegrityOperation{Types: gctx.Types})
 						if err != nil {
 							return nil, err
 						}
-						return Context{State: state, Types: gctx.Types}, nil
+						return GraphContext{State: state, Types: gctx.Types}, nil
 					},
 				},
 				"render": &graphql.Field{
@@ -695,6 +667,12 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 						return p.Source, nil
 					},
 				},
+				"assist": &graphql.Field{
+					Type: assistType,
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						return p.Source, nil
+					},
+				},
 			}
 		}),
 	})
@@ -705,7 +683,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"Environment": &graphql.Field{
 				Type: environmentType,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					return Context{State: model.NewEffectiveState(), Types: r.types}, nil
+					return GraphContext{State: model.NewEffectiveState(), Types: r.types}, nil
 				},
 			},
 		},
@@ -721,10 +699,50 @@ func contextFromParams(p graphql.ResolveParams) context.Context {
 	return p.Context
 }
 
-func decodeLoadInput(raw map[string]interface{}) store.LoadInput {
-	var input store.LoadInput
+func contractsFromState(effective model.EffectiveState) []state.EnvContract {
+	type contractKey struct {
+		source     model.Source
+		projection model.ProjectionID
+	}
+	positions := make(map[contractKey]int)
+	var contracts []state.EnvContract
+	for _, binding := range effective.Bindings {
+		source := binding.Origin
+		key := contractKey{source: source, projection: binding.ProjectionID}
+		position, ok := positions[key]
+		if !ok {
+			position = len(contracts)
+			positions[key] = position
+			contracts = append(contracts, state.EnvContract{
+				Source:     source,
+				Projection: binding.ProjectionID,
+			})
+		}
+		contracts[position].Bindings = append(contracts[position].Bindings, state.EnvBinding{
+			FieldRef:    binding.FieldRef,
+			Key:         string(binding.Key),
+			Projection:  binding.ProjectionID,
+			Required:    binding.Required,
+			Description: binding.Description,
+			Source:      source,
+			Order:       binding.Order,
+			Sensitivity: effective.Values[binding.FieldRef].Sensitivity,
+			Exposure:    effective.Values[binding.FieldRef].Exposure,
+		})
+	}
+	sort.SliceStable(contracts, func(i, j int) bool {
+		if contracts[i].Source.Name != contracts[j].Source.Name {
+			return contracts[i].Source.Name < contracts[j].Source.Name
+		}
+		return contracts[i].Projection < contracts[j].Projection
+	})
+	return contracts
+}
+
+func decodeLoadInput(raw map[string]interface{}) state.LoadInput {
+	var input state.LoadInput
 	if envelopeRaw, ok := raw["envelope"].(map[string]interface{}); ok {
-		envelope := store.StateEnvelope{
+		envelope := state.StateEnvelope{
 			ModelVersion: stringValue(envelopeRaw["modelVersion"]),
 			State:        decodeEffectiveStateInput(envelopeRaw["state"]),
 			Provenance:   decodeStateProvenanceInput(envelopeRaw["provenance"]),
@@ -740,7 +758,7 @@ func decodeLoadInput(raw map[string]interface{}) store.LoadInput {
 		if !ok {
 			continue
 		}
-		contract := store.EnvContract{
+		contract := state.EnvContract{
 			Source:     decodeSource(contractRaw["source"]),
 			Projection: model.ProjectionID(stringValue(contractRaw["projection"])),
 		}
@@ -749,7 +767,7 @@ func decodeLoadInput(raw map[string]interface{}) store.LoadInput {
 			if !ok {
 				continue
 			}
-			contract.Bindings = append(contract.Bindings, store.EnvBinding{
+			contract.Bindings = append(contract.Bindings, state.EnvBinding{
 				FieldRef:    decodeFieldRef(bindingRaw["field"]),
 				Key:         stringValue(bindingRaw["key"]),
 				Projection:  model.ProjectionID(stringValue(bindingRaw["projection"])),
@@ -769,8 +787,8 @@ func decodeLoadInput(raw map[string]interface{}) store.LoadInput {
 	return input
 }
 
-func decodeDotenvInput(raw interface{}) store.LoadInput {
-	var input store.LoadInput
+func decodeDotenvInput(raw interface{}) state.LoadInput {
+	var input state.LoadInput
 	dotenvRaw, ok := raw.(map[string]interface{})
 	if !ok {
 		return input
@@ -782,7 +800,7 @@ func decodeDotenvInput(raw interface{}) store.LoadInput {
 		if !ok {
 			continue
 		}
-		input.Dotenv = append(input.Dotenv, store.DotenvVariable{
+		input.Dotenv = append(input.Dotenv, state.DotenvVariable{
 			Key:    stringValue(variable["key"]),
 			Value:  stringValue(variable["value"]),
 			Source: decodeSource(variable["source"]),
@@ -934,8 +952,8 @@ func decodeDiagnosticsInput(raw interface{}) []model.Diagnostic {
 	return diagnostics
 }
 
-func decodeStateProvenanceInput(raw interface{}) store.StateProvenance {
-	var provenance store.StateProvenance
+func decodeStateProvenanceInput(raw interface{}) state.StateProvenance {
+	var provenance state.StateProvenance
 	row, ok := raw.(map[string]interface{})
 	if !ok {
 		return provenance
@@ -1051,6 +1069,20 @@ func uintValue(raw interface{}) uint {
 	return 0
 }
 
+func intValue(raw interface{}) int {
+	switch value := raw.(type) {
+	case int:
+		return value
+	case int32:
+		return int(value)
+	case int64:
+		return int(value)
+	case float64:
+		return int(value)
+	}
+	return 0
+}
+
 func timeString(value time.Time) string {
 	if value.IsZero() {
 		return ""
@@ -1070,7 +1102,7 @@ func timeValue(raw interface{}) time.Time {
 	return parsed
 }
 
-func stateEnvelopeView(envelope store.StateEnvelope) map[string]interface{} {
+func stateEnvelopeView(envelope state.StateEnvelope) map[string]interface{} {
 	return map[string]interface{}{
 		"modelVersion": envelope.ModelVersion,
 		"state":        effectiveStateView(envelope.State),
@@ -1218,7 +1250,7 @@ func unresolvedFrontierView(frontier model.UnresolvedFrontier) map[string]interf
 	return map[string]interface{}{"needs": needs}
 }
 
-func getResultView(result store.GetResult) map[string]interface{} {
+func getResultView(result state.GetResult) map[string]interface{} {
 	return map[string]interface{}{
 		"key":         result.Key,
 		"field":       fieldRefView(result.Field),
@@ -1228,6 +1260,22 @@ func getResultView(result store.GetResult) map[string]interface{} {
 		"source":      sourceView(result.Source),
 		"diagnostics": result.Diagnostics,
 	}
+}
+
+func typeResultView(result state.TypeResult) map[string]interface{} {
+	proposals := make([]map[string]interface{}, 0, len(result.Proposals))
+	for _, proposal := range result.Proposals {
+		proposals = append(proposals, map[string]interface{}{
+			"key":           proposal.Key,
+			"currentType":   string(proposal.CurrentType),
+			"suggestedType": string(proposal.SuggestedType),
+			"confidence":    string(proposal.Confidence),
+			"reason":        proposal.Reason,
+			"description":   proposal.Description,
+			"required":      proposal.Required,
+		})
+	}
+	return map[string]interface{}{"proposals": proposals}
 }
 
 func sourceView(source model.Source) map[string]interface{} {

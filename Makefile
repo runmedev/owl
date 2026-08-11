@@ -4,9 +4,9 @@ GIT_SHA := $(shell git rev-parse HEAD)
 DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 VERSION := $(shell git describe --tags --match 'v[0-9]*' --always --dirty)
 LDFLAGS := -s -w \
-	-X 'github.com/runmedev/owl/internal/version.BuildDate=$(DATE)' \
-	-X 'github.com/runmedev/owl/internal/version.BuildVersion=$(subst v,,$(VERSION))' \
-	-X 'github.com/runmedev/owl/internal/version.Commit=$(GIT_SHA)'
+	-X 'github.com/runmedev/owl/pkg/owl.BuildDate=$(DATE)' \
+	-X 'github.com/runmedev/owl/pkg/owl.BuildVersion=$(subst v,,$(VERSION))' \
+	-X 'github.com/runmedev/owl/pkg/owl.Commit=$(GIT_SHA)'
 
 .PHONY: build
 build: BUILD_OUTPUT ?= owl

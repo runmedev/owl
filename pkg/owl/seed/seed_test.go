@@ -12,6 +12,16 @@ import (
 	"github.com/runmedev/owl/pkg/owl"
 )
 
+func snapshotItems(t *testing.T, store *owl.Store, policy owl.SnapshotPolicy) []owl.SnapshotItem {
+	t.Helper()
+	output, err := store.Snapshot(context.Background(), owl.SnapshotInput{
+		Policy: policy,
+		Filter: owl.SnapshotFilter{All: true},
+	})
+	require.NoError(t, err)
+	return output.Envs
+}
+
 func TestNewStoreReturnsSeededStore(t *testing.T) {
 	t.Parallel()
 
@@ -28,8 +38,7 @@ func TestNewStoreReturnsSeededStore(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, result.Diagnostics)
 
-	items, err := result.Store.Snapshot(owl.SnapshotPolicy{Reveal: true})
-	require.NoError(t, err)
+	items := snapshotItems(t, result.Store, owl.SnapshotPolicy{Reveal: true})
 	require.Len(t, items, 1)
 	assert.Equal(t, "API_KEY", items[0].Name)
 	assert.Equal(t, "secret", items[0].Value)
@@ -52,8 +61,7 @@ func TestNewStoreSkipsMissingEnvFiles(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, result.Diagnostics)
 
-	items, err := result.Store.Snapshot(owl.SnapshotPolicy{Reveal: true})
-	require.NoError(t, err)
+	items := snapshotItems(t, result.Store, owl.SnapshotPolicy{Reveal: true})
 	require.Len(t, items, 1)
 	assert.Equal(t, "PRESENT", items[0].Name)
 	assert.Equal(t, "from-dotenv", items[0].Value)
@@ -79,8 +87,7 @@ func TestNewStoreUsesDefaultEnvFilesInOrder(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, result.Diagnostics)
 
-	items, err := result.Store.Snapshot(owl.SnapshotPolicy{Reveal: true})
-	require.NoError(t, err)
+	items := snapshotItems(t, result.Store, owl.SnapshotPolicy{Reveal: true})
 	require.Len(t, items, 1)
 	assert.Equal(t, "DEFAULT_ORDER", items[0].Name)
 	assert.Equal(t, "from-env-dev", items[0].Value)

@@ -1,4 +1,4 @@
-package store
+package state
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 	"github.com/runmedev/owl/internal/resolver/builtin"
 )
 
-type Store struct {
+type Machine struct {
 	types      registry.TypeProvider
 	state      model.EffectiveState
 	operations []OperationRecord
@@ -31,7 +31,7 @@ type RecordedOperation interface {
 	Record() OperationRecord
 }
 
-type StoreOption func(*config) error
+type MachineOption func(*config) error
 
 type config struct {
 	envs  []sourceInput
@@ -100,6 +100,7 @@ type SnapshotItem struct {
 type CheckResult struct {
 	OK          bool
 	Diagnostics []model.Diagnostic
+	Checked     int
 }
 
 type GetPolicy struct {
@@ -326,7 +327,7 @@ func withoutDiagnosticOwner(diagnostics []model.Diagnostic, owner model.Diagnost
 	return filtered
 }
 
-func NewStore(opts ...StoreOption) (*Store, error) {
+func NewMachine(opts ...MachineOption) (*Machine, error) {
 	cfg := config{}
 	for _, opt := range opts {
 		if err := opt(&cfg); err != nil {
@@ -343,22 +344,22 @@ func NewStore(opts ...StoreOption) (*Store, error) {
 		return nil, err
 	}
 
-	store := &Store{types: cfg.types, state: model.NewEffectiveState()}
-	if _, err := store.Apply(context.Background(), LoadOperation{Input: load}); err != nil {
+	m := &Machine{types: cfg.types, state: model.NewEffectiveState()}
+	if _, err := m.Apply(context.Background(), LoadOperation{Input: load}); err != nil {
 		return nil, err
 	}
-	if _, err := store.Apply(context.Background(), NormalizeOperation{}); err != nil {
+	if _, err := m.Apply(context.Background(), NormalizeOperation{}); err != nil {
 		return nil, err
 	}
-	state, err := store.Apply(context.Background(), IntegrityOperation{Types: cfg.types})
+	next, err := m.Apply(context.Background(), IntegrityOperation{Types: cfg.types})
 	if err != nil {
 		return nil, err
 	}
-	store.state = state
-	return store, nil
+	m.state = next
+	return m, nil
 }
 
-func WithDotenv(source string, r io.Reader) StoreOption {
+func WithDotenv(source string, r io.Reader) MachineOption {
 	return func(cfg *config) error {
 		input, err := readSource(source, r)
 		if err != nil {
@@ -369,7 +370,7 @@ func WithDotenv(source string, r io.Reader) StoreOption {
 	}
 }
 
-func WithEnvSpec(source string, r io.Reader) StoreOption {
+func WithEnvSpec(source string, r io.Reader) MachineOption {
 	return func(cfg *config) error {
 		input, err := readSource(source, r)
 		if err != nil {
@@ -380,29 +381,29 @@ func WithEnvSpec(source string, r io.Reader) StoreOption {
 	}
 }
 
-func WithTypeProvider(types registry.TypeProvider) StoreOption {
+func WithTypeProvider(types registry.TypeProvider) MachineOption {
 	return func(cfg *config) error {
 		cfg.types = types
 		return nil
 	}
 }
 
-func (s *Store) Apply(ctx context.Context, op Operation) (model.EffectiveState, error) {
+func (m *Machine) Apply(ctx context.Context, op Operation) (model.EffectiveState, error) {
 	if recorded, ok := op.(RecordedOperation); ok {
 		record, timestamped := timestampRecordedOperation(recorded.Record())
-		s.operations = append(s.operations, record)
+		m.operations = append(m.operations, record)
 		op = timestamped
 	}
-	state, err := op.Apply(ctx, s.state)
+	state, err := op.Apply(ctx, m.state)
 	if err != nil {
 		return model.EffectiveState{}, err
 	}
-	s.state = state
+	m.state = state
 	return state, nil
 }
 
-func (s *Store) ResolveSources(ctx context.Context, input ResolveSourcesInput) (resolver.RunResult, error) {
-	if _, err := s.Apply(ctx, IntegrityOperation{Types: s.types}); err != nil {
+func (m *Machine) ResolveSources(ctx context.Context, input ResolveSourcesInput) (resolver.RunResult, error) {
+	if _, err := m.Apply(ctx, IntegrityOperation{Types: m.types}); err != nil {
 		return resolver.RunResult{}, err
 	}
 	clock := input.Clock
@@ -419,7 +420,7 @@ func (s *Store) ResolveSources(ctx context.Context, input ResolveSourcesInput) (
 		Clock:        clock,
 	}
 	result, err := runner.Resolve(ctx, resolver.RunRequest{
-		State:  s.state,
+		State:  m.state,
 		Policy: input.Policy,
 		Chain:  input.Chain,
 	})
@@ -427,28 +428,28 @@ func (s *Store) ResolveSources(ctx context.Context, input ResolveSourcesInput) (
 		return result, err
 	}
 	for _, attempt := range result.Attempts {
-		if _, err := s.Apply(ctx, RecordResolverAttemptOperation{Attempt: attempt}); err != nil {
+		if _, err := m.Apply(ctx, RecordResolverAttemptOperation{Attempt: attempt}); err != nil {
 			return result, err
 		}
 	}
 	for _, proposal := range result.Proposals {
-		if _, err := s.Apply(ctx, ApplyResolverProposalOperation{Proposal: proposal, Timestamp: input.Timestamp}); err != nil {
+		if _, err := m.Apply(ctx, ApplyResolverProposalOperation{Proposal: proposal, Timestamp: input.Timestamp}); err != nil {
 			return result, err
 		}
 	}
-	if _, err := s.Apply(ctx, IntegrityOperation{Types: s.types}); err != nil {
+	if _, err := m.Apply(ctx, IntegrityOperation{Types: m.types}); err != nil {
 		return result, err
 	}
 	return result, nil
 }
 
-func (s *Store) ApplyPromptAnswers(ctx context.Context, input ApplyPromptAnswersInput) (resolver.RunResult, error) {
+func (m *Machine) ApplyPromptAnswers(ctx context.Context, input ApplyPromptAnswersInput) (resolver.RunResult, error) {
 	newAttemptID := input.NewAttemptID
 	if newAttemptID == nil {
-		newAttemptID = promptAttemptIDGenerator(len(s.operations))
+		newAttemptID = promptAttemptIDGenerator(len(m.operations))
 	}
 	timestamp := operationTimestamp(input.Timestamp)
-	needs := needsByID(s.state.UnresolvedFrontier.Needs)
+	needs := needsByID(m.state.UnresolvedFrontier.Needs)
 	var result resolver.RunResult
 	for _, answer := range input.Answers {
 		need, ok := needs[answer.NeedID]
@@ -463,7 +464,7 @@ func (s *Store) ApplyPromptAnswers(ctx context.Context, input ApplyPromptAnswers
 		if !ok {
 			attempt.Outcome = model.ResolverAttemptInvalidResult
 			attempt.Message = "interactive answer references an unknown unresolved need"
-			if _, err := s.Apply(ctx, RecordResolverAttemptOperation{Attempt: attempt}); err != nil {
+			if _, err := m.Apply(ctx, RecordResolverAttemptOperation{Attempt: attempt}); err != nil {
 				return result, err
 			}
 			result.Attempts = append(result.Attempts, attempt)
@@ -484,16 +485,16 @@ func (s *Store) ApplyPromptAnswers(ctx context.Context, input ApplyPromptAnswers
 				Exposure:    need.Exposure,
 			},
 		}
-		if _, err := s.Apply(ctx, RecordResolverAttemptOperation{Attempt: attempt}); err != nil {
+		if _, err := m.Apply(ctx, RecordResolverAttemptOperation{Attempt: attempt}); err != nil {
 			return result, err
 		}
-		if _, err := s.Apply(ctx, ApplyResolverProposalOperation{Proposal: proposal, Timestamp: timestamp}); err != nil {
+		if _, err := m.Apply(ctx, ApplyResolverProposalOperation{Proposal: proposal, Timestamp: timestamp}); err != nil {
 			return result, err
 		}
 		result.Attempts = append(result.Attempts, attempt)
 		result.Proposals = append(result.Proposals, proposal)
 	}
-	if _, err := s.Apply(ctx, IntegrityOperation{Types: s.types}); err != nil {
+	if _, err := m.Apply(ctx, IntegrityOperation{Types: m.types}); err != nil {
 		return result, err
 	}
 	return result, nil
@@ -735,10 +736,10 @@ func (op IntegrityOperation) Apply(_ context.Context, state model.EffectiveState
 	return state, nil
 }
 
-func (s *Store) Snapshot(policy SnapshotPolicy) ([]SnapshotItem, error) {
-	items := make([]SnapshotItem, 0, len(s.state.Bindings))
-	for _, binding := range s.state.Bindings {
-		value := s.state.Values[binding.FieldRef]
+func (m *Machine) Snapshot(policy SnapshotPolicy) ([]SnapshotItem, error) {
+	items := make([]SnapshotItem, 0, len(m.state.Bindings))
+	for _, binding := range m.state.Bindings {
+		value := m.state.Values[binding.FieldRef]
 		rendered := renderSnapshotValue(value, policy)
 		original := value.Original
 		if rendered.visibility != model.VisibilityLiteral {
@@ -759,7 +760,7 @@ func (s *Store) Snapshot(policy SnapshotPolicy) ([]SnapshotItem, error) {
 			Exposure:      value.Exposure,
 			Description:   binding.Description,
 			UpdatedAt:     value.UpdatedAt,
-			Diagnostics:   diagnosticsFor(s.state.Diagnostics, binding),
+			Diagnostics:   diagnosticsFor(m.state.Diagnostics, binding),
 		})
 	}
 	sort.SliceStable(items, func(i, j int) bool {
@@ -779,12 +780,12 @@ func (s *Store) Snapshot(policy SnapshotPolicy) ([]SnapshotItem, error) {
 	return items, nil
 }
 
-func (s *Store) Source(policy SourcePolicy) ([]string, error) {
-	return s.Dotenv(DotenvPolicy(policy))
+func (m *Machine) Source(policy SourcePolicy) ([]string, error) {
+	return m.Dotenv(DotenvPolicy(policy))
 }
 
-func (s *Store) Dotenv(policy DotenvPolicy) ([]string, error) {
-	rendered := dotenv.RenderDotenvProjection(s.state, model.RenderPolicy{Insecure: policy.Insecure})
+func (m *Machine) Dotenv(policy DotenvPolicy) ([]string, error) {
+	rendered := dotenv.RenderDotenvProjection(m.state, model.RenderPolicy{Insecure: policy.Insecure})
 	envs := make([]string, 0, len(rendered.Variables))
 	for _, variable := range rendered.Variables {
 		envs = append(envs, variable.Key+"="+variable.Value)
@@ -793,13 +794,13 @@ func (s *Store) Dotenv(policy DotenvPolicy) ([]string, error) {
 	return envs, nil
 }
 
-func (s *Store) Type(policy TypePolicy) (TypeResult, error) {
-	proposals := make([]TypeProposal, 0, len(s.state.Bindings))
-	for _, binding := range s.state.Bindings {
+func (m *Machine) Type(policy TypePolicy) (TypeResult, error) {
+	proposals := make([]TypeProposal, 0, len(m.state.Bindings))
+	for _, binding := range m.state.Bindings {
 		if binding.Explicit {
 			continue
 		}
-		value := s.state.Values[binding.FieldRef]
+		value := m.state.Values[binding.FieldRef]
 		suggested, reason, ok := suggestPrimitiveType(string(binding.Key), value)
 		if !policy.All && !ok {
 			continue
@@ -823,12 +824,12 @@ func (s *Store) Type(policy TypePolicy) (TypeResult, error) {
 	return TypeResult{Proposals: proposals}, nil
 }
 
-func (s *Store) Get(key string, policy GetPolicy) (GetResult, bool, error) {
-	ref, binding, found := findBinding(s.state.Bindings, key)
+func (m *Machine) Get(key string, policy GetPolicy) (GetResult, bool, error) {
+	ref, binding, found := findBinding(m.state.Bindings, key)
 	if !found {
 		return GetResult{}, false, nil
 	}
-	value := s.state.Values[ref]
+	value := m.state.Values[ref]
 	rendered := renderSnapshotValue(value, SnapshotPolicy(policy))
 	return GetResult{
 		Key:         key,
@@ -837,14 +838,14 @@ func (s *Store) Get(key string, policy GetPolicy) (GetResult, bool, error) {
 		Visibility:  rendered.visibility,
 		Exposure:    value.Exposure,
 		Source:      value.Source,
-		Diagnostics: diagnosticsFor(s.state.Diagnostics, binding),
+		Diagnostics: diagnosticsFor(m.state.Diagnostics, binding),
 	}, true, nil
 }
 
-func (s *Store) SensitiveKeys() ([]string, error) {
+func (m *Machine) SensitiveKeys() ([]string, error) {
 	var keys []string
-	for _, binding := range s.state.Bindings {
-		value := s.state.Values[binding.FieldRef]
+	for _, binding := range m.state.Bindings {
+		value := m.state.Values[binding.FieldRef]
 		if value.Sensitivity == model.SensitivitySensitive {
 			keys = append(keys, string(binding.Key))
 		}
@@ -853,10 +854,11 @@ func (s *Store) SensitiveKeys() ([]string, error) {
 	return keys, nil
 }
 
-func (s *Store) Check() CheckResult {
+func (m *Machine) Check() CheckResult {
 	result := CheckResult{
 		OK:          true,
-		Diagnostics: append([]model.Diagnostic{}, s.state.Diagnostics...),
+		Diagnostics: append([]model.Diagnostic{}, m.state.Diagnostics...),
+		Checked:     len(m.state.Bindings),
 	}
 	for _, diagnostic := range result.Diagnostics {
 		if diagnostic.Severity == model.DiagnosticError {
@@ -867,30 +869,30 @@ func (s *Store) Check() CheckResult {
 	return result
 }
 
-func (s *Store) State() model.EffectiveState {
-	return s.state
+func (m *Machine) State() model.EffectiveState {
+	return m.state
 }
 
-func (s *Store) OperationRecords() []OperationRecord {
-	return append([]OperationRecord{}, s.operations...)
+func (m *Machine) OperationRecords() []OperationRecord {
+	return append([]OperationRecord{}, m.operations...)
 }
 
-func (s *Store) StateEnvelope() StateEnvelope {
+func (m *Machine) StateEnvelope() StateEnvelope {
 	return StateEnvelope{
 		ModelVersion: "owl.store.v2",
-		State:        s.state,
+		State:        m.state,
 		Provenance: StateProvenance{
-			Sources:    sourcesFromState(s.state),
-			Operations: append([]model.OperationMetadata{}, s.state.Operations...),
+			Sources:    sourcesFromState(m.state),
+			Operations: append([]model.OperationMetadata{}, m.state.Operations...),
 		},
 	}
 }
 
-func NewState(state model.EffectiveState, types registry.TypeProvider) *Store {
+func MachineFromState(state model.EffectiveState, types registry.TypeProvider) *Machine {
 	if types == nil {
 		types = registry.NewBuiltInRegistry()
 	}
-	return &Store{types: types, state: state}
+	return &Machine{types: types, state: state}
 }
 
 func readSource(name string, r io.Reader) (sourceInput, error) {

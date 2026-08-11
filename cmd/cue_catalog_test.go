@@ -11,9 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/runmedev/owl/internal/model"
-	"github.com/runmedev/owl/internal/registry"
-	"github.com/runmedev/owl/internal/seed"
+	"github.com/runmedev/owl/pkg/owl"
+	"github.com/runmedev/owl/pkg/owl/seed"
 )
 
 func TestCommandCUECatalogPrecedence(t *testing.T) {
@@ -51,11 +50,9 @@ func TestCommandCUECatalogPrecedence(t *testing.T) {
 		require.Error(t, runCheck(t))
 	})
 
-	t.Run("empty is rejected", func(t *testing.T) {
+	t.Run("empty uses embedded", func(t *testing.T) {
 		withLookupEnv(t, func(string) (string, bool) { return "", true })
-		err := runCheck(t)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "OWL_CUE_ROOT is set but empty")
+		require.NoError(t, runCheck(t))
 	})
 
 	t.Run("invalid never falls back", func(t *testing.T) {
@@ -91,7 +88,7 @@ func TestCUERootControlVariableIsNotObserved(t *testing.T) {
 func TestProjectSpecReceivesSelectedTypeProvider(t *testing.T) {
 	t.Parallel()
 
-	provider := &trackingTypeProvider{BuiltInRegistry: registry.NewBuiltInRegistry()}
+	provider := &trackingTypeProvider{TypeProvider: owl.NewBuiltInTypeProvider()}
 	client := NewLocalStoreClient(LocalStoreOptions{TypeProvider: provider})
 	result, err := client.ProjectSpec(context.Background(), ProjectSpecRequest{
 		ConfigPath: filepath.Join(commandRepoRoot(t), "examples/redis/owl.toml"),
@@ -102,13 +99,13 @@ func TestProjectSpecReceivesSelectedTypeProvider(t *testing.T) {
 }
 
 type trackingTypeProvider struct {
-	registry.BuiltInRegistry
+	owl.TypeProvider
 	resolveTypeRefs int
 }
 
-func (p *trackingTypeProvider) ResolveTypeRef(ref string) (model.TypeDef, bool, error) {
+func (p *trackingTypeProvider) ResolveTypeRef(ref string) (owl.TypeDef, bool, error) {
 	p.resolveTypeRefs++
-	return p.BuiltInRegistry.ResolveTypeRef(ref)
+	return p.TypeProvider.ResolveTypeRef(ref)
 }
 
 func withLookupEnv(t *testing.T, fn func(string) (string, bool)) {

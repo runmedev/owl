@@ -16,6 +16,23 @@ import (
 	"github.com/runmedev/owl/pkg/owl"
 )
 
+func snapshotItems(t *testing.T, store *owl.Store, policy owl.SnapshotPolicy) []owl.SnapshotItem {
+	t.Helper()
+	output, err := store.Snapshot(context.Background(), owl.SnapshotInput{
+		Policy: policy,
+		Filter: owl.SnapshotFilter{All: true},
+	})
+	require.NoError(t, err)
+	return output.Envs
+}
+
+func checkStore(t *testing.T, store *owl.Store) owl.CheckOutput {
+	t.Helper()
+	output, err := store.Check(context.Background(), owl.CheckInput{})
+	require.NoError(t, err)
+	return output
+}
+
 func TestNewStoreSeedsObservedSourceWithCallerProvenance(t *testing.T) {
 	t.Parallel()
 
@@ -40,8 +57,7 @@ func TestNewStoreSeedsObservedSourceWithCallerProvenance(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	items, err := result.Store.Snapshot(owl.SnapshotPolicy{})
-	require.NoError(t, err)
+	items := snapshotItems(t, result.Store, owl.SnapshotPolicy{})
 	env := snapshotItemByName(items)["KERNEL_ONLY"]
 	assert.Equal(t, "[hidden]", env.Value)
 	assert.Equal(t, owl.Source{Name: "[kernel]", Kind: "runme-kernel"}, env.Source)
@@ -78,8 +94,7 @@ func TestNewStoreAttributesMatchingObservedEnvToDirenv(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	items, err := result.Store.Snapshot(owl.SnapshotPolicy{})
-	require.NoError(t, err)
+	items := snapshotItems(t, result.Store, owl.SnapshotPolicy{})
 	env := snapshotItemByName(items)["DIRENV_WINS"]
 	assert.Equal(t, "from-direnv", env.Value)
 	assert.Equal(t, owl.Source{Name: ".envrc", Kind: "direnv"}, env.Source)
@@ -111,8 +126,7 @@ func TestNewStoreDefaultsDirenvToWarn(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	items, err := result.Store.Snapshot(owl.SnapshotPolicy{})
-	require.NoError(t, err)
+	items := snapshotItems(t, result.Store, owl.SnapshotPolicy{})
 	env := snapshotItemByName(items)["DIRENV_DEFAULT"]
 	assert.Equal(t, "from-direnv", env.Value)
 	assert.Equal(t, owl.Source{Name: ".envrc", Kind: "direnv"}, env.Source)
@@ -215,8 +229,7 @@ func TestNewRawValueStoreSkipsMissingEnvFiles(t *testing.T) {
 	}, false)
 	require.NoError(t, err)
 
-	items, err := store.Snapshot(owl.SnapshotPolicy{Reveal: true})
-	require.NoError(t, err)
+	items := snapshotItems(t, store, owl.SnapshotPolicy{Reveal: true})
 	env := snapshotItemByName(items)["PRESENT"]
 	assert.Equal(t, "from-dotenv", env.Value)
 	assert.Equal(t, owl.VisibilityLiteral, env.Visibility)
@@ -236,8 +249,7 @@ func TestNewRawValueStoreUsesDefaultEnvFilesInOrder(t *testing.T) {
 	store, err := NewRawValueStore(Options{WorkDir: dir}, false)
 	require.NoError(t, err)
 
-	items, err := store.Snapshot(owl.SnapshotPolicy{Reveal: true})
-	require.NoError(t, err)
+	items := snapshotItems(t, store, owl.SnapshotPolicy{Reveal: true})
 	env := snapshotItemByName(items)["DEFAULT_ORDER"]
 	assert.Equal(t, "from-env-dev", env.Value)
 	assert.Equal(t, ".env.dev", env.Source.Name)
@@ -307,7 +319,7 @@ func TestStoreBuildersUseConfiguredTypeProvider(t *testing.T) {
 	require.NoError(t, err)
 	_, err = result.Store.Resolve(context.Background(), owl.ResolveInput{Process: result.Catalog.ProcessResolverInput()})
 	require.NoError(t, err)
-	_ = result.Store.Check()
+	_ = checkStore(t, result.Store)
 	assert.Positive(t, seededProvider.validations)
 
 	rawProvider := &seedTrackingTypeProvider{BuiltInRegistry: registry.NewBuiltInRegistry()}
@@ -317,7 +329,7 @@ func TestStoreBuildersUseConfiguredTypeProvider(t *testing.T) {
 		TypeProvider: rawProvider,
 	}, false)
 	require.NoError(t, err)
-	_ = rawStore.Check()
+	_ = checkStore(t, rawStore)
 	assert.Positive(t, rawProvider.validations)
 }
 

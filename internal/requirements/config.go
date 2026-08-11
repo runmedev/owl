@@ -8,7 +8,7 @@ import (
 
 	"github.com/runmedev/owl/internal/model"
 	"github.com/runmedev/owl/internal/registry"
-	"github.com/runmedev/owl/internal/store"
+	"github.com/runmedev/owl/internal/state"
 )
 
 type ConfigCompiler struct {
@@ -38,11 +38,11 @@ func NewConfigCompiler(types registry.TypeProvider, source model.Source) *Config
 	}
 }
 
-func ContractsFromConfig(input model.ConfigInput, source model.Source, types registry.TypeProvider) ([]store.EnvContract, error) {
+func ContractsFromConfig(input model.ConfigInput, source model.Source, types registry.TypeProvider) ([]state.EnvContract, error) {
 	return NewConfigCompiler(types, source).Compile(input)
 }
 
-func (c *ConfigCompiler) Compile(input model.ConfigInput) ([]store.EnvContract, error) {
+func (c *ConfigCompiler) Compile(input model.ConfigInput) ([]state.EnvContract, error) {
 	if len(input.Needs) == 0 {
 		return nil, nil
 	}
@@ -53,7 +53,7 @@ func (c *ConfigCompiler) Compile(input model.ConfigInput) ([]store.EnvContract, 
 	}
 	c.instanceCounts = instanceCounts
 
-	contracts := make([]store.EnvContract, 0, len(input.Needs))
+	contracts := make([]state.EnvContract, 0, len(input.Needs))
 	for i, need := range input.Needs {
 		contract, err := c.compileNeed(fmt.Sprintf("needs[%d]", i), need)
 		if err != nil {
@@ -96,52 +96,52 @@ func (c *ConfigCompiler) countInstances(input model.ConfigInput) (map[model.Type
 	return counts, nil
 }
 
-func (c *ConfigCompiler) compileNeed(path string, need model.NeedInput) (store.EnvContract, error) {
+func (c *ConfigCompiler) compileNeed(path string, need model.NeedInput) (state.EnvContract, error) {
 	typeRef := strings.TrimSpace(string(need.Type))
 	if typeRef == "" {
-		return store.EnvContract{}, fmt.Errorf("%s.type: type is required", path)
+		return state.EnvContract{}, fmt.Errorf("%s.type: type is required", path)
 	}
 	instance := strings.TrimSpace(need.Instance)
 	if instance == "" {
-		return store.EnvContract{}, fmt.Errorf("%s.instance: instance is required", path)
+		return state.EnvContract{}, fmt.Errorf("%s.instance: instance is required", path)
 	}
 	typeDef, ok, err := c.types.ResolveTypeRef(typeRef)
 	if err != nil {
-		return store.EnvContract{}, fmt.Errorf("%s.type: %w", path, err)
+		return state.EnvContract{}, fmt.Errorf("%s.type: %w", path, err)
 	}
 	if !ok {
-		return store.EnvContract{}, fmt.Errorf("%s.type: unknown type %q", path, typeRef)
+		return state.EnvContract{}, fmt.Errorf("%s.type: unknown type %q", path, typeRef)
 	}
 
 	fieldKeys, err := c.dotenvFieldKeys(path, need, typeDef)
 	if err != nil {
-		return store.EnvContract{}, err
+		return state.EnvContract{}, err
 	}
 
 	fields := sortedFieldNames(fieldKeys)
-	contract := store.EnvContract{
+	contract := state.EnvContract{
 		Source:     c.source,
 		Projection: model.ProjectionDotenv,
 	}
 	for _, fieldName := range fields {
 		binding, err := c.compileBinding(path, typeDef, instance, fieldName, fieldKeys[fieldName])
 		if err != nil {
-			return store.EnvContract{}, err
+			return state.EnvContract{}, err
 		}
 		contract.Bindings = append(contract.Bindings, binding)
 	}
 	return contract, nil
 }
 
-func (c *ConfigCompiler) compileBinding(path string, typeDef model.TypeDef, instance string, fieldName string, key string) (store.EnvBinding, error) {
+func (c *ConfigCompiler) compileBinding(path string, typeDef model.TypeDef, instance string, fieldName string, key string) (state.EnvBinding, error) {
 	fieldDef := typeDef.Fields[fieldName]
 	ref := model.FieldRef{TypeID: typeDef.ID, Instance: instance, Field: fieldName}
 	if previous, ok := c.seenKeys[key]; ok && previous != ref {
-		return store.EnvBinding{}, fmt.Errorf("%s.dotenv.%s: duplicate dotenv key %q already bound to %s", path, fieldName, key, previous.String())
+		return state.EnvBinding{}, fmt.Errorf("%s.dotenv.%s: duplicate dotenv key %q already bound to %s", path, fieldName, key, previous.String())
 	}
 	c.seenKeys[key] = ref
 	c.order++
-	return store.EnvBinding{
+	return state.EnvBinding{
 		FieldRef:    ref,
 		Key:         key,
 		Projection:  model.ProjectionDotenv,

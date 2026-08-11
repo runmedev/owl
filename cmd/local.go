@@ -8,11 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/runmedev/owl/internal/model"
-	"github.com/runmedev/owl/internal/registry"
-	"github.com/runmedev/owl/internal/requirements"
-	"github.com/runmedev/owl/internal/seed"
 	"github.com/runmedev/owl/pkg/owl"
+	"github.com/runmedev/owl/pkg/owl/seed"
 )
 
 type LocalStoreOptions struct {
@@ -23,7 +20,7 @@ type LocalStoreOptions struct {
 	Direnv       seed.DirenvPolicy
 	DirenvDir    string
 	DirenvRunner seed.DirenvExportRunner
-	TypeProvider registry.TypeProvider
+	TypeProvider owl.TypeProvider
 }
 
 type LocalStoreClient struct {
@@ -82,12 +79,15 @@ func (c *LocalStoreClient) Snapshot(ctx context.Context, req SnapshotRequest) (*
 		return nil, err
 	}
 
-	items, err := store.Snapshot(owl.SnapshotPolicy{Reveal: req.Reveal && req.Insecure})
+	snapshot, err := store.Snapshot(ctx, owl.SnapshotInput{
+		Policy: owl.SnapshotPolicy{Reveal: req.Reveal && req.Insecure},
+		Filter: owl.SnapshotFilter{All: req.All, Limit: req.Limit},
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	return &SnapshotResult{Envs: snapshotEnvsFromItems(items)}, nil
+	return &SnapshotResult{Envs: snapshotEnvsFromItems(snapshot.Envs)}, nil
 }
 
 func (c *LocalStoreClient) Source(ctx context.Context, req SourceRequest) (*SourceResult, error) {
@@ -96,12 +96,14 @@ func (c *LocalStoreClient) Source(ctx context.Context, req SourceRequest) (*Sour
 		return nil, err
 	}
 
-	envs, err := store.Dotenv(owl.DotenvPolicy{Insecure: req.Insecure})
+	source, err := store.Source(ctx, owl.SourceInput{
+		Policy: owl.DotenvPolicy{Insecure: req.Insecure},
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	return &SourceResult{Envs: envs}, nil
+	return &SourceResult{Envs: source.Envs}, nil
 }
 
 func (c *LocalStoreClient) Check(ctx context.Context, req CheckRequest) (*CheckResult, error) {
@@ -110,19 +112,18 @@ func (c *LocalStoreClient) Check(ctx context.Context, req CheckRequest) (*CheckR
 		return nil, err
 	}
 
-	check := store.Check()
-	items, err := store.Snapshot(owl.SnapshotPolicy{})
+	check, err := store.Check(ctx, owl.CheckInput{})
 	if err != nil {
 		return nil, err
 	}
 	return &CheckResult{
 		OK:          check.OK,
 		Diagnostics: append(diagnosticStrings(c.lastSourceDiagnostics, req.Details), diagnosticStrings(check.Diagnostics, req.Details)...),
-		Checked:     len(items),
+		Checked:     check.Checked,
 	}, nil
 }
 
-func (c *LocalStoreClient) Type(_ context.Context, req TypeRequest) (*TypeResult, error) {
+func (c *LocalStoreClient) Type(ctx context.Context, req TypeRequest) (*TypeResult, error) {
 	if req.SpecPath == "" {
 		req.SpecPath = ".env.spec"
 	}
@@ -133,7 +134,7 @@ func (c *LocalStoreClient) Type(_ context.Context, req TypeRequest) (*TypeResult
 		return nil, err
 	}
 
-	result, err := store.Type(owl.TypePolicy{All: req.All})
+	result, err := store.Type(ctx, owl.TypeInput{Policy: owl.TypePolicy{All: req.All}})
 	if err != nil {
 		return nil, err
 	}
@@ -263,37 +264,37 @@ func processEnvForOptions(options LocalStoreOptions) []string {
 	return filtered
 }
 
-func (c *LocalStoreClient) ProjectSpec(_ context.Context, req ProjectSpecRequest) (*ProjectSpecResult, error) {
+func (c *LocalStoreClient) ProjectSpec(ctx context.Context, req ProjectSpecRequest) (*ProjectSpecResult, error) {
 	configPath, err := resolveConfigPath(req.ConfigPath, true)
 	if err != nil {
 		return nil, err
 	}
-	input, err := requirements.ReadConfigFile(configPath)
-	if err != nil {
-		return nil, err
+	types := c.options.TypeProvider
+	if types == nil {
+		types = owl.NewBuiltInTypeProvider()
 	}
-	storeOptions := []owl.StoreOption{owl.WithConfigSource(configPath, input)}
-	if c.options.TypeProvider != nil {
-		storeOptions = append(storeOptions, owl.WithTypeProvider(c.options.TypeProvider))
-	}
+	storeOptions := []owl.StoreOption{owl.WithTypeProvider(types), owl.WithConfigFile(configPath)}
 	store, err := owl.NewStore(storeOptions...)
 	if err != nil {
 		return nil, err
 	}
-	rendered, err := store.DotenvSpec()
+	rendered, err := store.ProjectSpec(ctx, owl.ProjectSpecInput{
+		Load: owl.LoadInput{},
+	})
 	if err != nil {
 		return nil, err
 	}
+	outputText := rendered.Rendered
 	output := req.Output
 	if req.Write {
 		output = ".env.spec"
 	}
 	if output != "" && output != "-" {
-		if err := writeGeneratedDotenvSpec(output, rendered); err != nil {
+		if err := writeGeneratedDotenvSpec(output, outputText); err != nil {
 			return nil, err
 		}
 	}
-	return &ProjectSpecResult{Rendered: rendered}, nil
+	return &ProjectSpecResult{Rendered: outputText}, nil
 }
 
 func resolveConfigPath(explicit string, required bool) (string, error) {
@@ -336,7 +337,7 @@ func writeGeneratedDotenvSpec(path string, rendered string) error {
 }
 
 func isGeneratedDotenvSpec(raw []byte) bool {
-	return strings.HasPrefix(string(raw), requirements.GeneratedDotenvSpecHeaderPrefix)
+	return strings.HasPrefix(string(raw), owl.GeneratedDotenvSpecHeaderPrefix)
 }
 
 func renderDotenvSpecTypeProposals(proposals []owl.TypeProposal) string {
@@ -529,7 +530,7 @@ func resolveResultFromOwl(result owl.ResolveResult) *ResolveResult {
 				ProjectionKey: string(action.Prompt.ProjectionKey),
 				Label:         action.Prompt.Label,
 				Description:   action.Prompt.Description,
-				Sensitive:     action.Prompt.Sensitivity == model.SensitivitySensitive,
+				Sensitive:     action.Prompt.Sensitivity == owl.SensitivitySensitive,
 				Required:      action.Prompt.Required,
 				AllowEmpty:    action.Prompt.AllowEmpty,
 			}

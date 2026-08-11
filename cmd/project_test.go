@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/runmedev/owl/internal/requirements"
+	"github.com/runmedev/owl/pkg/owl"
 )
 
 func TestProjectSpecRendersGeneratedSpec(t *testing.T) {
@@ -146,9 +146,9 @@ needs:
     instance: default
 `), 0o600))
 
-	jsonConfig, err := requirements.ReadConfigFile(jsonPath)
+	jsonConfig, err := owl.ReadConfigFile(jsonPath)
 	require.NoError(t, err)
-	yamlConfig, err := requirements.ReadConfigFile(yamlPath)
+	yamlConfig, err := owl.ReadConfigFile(yamlPath)
 	require.NoError(t, err)
 
 	require.Len(t, jsonConfig.Needs, 1)

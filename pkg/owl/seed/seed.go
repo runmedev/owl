@@ -16,6 +16,7 @@ type Options struct {
 	WorkDir      string
 	Direnv       DirenvPolicy
 	DirenvRunner DirenvExportRunner
+	TypeProvider owl.TypeProvider
 }
 
 // ObservedSource is an environment-shaped snapshot with caller-provided provenance.
@@ -42,8 +43,11 @@ type DirenvExportRunner = internalseed.DirenvExportRunner
 // Result is the seeded store plus source diagnostics used to build it.
 type Result struct {
 	Store       *owl.Store
+	Catalog     Catalog
 	Diagnostics []owl.Diagnostic
 }
+
+type Catalog = internalseed.Catalog
 
 // NewStore creates an Owl store and resolves values from observed sources.
 func NewStore(ctx context.Context, opts Options) (*Result, error) {
@@ -59,8 +63,17 @@ func NewStore(ctx context.Context, opts Options) (*Result, error) {
 	}
 	return &Result{
 		Store:       result.Store,
+		Catalog:     result.Catalog,
 		Diagnostics: result.Diagnostics,
 	}, nil
+}
+
+func NewRawValueStore(opts Options, allowMissingSpec bool) (*owl.Store, error) {
+	return internalseed.NewRawValueStore(internalOptions(opts), allowMissingSpec)
+}
+
+func BuildCatalog(ctx context.Context, opts Options) (Catalog, []owl.Diagnostic, error) {
+	return internalseed.BuildCatalog(ctx, internalOptions(opts))
 }
 
 func internalOptions(opts Options) internalseed.Options {
@@ -79,5 +92,6 @@ func internalOptions(opts Options) internalseed.Options {
 		WorkDir:      opts.WorkDir,
 		Direnv:       opts.Direnv,
 		DirenvRunner: opts.DirenvRunner,
+		TypeProvider: opts.TypeProvider,
 	}
 }

@@ -11,7 +11,7 @@ import (
 	"github.com/runmedev/owl/internal/model"
 	"github.com/runmedev/owl/internal/registry"
 	"github.com/runmedev/owl/internal/resolver"
-	"github.com/runmedev/owl/internal/store"
+	"github.com/runmedev/owl/internal/state"
 )
 
 type Runtime struct {
@@ -19,26 +19,40 @@ type Runtime struct {
 	types  registry.TypeProvider
 }
 
-type Context struct {
+type GraphContext struct {
 	State model.EffectiveState
 	Types registry.TypeProvider
 }
 
-type LoadInput = store.LoadInput
+type LoadInput = state.LoadInput
 
-type SnapshotPolicy = store.SnapshotPolicy
+type SnapshotPolicy = state.SnapshotPolicy
 
-type DotenvPolicy = store.DotenvPolicy
+type DotenvPolicy = state.DotenvPolicy
 
-type GetPolicy = store.GetPolicy
+type GetPolicy = state.GetPolicy
 
-type SnapshotItem = store.SnapshotItem
+type TypePolicy = state.TypePolicy
 
-type GetResult = store.GetResult
+type SnapshotItem = state.SnapshotItem
 
-type CheckResult = store.CheckResult
+type GetResult = state.GetResult
 
-type StateEnvelope = store.StateEnvelope
+type TypeResult = state.TypeResult
+
+type CheckResult = state.CheckResult
+
+type StateEnvelope = state.StateEnvelope
+
+type Operation struct {
+	Name      string
+	Document  string
+	Variables map[string]interface{}
+}
+
+type ExecuteResult struct {
+	Data json.RawMessage
+}
 
 var traceGraphQLQuery func(query string, vars map[string]interface{})
 
@@ -56,10 +70,8 @@ func NewRuntime(types registry.TypeProvider) (*Runtime, error) {
 }
 
 func (r *Runtime) Snapshot(ctx context.Context, input LoadInput, policy SnapshotPolicy) ([]SnapshotItem, error) {
-	result, err := r.do(ctx, snapshotQuery, map[string]interface{}{
-		"input":  marshalInput(input),
-		"reveal": policy.Reveal,
-	})
+	op := SnapshotOperation(input, policy)
+	result, err := r.do(ctx, op.Document, op.Variables)
 	if err != nil {
 		return nil, err
 	}
@@ -70,11 +82,20 @@ func (r *Runtime) Snapshot(ctx context.Context, input LoadInput, policy Snapshot
 	return decodeSnapshot(raw), nil
 }
 
+func SnapshotOperation(input LoadInput, policy SnapshotPolicy) Operation {
+	return Operation{
+		Name:     "OwlSnapshot",
+		Document: snapshotQuery,
+		Variables: map[string]interface{}{
+			"input":  marshalInput(input),
+			"reveal": policy.Reveal,
+		},
+	}
+}
+
 func (r *Runtime) Dotenv(ctx context.Context, input LoadInput, policy DotenvPolicy) ([]string, error) {
-	result, err := r.do(ctx, dotenvQuery, map[string]interface{}{
-		"input":    marshalInput(input),
-		"insecure": policy.Insecure,
-	})
+	op := DotenvOperation(input, policy)
+	result, err := r.do(ctx, op.Document, op.Variables)
 	if err != nil {
 		return nil, err
 	}
@@ -89,12 +110,20 @@ func (r *Runtime) Dotenv(ctx context.Context, input LoadInput, policy DotenvPoli
 	return envs, nil
 }
 
+func DotenvOperation(input LoadInput, policy DotenvPolicy) Operation {
+	return Operation{
+		Name:     "OwlDotenv",
+		Document: dotenvQuery,
+		Variables: map[string]interface{}{
+			"input":    marshalInput(input),
+			"insecure": policy.Insecure,
+		},
+	}
+}
+
 func (r *Runtime) Get(ctx context.Context, input LoadInput, key string, policy GetPolicy) (GetResult, bool, error) {
-	result, err := r.do(ctx, getQuery, map[string]interface{}{
-		"input":  marshalInput(input),
-		"key":    key,
-		"reveal": policy.Reveal,
-	})
+	op := GetOperation(input, key, policy)
+	result, err := r.do(ctx, op.Document, op.Variables)
 	if err != nil {
 		return GetResult{}, false, err
 	}
@@ -108,10 +137,21 @@ func (r *Runtime) Get(ctx context.Context, input LoadInput, key string, policy G
 	return decodeGet(raw), true, nil
 }
 
+func GetOperation(input LoadInput, key string, policy GetPolicy) Operation {
+	return Operation{
+		Name:     "OwlGet",
+		Document: getQuery,
+		Variables: map[string]interface{}{
+			"input":  marshalInput(input),
+			"key":    key,
+			"reveal": policy.Reveal,
+		},
+	}
+}
+
 func (r *Runtime) SensitiveKeys(ctx context.Context, input LoadInput) ([]string, error) {
-	result, err := r.do(ctx, sensitiveKeysQuery, map[string]interface{}{
-		"input": marshalInput(input),
-	})
+	op := SensitiveKeysOperation(input)
+	result, err := r.do(ctx, op.Document, op.Variables)
 	if err != nil {
 		return nil, err
 	}
@@ -122,13 +162,93 @@ func (r *Runtime) SensitiveKeys(ctx context.Context, input LoadInput) ([]string,
 	return decodeStringList(raw), nil
 }
 
+func SensitiveKeysOperation(input LoadInput) Operation {
+	return Operation{
+		Name:     "OwlSensitiveKeys",
+		Document: sensitiveKeysQuery,
+		Variables: map[string]interface{}{
+			"input": marshalInput(input),
+		},
+	}
+}
+
+func (r *Runtime) DotenvSpec(ctx context.Context, input LoadInput) (string, error) {
+	op := DotenvSpecOperation(input)
+	result, err := r.do(ctx, op.Document, op.Variables)
+	if err != nil {
+		return "", err
+	}
+	raw, err := extractPath(result.Data, "Environment", "load", "normalize", "validate", "render", "dotenvSpec")
+	if err != nil {
+		return "", err
+	}
+	return stringValue(raw), nil
+}
+
+func DotenvSpecOperation(input LoadInput) Operation {
+	return Operation{
+		Name:     "OwlDotenvSpec",
+		Document: dotenvSpecQuery,
+		Variables: map[string]interface{}{
+			"input": marshalInput(input),
+		},
+	}
+}
+
+func (r *Runtime) ProjectSpec(ctx context.Context, input LoadInput) (string, error) {
+	op := ProjectSpecOperation(input)
+	result, err := r.do(ctx, op.Document, op.Variables)
+	if err != nil {
+		return "", err
+	}
+	raw, err := extractPath(result.Data, "Environment", "load", "normalize", "validate", "render", "dotenvSpec")
+	if err != nil {
+		return "", err
+	}
+	return stringValue(raw), nil
+}
+
+func ProjectSpecOperation(input LoadInput) Operation {
+	return Operation{
+		Name:     "OwlProjectSpec",
+		Document: projectSpecQuery,
+		Variables: map[string]interface{}{
+			"input": marshalInput(input),
+		},
+	}
+}
+
+func (r *Runtime) Type(ctx context.Context, input LoadInput, policy TypePolicy) (TypeResult, error) {
+	op := TypeOperation(input, policy)
+	result, err := r.do(ctx, op.Document, op.Variables)
+	if err != nil {
+		return TypeResult{}, err
+	}
+	raw, err := extractPath(result.Data, "Environment", "load", "normalize", "validate", "assist", "typeSuggestions")
+	if err != nil {
+		return TypeResult{}, err
+	}
+	return decodeType(raw), nil
+}
+
+func TypeOperation(input LoadInput, policy TypePolicy) Operation {
+	return Operation{
+		Name:     "OwlTypeSuggestions",
+		Document: typeQuery,
+		Variables: map[string]interface{}{
+			"input": marshalInput(input),
+			"all":   policy.All,
+		},
+	}
+}
+
 func (r *Runtime) StateEnvelope(ctx context.Context, input LoadInput) (StateEnvelope, error) {
-	return r.StateEnvelopeForOperations(ctx, []store.OperationRecord{
-		{Kind: store.OperationRecordLoad, Load: input},
+	return r.StateEnvelopeForOperations(ctx, []state.OperationRecord{
+		{Kind: state.OperationRecordLoad, Load: input},
 	})
 }
 
-func (r *Runtime) StateEnvelopeForOperations(ctx context.Context, records []store.OperationRecord) (StateEnvelope, error) {
+func (r *Runtime) StateEnvelopeForOperations(ctx context.Context, records []state.OperationRecord) (StateEnvelope, error) {
 	plan, err := planStateEnvelopeQuery(records)
 	if err != nil {
 		return StateEnvelope{}, err
@@ -144,30 +264,37 @@ func (r *Runtime) StateEnvelopeForOperations(ctx context.Context, records []stor
 	return decodeEnvelope(raw)
 }
 
-func (r *Runtime) StateEnvelopeAfter(ctx context.Context, input LoadInput, patch store.LoadInput, deleted []string) (StateEnvelope, error) {
-	records := []store.OperationRecord{{Kind: store.OperationRecordLoad, Load: input}}
+func StateEnvelopeOperation(records []state.OperationRecord) (Operation, error) {
+	plan, err := planStateEnvelopeQuery(records)
+	if err != nil {
+		return Operation{}, err
+	}
+	return Operation{Name: "OwlStateEnvelope", Document: plan.Query, Variables: plan.Vars}, nil
+}
+
+func (r *Runtime) StateEnvelopeAfter(ctx context.Context, input LoadInput, patch state.LoadInput, deleted []string) (StateEnvelope, error) {
+	records := []state.OperationRecord{{Kind: state.OperationRecordLoad, Load: input}}
 	if len(patch.Dotenv) > 0 {
-		records = append(records, store.OperationRecord{
-			Kind: store.OperationRecordUpdate,
-			Update: store.UpdateOperation{
+		records = append(records, state.OperationRecord{
+			Kind: state.OperationRecordUpdate,
+			Update: state.UpdateOperation{
 				Source: patch.DotenvSource,
 				Dotenv: patch.Dotenv,
 			},
 		})
 	}
 	if len(deleted) > 0 {
-		records = append(records, store.OperationRecord{
-			Kind:   store.OperationRecordDelete,
-			Delete: store.DeleteOperation{Keys: append([]string{}, deleted...)},
+		records = append(records, state.OperationRecord{
+			Kind:   state.OperationRecordDelete,
+			Delete: state.DeleteOperation{Keys: append([]string{}, deleted...)},
 		})
 	}
 	return r.StateEnvelopeForOperations(ctx, records)
 }
 
 func (r *Runtime) Check(ctx context.Context, input LoadInput) (CheckResult, error) {
-	result, err := r.do(ctx, checkQuery, map[string]interface{}{
-		"input": marshalInput(input),
-	})
+	op := CheckOperation(input)
+	result, err := r.do(ctx, op.Document, op.Variables)
 	if err != nil {
 		return CheckResult{}, err
 	}
@@ -176,6 +303,28 @@ func (r *Runtime) Check(ctx context.Context, input LoadInput) (CheckResult, erro
 		return CheckResult{}, err
 	}
 	return decodeCheck(raw), nil
+}
+
+func CheckOperation(input LoadInput) Operation {
+	return Operation{
+		Name:     "OwlCheck",
+		Document: checkQuery,
+		Variables: map[string]interface{}{
+			"input": marshalInput(input),
+		},
+	}
+}
+
+func (r *Runtime) Execute(ctx context.Context, query string, vars map[string]interface{}) (ExecuteResult, error) {
+	result, err := r.do(ctx, query, vars)
+	if err != nil {
+		return ExecuteResult{}, err
+	}
+	raw, err := json.Marshal(result.Data)
+	if err != nil {
+		return ExecuteResult{}, err
+	}
+	return ExecuteResult{Data: raw}, nil
 }
 
 func (r *Runtime) SchemaJSON(ctx context.Context) (string, error) {
@@ -306,7 +455,7 @@ func marshalEnvelope(envelope StateEnvelope) map[string]interface{} {
 	}
 }
 
-func marshalStateProvenance(provenance store.StateProvenance) map[string]interface{} {
+func marshalStateProvenance(provenance state.StateProvenance) map[string]interface{} {
 	sources := make([]map[string]interface{}, 0, len(provenance.Sources))
 	for _, source := range provenance.Sources {
 		if marshaled := marshalSource(source); marshaled != nil {
@@ -553,12 +702,9 @@ query OwlSnapshot($input: LoadInput!, $reveal: Boolean = false) {
               value
               originalValue
               type
-              field
-              fieldTypeID
-              fieldInstance
-              fieldName
-              source
-              origin
+              field { typeID instance field }
+              source { name kind }
+              origin { name kind }
               explicit
               confidence
               visibility
@@ -590,20 +736,16 @@ func decodeSnapshot(raw interface{}) []SnapshotItem {
 			Value:         stringValue(item["value"]),
 			OriginalValue: stringValue(item["originalValue"]),
 			Type:          model.TypeID(stringValue(item["type"])),
-			Field: model.FieldRef{
-				TypeID:   model.TypeID(stringValue(item["fieldTypeID"])),
-				Instance: stringValue(item["fieldInstance"]),
-				Field:    stringValue(item["fieldName"]),
-			},
-			Source:      model.Source{Name: stringValue(item["source"])},
-			Origin:      model.Source{Name: stringValue(item["origin"])},
-			Explicit:    boolValue(item["explicit"]),
-			Confidence:  model.BindingConfidence(stringValue(item["confidence"])),
-			Visibility:  model.Visibility(stringValue(item["visibility"])),
-			Exposure:    model.Exposure(stringValue(item["exposure"])),
-			Description: stringValue(item["description"]),
-			UpdatedAt:   timeValue(item["updatedAt"]),
-			Diagnostics: decodeDiagnostics(item["diagnostics"]),
+			Field:         decodeFieldRef(item["field"]),
+			Source:        decodeSource(item["source"]),
+			Origin:        decodeSource(item["origin"]),
+			Explicit:      boolValue(item["explicit"]),
+			Confidence:    model.BindingConfidence(stringValue(item["confidence"])),
+			Visibility:    model.Visibility(stringValue(item["visibility"])),
+			Exposure:      model.Exposure(stringValue(item["exposure"])),
+			Description:   stringValue(item["description"]),
+			UpdatedAt:     timeValue(item["updatedAt"]),
+			Diagnostics:   decodeDiagnostics(item["diagnostics"]),
 		})
 	}
 	return items
@@ -617,6 +759,7 @@ func decodeCheck(raw interface{}) CheckResult {
 	return CheckResult{
 		OK:          boolValue(row["ok"]),
 		Diagnostics: decodeDiagnostics(row["diagnostics"]),
+		Checked:     intValue(row["checked"]),
 	}
 }
 
@@ -634,6 +777,34 @@ func decodeGet(raw interface{}) GetResult {
 		Source:      decodeSource(row["source"]),
 		Diagnostics: decodeDiagnostics(row["diagnostics"]),
 	}
+}
+
+func decodeType(raw interface{}) TypeResult {
+	row, ok := raw.(map[string]interface{})
+	if !ok {
+		return TypeResult{}
+	}
+	proposalsRaw, ok := row["proposals"].([]interface{})
+	if !ok {
+		return TypeResult{}
+	}
+	proposals := make([]state.TypeProposal, 0, len(proposalsRaw))
+	for _, item := range proposalsRaw {
+		proposalRaw, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		proposals = append(proposals, state.TypeProposal{
+			Key:           stringValue(proposalRaw["key"]),
+			CurrentType:   model.TypeID(stringValue(proposalRaw["currentType"])),
+			SuggestedType: model.TypeID(stringValue(proposalRaw["suggestedType"])),
+			Confidence:    model.BindingConfidence(stringValue(proposalRaw["confidence"])),
+			Reason:        stringValue(proposalRaw["reason"]),
+			Description:   stringValue(proposalRaw["description"]),
+			Required:      boolValue(proposalRaw["required"]),
+		})
+	}
+	return TypeResult{Proposals: proposals}
 }
 
 func decodeEnvelope(raw interface{}) (StateEnvelope, error) {
@@ -745,8 +916,8 @@ func decodeUnresolvedFrontier(raw interface{}) model.UnresolvedFrontier {
 	return frontier
 }
 
-func decodeStateProvenance(raw interface{}) store.StateProvenance {
-	var provenance store.StateProvenance
+func decodeStateProvenance(raw interface{}) state.StateProvenance {
+	var provenance state.StateProvenance
 	row, ok := raw.(map[string]interface{})
 	if !ok {
 		return provenance
@@ -855,7 +1026,62 @@ query OwlCheck($input: LoadInput!) {
       normalize {
         validate {
           render {
-            check { ok diagnostics { severity code message details key field owner } }
+            check { ok checked diagnostics { severity code message details key field owner } }
+          }
+        }
+      }
+    }
+  }
+}`
+
+const dotenvSpecQuery = `
+query OwlDotenvSpec($input: LoadInput!) {
+  Environment {
+    load(input: $input) {
+      normalize {
+        validate {
+          render {
+            dotenvSpec
+          }
+        }
+      }
+    }
+  }
+}`
+
+const projectSpecQuery = `
+query OwlProjectSpec($input: LoadInput!) {
+  Environment {
+    load(input: $input) {
+      normalize {
+        validate {
+          render {
+            dotenvSpec
+          }
+        }
+      }
+    }
+  }
+}`
+
+const typeQuery = `
+query OwlTypeSuggestions($input: LoadInput!, $all: Boolean = false) {
+  Environment {
+    load(input: $input) {
+      normalize {
+        validate {
+          assist {
+            typeSuggestions(all: $all) {
+              proposals {
+                key
+                currentType
+                suggestedType
+                confidence
+                reason
+                description
+                required
+              }
+            }
           }
         }
       }

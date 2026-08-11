@@ -2,9 +2,9 @@ package owl
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
-	"strings"
 	"time"
 
 	"github.com/runmedev/owl/internal/graph"
@@ -13,19 +13,20 @@ import (
 	"github.com/runmedev/owl/internal/requirements"
 	"github.com/runmedev/owl/internal/resolver"
 	"github.com/runmedev/owl/internal/resolver/builtin"
-	"github.com/runmedev/owl/internal/store"
+	"github.com/runmedev/owl/internal/state"
 )
 
 type (
-	SnapshotPolicy = store.SnapshotPolicy
-	DotenvPolicy   = store.DotenvPolicy
-	TypePolicy     = store.TypePolicy
-	GetPolicy      = store.GetPolicy
-	SnapshotItem   = store.SnapshotItem
-	TypeResult     = store.TypeResult
-	TypeProposal   = store.TypeProposal
-	GetResult      = store.GetResult
-	CheckResult    = store.CheckResult
+	SnapshotPolicy = state.SnapshotPolicy
+	DotenvPolicy   = state.DotenvPolicy
+	TypePolicy     = state.TypePolicy
+	GetPolicy      = state.GetPolicy
+	SnapshotItem   = state.SnapshotItem
+	SnapshotEnv    = state.SnapshotItem
+	TypeResult     = state.TypeResult
+	TypeProposal   = state.TypeProposal
+	GetResult      = state.GetResult
+	CheckResult    = state.CheckResult
 	ResolvePolicy  = resolver.Policy
 	ChainConfig    = resolver.ChainConfig
 	ResolverConfig = resolver.ResolverConfig
@@ -35,17 +36,21 @@ type (
 	PromptAnswer   = resolver.PromptAnswer
 
 	TypeID                 = model.TypeID
+	TypeDef                = model.TypeDef
+	TypeProvider           = registry.TypeProvider
 	FieldRef               = model.FieldRef
 	ConfigInput            = model.ConfigInput
 	NeedInput              = model.NeedInput
 	DotenvProjection       = model.DotenvProjectionInput
 	DotenvFieldBinding     = model.DotenvFieldBindingInput
 	Source                 = model.Source
-	DotenvVariable         = store.DotenvVariable
-	EnvContract            = store.EnvContract
-	EnvBinding             = store.EnvBinding
-	StateEnvelope          = store.StateEnvelope
-	StateProvenance        = store.StateProvenance
+	DotenvVariable         = state.DotenvVariable
+	EnvContract            = state.EnvContract
+	EnvBinding             = state.EnvBinding
+	LoadInput              = state.LoadInput
+	StateEnvelope          = state.StateEnvelope
+	StateProvenance        = state.StateProvenance
+	Sensitivity            = model.Sensitivity
 	Visibility             = model.Visibility
 	Exposure               = model.Exposure
 	Diagnostic             = model.Diagnostic
@@ -63,12 +68,39 @@ type (
 	ProposedValue          = resolver.ProposedValue
 )
 
+func NewBuiltInTypeProvider() TypeProvider {
+	return registry.NewBuiltInRegistry()
+}
+
+func NewTypeProviderFromDirectory(root string) (TypeProvider, error) {
+	return registry.NewBuiltInRegistryFromDirectory(root)
+}
+
+type TypeCatalogInput struct {
+	Root string
+}
+
+func TypeProviderFromCatalogInput(input TypeCatalogInput) (TypeProvider, error) {
+	if input.Root == "" {
+		return NewBuiltInTypeProvider(), nil
+	}
+	return NewTypeProviderFromDirectory(input.Root)
+}
+
+func ReadConfigFile(path string) (ConfigInput, error) {
+	return requirements.ReadConfigFile(path)
+}
+
 const (
 	TypeCoreOpaque    = model.TypeCoreOpaque
 	TypeCorePlain     = model.TypeCorePlain
 	TypeCoreSecret    = model.TypeCoreSecret
 	TypeCoreURL       = model.TypeCoreURL
 	TypeUniverseRedis = model.TypeUniverseRedis
+
+	SensitivityUnknown   = model.SensitivityUnknown
+	SensitivityPlaintext = model.SensitivityPlaintext
+	SensitivitySensitive = model.SensitivitySensitive
 
 	VisibilityLiteral    = model.VisibilityLiteral
 	VisibilityUnresolved = model.VisibilityUnresolved
@@ -96,24 +128,26 @@ const (
 
 	UnresolvedMissing = model.UnresolvedReasonMissing
 	UnresolvedInvalid = model.UnresolvedReasonInvalid
+
+	GeneratedDotenvSpecHeaderPrefix = requirements.GeneratedDotenvSpecHeaderPrefix
 )
 
 type Store struct {
 	runtime    *graph.Runtime
 	types      registry.TypeProvider
 	state      model.EffectiveState
-	operations []store.OperationRecord
+	operations []state.OperationRecord
 	clock      model.Clock
 }
 
 type StoreOption func(*config) error
 
 type config struct {
-	envs      []store.SourceBytes
-	specs     []store.SourceBytes
+	envs      []state.SourceBytes
+	specs     []state.SourceBytes
 	configs   []configInputSource
-	contracts []store.EnvContract
-	envelope  *store.StateEnvelope
+	contracts []state.EnvContract
+	envelope  *state.StateEnvelope
 	types     registry.TypeProvider
 	clock     model.Clock
 }
@@ -139,6 +173,101 @@ type ResolveInput struct {
 	Chain   ChainConfig
 }
 
+type SnapshotInput struct {
+	Load   LoadInput
+	Policy SnapshotPolicy
+	Filter SnapshotFilter
+}
+
+type SnapshotFilter struct {
+	All   bool
+	Limit int
+}
+
+type SnapshotOutput struct {
+	Envs        []SnapshotEnv
+	Diagnostics []Diagnostic
+}
+
+type SourceInput struct {
+	Load   LoadInput
+	Policy DotenvPolicy
+}
+
+type SourceOutput struct {
+	Envs []string
+}
+
+type GetInput struct {
+	Load   LoadInput
+	Key    string
+	Policy GetPolicy
+}
+
+type GetOutput = GetResult
+
+type SensitiveKeysInput struct {
+	Load LoadInput
+}
+
+type SensitiveKeysOutput struct {
+	Keys []string
+}
+
+type DotenvSpecInput struct {
+	Load LoadInput
+}
+
+type DotenvSpecOutput struct {
+	Rendered string
+}
+
+type TypeInput struct {
+	Load   LoadInput
+	Policy TypePolicy
+}
+
+type TypeOutput = TypeResult
+
+type ProjectSpecInput struct {
+	Load LoadInput
+}
+
+type ProjectSpecOutput struct {
+	Rendered string
+}
+
+type UpdateInput struct {
+	Source Source
+	Dotenv []DotenvVariable
+	Delete []string
+}
+
+type CheckInput struct {
+	Load LoadInput
+}
+
+type CheckOutput struct {
+	OK          bool
+	Diagnostics []Diagnostic
+	Checked     int
+}
+
+type GraphOperation struct {
+	Name      string
+	Document  string
+	Variables map[string]interface{}
+}
+
+type GraphQLRequest struct {
+	Document  string
+	Variables map[string]interface{}
+}
+
+type GraphQLResult struct {
+	Data json.RawMessage
+}
+
 func ContextWithExecutionInfo(ctx context.Context, info ExecutionInfo) context.Context {
 	if ctx == nil {
 		ctx = context.Background()
@@ -161,7 +290,7 @@ func NewStore(opts ...StoreOption) (*Store, error) {
 			return nil, err
 		}
 	}
-	load, err := store.LoadInputFromSourceBytes(cfg.envs, cfg.specs)
+	load, err := state.LoadInputFromSourceBytes(cfg.envs, cfg.specs)
 	if err != nil {
 		return nil, err
 	}
@@ -187,8 +316,8 @@ func NewStore(opts ...StoreOption) (*Store, error) {
 		runtime: runtime,
 		types:   cfg.types,
 		clock:   clock,
-		operations: []store.OperationRecord{
-			{Kind: store.OperationRecordLoad, Timestamp: loadTimestamp, Load: load},
+		operations: []state.OperationRecord{
+			{Kind: state.OperationRecordLoad, Timestamp: loadTimestamp, Load: load},
 		},
 	}
 	if err := s.materialize(context.Background()); err != nil {
@@ -203,7 +332,7 @@ func WithDotenv(source string, r io.Reader) StoreOption {
 		if err != nil {
 			return err
 		}
-		cfg.envs = append(cfg.envs, store.SourceBytes{Name: source, Raw: raw})
+		cfg.envs = append(cfg.envs, state.SourceBytes{Name: source, Raw: raw})
 		return nil
 	}
 }
@@ -214,7 +343,7 @@ func WithEnvSpec(source string, r io.Reader) StoreOption {
 		if err != nil {
 			return err
 		}
-		cfg.specs = append(cfg.specs, store.SourceBytes{Name: source, Raw: raw})
+		cfg.specs = append(cfg.specs, state.SourceBytes{Name: source, Raw: raw})
 		return nil
 	}
 }
@@ -234,6 +363,20 @@ func WithConfigSource(source string, input ConfigInput) StoreOption {
 	return func(cfg *config) error {
 		cfg.configs = append(cfg.configs, configInputSource{
 			source: model.Source{Name: source, Kind: "owl-config"},
+			input:  input,
+		})
+		return nil
+	}
+}
+
+func WithConfigFile(path string) StoreOption {
+	return func(cfg *config) error {
+		input, err := requirements.ReadConfigFile(path)
+		if err != nil {
+			return err
+		}
+		cfg.configs = append(cfg.configs, configInputSource{
+			source: model.Source{Name: path, Kind: "owl-config"},
 			input:  input,
 		})
 		return nil
@@ -275,43 +418,247 @@ func withClock(clock model.Clock) StoreOption {
 	}
 }
 
-func (s *Store) Snapshot(policy SnapshotPolicy) ([]SnapshotItem, error) {
-	return store.NewState(s.state, s.types).Snapshot(policy)
-}
-
-func (s *Store) Dotenv(policy DotenvPolicy) ([]string, error) {
-	return store.NewState(s.state, s.types).Dotenv(policy)
-}
-
-func (s *Store) DotenvSpec() (string, error) {
-	if len(s.operations) == 0 || s.operations[0].Kind != store.OperationRecordLoad {
-		return requirements.RenderDotenvSpec(nil, s.types)
+func (s *Store) Snapshot(ctx context.Context, input SnapshotInput) (SnapshotOutput, error) {
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	return requirements.RenderDotenvSpec(s.operations[0].Load.Contracts, s.types)
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return SnapshotOutput{}, err
+	}
+	items, err := s.runtime.Snapshot(ctx, load, input.Policy)
+	if err != nil {
+		return SnapshotOutput{}, err
+	}
+	return SnapshotOutput{Envs: snapshotEnvsForInput(items, input)}, nil
 }
 
-func (s *Store) Type(policy TypePolicy) (TypeResult, error) {
-	return store.NewState(s.state, s.types).Type(policy)
+func (s *Store) BuildSnapshotOperation(ctx context.Context, input SnapshotInput) (GraphOperation, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return GraphOperation{}, err
+	}
+	return graphOperation(graph.SnapshotOperation(load, input.Policy)), nil
 }
 
-func (s *Store) Get(key string, policy GetPolicy) (GetResult, bool, error) {
-	return store.NewState(s.state, s.types).Get(key, policy)
+func snapshotEnvsForInput(items []SnapshotItem, input SnapshotInput) []SnapshotEnv {
+	envs := make([]SnapshotEnv, 0, len(items))
+	limit := input.Filter.Limit
+	for i, item := range items {
+		if limit > 0 && !input.Filter.All && i >= limit {
+			break
+		}
+		envs = append(envs, item)
+	}
+	return envs
 }
 
-func (s *Store) SensitiveKeys() ([]string, error) {
-	return store.NewState(s.state, s.types).SensitiveKeys()
+func (s *Store) Source(ctx context.Context, input SourceInput) (SourceOutput, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return SourceOutput{}, err
+	}
+	envs, err := s.runtime.Dotenv(ctx, load, input.Policy)
+	if err != nil {
+		return SourceOutput{}, err
+	}
+	return SourceOutput{Envs: envs}, nil
 }
 
-func (s *Store) Check() CheckResult {
-	return store.NewState(s.state, s.types).Check()
+func (s *Store) BuildSourceOperation(ctx context.Context, input SourceInput) (GraphOperation, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return GraphOperation{}, err
+	}
+	return graphOperation(graph.DotenvOperation(load, input.Policy)), nil
+}
+
+func (s *Store) DotenvSpec(ctx context.Context, input DotenvSpecInput) (DotenvSpecOutput, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return DotenvSpecOutput{}, err
+	}
+	rendered, err := s.runtime.DotenvSpec(ctx, load)
+	if err != nil {
+		return DotenvSpecOutput{}, err
+	}
+	return DotenvSpecOutput{Rendered: rendered}, nil
+}
+
+func (s *Store) BuildDotenvSpecOperation(ctx context.Context, input DotenvSpecInput) (GraphOperation, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return GraphOperation{}, err
+	}
+	return graphOperation(graph.DotenvSpecOperation(load)), nil
+}
+
+func (s *Store) ProjectSpec(ctx context.Context, input ProjectSpecInput) (ProjectSpecOutput, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return ProjectSpecOutput{}, err
+	}
+	rendered, err := s.runtime.ProjectSpec(ctx, load)
+	if err != nil {
+		return ProjectSpecOutput{}, err
+	}
+	return ProjectSpecOutput{Rendered: rendered}, nil
+}
+
+func (s *Store) BuildProjectSpecOperation(ctx context.Context, input ProjectSpecInput) (GraphOperation, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return GraphOperation{}, err
+	}
+	return graphOperation(graph.ProjectSpecOperation(load)), nil
+}
+
+func (s *Store) Type(ctx context.Context, input TypeInput) (TypeOutput, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return TypeOutput{}, err
+	}
+	return s.runtime.Type(ctx, load, input.Policy)
+}
+
+func (s *Store) BuildTypeOperation(ctx context.Context, input TypeInput) (GraphOperation, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return GraphOperation{}, err
+	}
+	return graphOperation(graph.TypeOperation(load, input.Policy)), nil
+}
+
+func (s *Store) Get(ctx context.Context, input GetInput) (GetOutput, bool, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return GetOutput{}, false, err
+	}
+	return s.runtime.Get(ctx, load, input.Key, input.Policy)
+}
+
+func (s *Store) BuildGetOperation(ctx context.Context, input GetInput) (GraphOperation, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return GraphOperation{}, err
+	}
+	return graphOperation(graph.GetOperation(load, input.Key, input.Policy)), nil
+}
+
+func (s *Store) SensitiveKeys(ctx context.Context, input SensitiveKeysInput) (SensitiveKeysOutput, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return SensitiveKeysOutput{}, err
+	}
+	keys, err := s.runtime.SensitiveKeys(ctx, load)
+	if err != nil {
+		return SensitiveKeysOutput{}, err
+	}
+	return SensitiveKeysOutput{Keys: keys}, nil
+}
+
+func (s *Store) BuildSensitiveKeysOperation(ctx context.Context, input SensitiveKeysInput) (GraphOperation, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return GraphOperation{}, err
+	}
+	return graphOperation(graph.SensitiveKeysOperation(load)), nil
+}
+
+func (s *Store) Check(ctx context.Context, input CheckInput) (CheckOutput, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return CheckOutput{}, err
+	}
+	check, err := s.runtime.Check(ctx, load)
+	if err != nil {
+		return CheckOutput{}, err
+	}
+	return CheckOutput{
+		OK:          check.OK,
+		Diagnostics: check.Diagnostics,
+		Checked:     check.Checked,
+	}, nil
+}
+
+func (s *Store) BuildCheckOperation(ctx context.Context, input CheckInput) (GraphOperation, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return GraphOperation{}, err
+	}
+	return graphOperation(graph.CheckOperation(load)), nil
+}
+
+func (s *Store) ExecuteGraphQL(ctx context.Context, req GraphQLRequest) (GraphQLResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	result, err := s.runtime.Execute(ctx, req.Document, req.Variables)
+	if err != nil {
+		return GraphQLResult{}, err
+	}
+	return GraphQLResult{Data: result.Data}, nil
 }
 
 func (s *Store) ResolverAttempts() []ResolverAttempt {
-	return append([]ResolverAttempt{}, s.state.ResolverAttempts...)
+	state, err := s.resolverState(context.Background())
+	if err != nil {
+		return nil
+	}
+	return append([]ResolverAttempt{}, state.ResolverAttempts...)
 }
 
 func (s *Store) UnresolvedFrontier() UnresolvedFrontier {
-	return UnresolvedFrontier{Needs: append([]UnresolvedNeed{}, s.state.UnresolvedFrontier.Needs...)}
+	state, err := s.resolverState(context.Background())
+	if err != nil {
+		return UnresolvedFrontier{}
+	}
+	return UnresolvedFrontier{Needs: append([]UnresolvedNeed{}, state.UnresolvedFrontier.Needs...)}
 }
 
 func (s *Store) Resolve(ctx context.Context, input ResolveInput) (ResolveResult, error) {
@@ -327,8 +674,12 @@ func (s *Store) Resolve(ctx context.Context, input ResolveInput) (ResolveResult,
 		NewAttemptID: publicAttemptIDGenerator(len(s.operations)),
 		Clock:        s.clock,
 	}
+	state, err := s.resolverState(ctx)
+	if err != nil {
+		return ResolveResult{}, err
+	}
 	result, err := runner.Resolve(ctx, resolver.RunRequest{
-		State:  s.state,
+		State:  state,
 		Policy: input.Policy,
 		Chain:  input.Chain,
 	})
@@ -345,8 +696,12 @@ func (s *Store) ApplyPromptAnswers(ctx context.Context, answers []PromptAnswer) 
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	effective, err := s.resolverState(ctx)
+	if err != nil {
+		return ResolveResult{}, err
+	}
 	timestamp := s.clock()
-	needs := needsByID(s.state.UnresolvedFrontier.Needs)
+	needs := needsByID(effective.UnresolvedFrontier.Needs)
 	newAttemptID := publicAttemptIDGenerator(len(s.operations))
 	var result ResolveResult
 	for _, answer := range answers {
@@ -363,8 +718,8 @@ func (s *Store) ApplyPromptAnswers(ctx context.Context, answers []PromptAnswer) 
 			attempt.Outcome = ResolverInvalidResult
 			attempt.Message = "interactive answer references an unknown unresolved need"
 			result.Attempts = append(result.Attempts, attempt)
-			s.operations = append(s.operations, store.OperationRecord{
-				Kind:            store.OperationRecordResolverAttempt,
+			s.operations = append(s.operations, state.OperationRecord{
+				Kind:            state.OperationRecordResolverAttempt,
 				Timestamp:       timestamp,
 				ResolverAttempt: attempt,
 			})
@@ -388,13 +743,13 @@ func (s *Store) ApplyPromptAnswers(ctx context.Context, answers []PromptAnswer) 
 		result.Attempts = append(result.Attempts, attempt)
 		result.Proposals = append(result.Proposals, proposal)
 		s.operations = append(s.operations,
-			store.OperationRecord{
-				Kind:            store.OperationRecordResolverAttempt,
+			state.OperationRecord{
+				Kind:            state.OperationRecordResolverAttempt,
 				Timestamp:       timestamp,
 				ResolverAttempt: attempt,
 			},
-			store.OperationRecord{
-				Kind:             store.OperationRecordApplyResolverProposal,
+			state.OperationRecord{
+				Kind:             state.OperationRecordApplyResolverProposal,
 				Timestamp:        timestamp,
 				ResolverProposal: proposal,
 			},
@@ -406,46 +761,96 @@ func (s *Store) ApplyPromptAnswers(ctx context.Context, answers []PromptAnswer) 
 	return result, nil
 }
 
-func (s *Store) LoadDotenv(source Source, vars []DotenvVariable) error {
-	return s.applyDotenv(source, vars, nil)
-}
-
-func (s *Store) LoadDotenvLines(source string, envs ...string) error {
-	raw := strings.Join(envs, "\n")
-	if raw != "" {
-		raw += "\n"
-	}
-	input, err := store.LoadInputFromSourceBytes([]store.SourceBytes{{Name: source, Raw: []byte(raw)}}, nil)
+func (s *Store) resolverState(ctx context.Context) (model.EffectiveState, error) {
+	envelope, err := s.StateEnvelope(ctx)
 	if err != nil {
-		return err
+		return model.EffectiveState{}, err
 	}
-	return s.LoadDotenv(input.DotenvSource, input.Dotenv)
+	return envelope.State, nil
 }
 
-func (s *Store) Update(ctx context.Context, newOrUpdated, deleted []string) error {
+func (s *Store) ApplyUpdate(ctx context.Context, input UpdateInput) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	raw := strings.Join(newOrUpdated, "\n")
-	if raw != "" {
-		raw += "\n"
-	}
-	input, err := store.LoadInputFromSourceBytes([]store.SourceBytes{{Name: "[update]", Raw: []byte(raw)}}, nil)
-	if err != nil {
-		return err
-	}
-	return s.applyDotenvWithContext(ctx, sourceFromContext(ctx, input.DotenvSource), input.Dotenv, deleted)
+	return s.applyUpdateWithContext(ctx, input)
 }
 
-func (s *Store) Delete(ctx context.Context, keys ...string) error {
+func (s *Store) BuildUpdateOperation(ctx context.Context, input UpdateInput) (GraphOperation, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return s.applyDotenvWithContext(ctx, sourceFromContext(ctx, Source{}), nil, keys)
+	records := append([]state.OperationRecord{}, s.operations...)
+	timestamp := s.clock()
+	source := input.Source
+	if source == (Source{}) {
+		source = sourceFromContext(ctx, Source{Name: "[update]", Kind: "dotenv"})
+	}
+	if len(input.Dotenv) > 0 {
+		records = append(records, state.OperationRecord{
+			Kind:      state.OperationRecordUpdate,
+			Timestamp: timestamp,
+			Update: state.UpdateOperation{
+				Source:    source,
+				Dotenv:    append([]DotenvVariable{}, input.Dotenv...),
+				Timestamp: timestamp,
+			},
+		})
+	}
+	if len(input.Delete) > 0 {
+		records = append(records, state.OperationRecord{
+			Kind:      state.OperationRecordDelete,
+			Timestamp: timestamp,
+			Delete: state.DeleteOperation{
+				Keys:      append([]string{}, input.Delete...),
+				Source:    source,
+				Timestamp: timestamp,
+			},
+		})
+	}
+	return stateEnvelopeOperation(records)
 }
 
 func (s *Store) StateEnvelope(ctx context.Context) (StateEnvelope, error) {
-	return store.NewState(s.state, s.types).StateEnvelope(), nil
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return s.runtime.StateEnvelopeForOperations(ctx, s.operations)
+}
+
+func (s *Store) loadInputForOperation(ctx context.Context, input LoadInput) (LoadInput, error) {
+	if !isZeroLoadInput(input) {
+		return input, nil
+	}
+	envelope, err := s.StateEnvelope(ctx)
+	if err != nil {
+		return LoadInput{}, err
+	}
+	return LoadInput{Envelope: &envelope}, nil
+}
+
+func isZeroLoadInput(input LoadInput) bool {
+	return input.DotenvSource == (Source{}) &&
+		len(input.Dotenv) == 0 &&
+		len(input.Contracts) == 0 &&
+		input.Envelope == nil &&
+		input.Timestamp.IsZero()
+}
+
+func graphOperation(op graph.Operation) GraphOperation {
+	return GraphOperation{
+		Name:      op.Name,
+		Document:  op.Document,
+		Variables: op.Variables,
+	}
+}
+
+func stateEnvelopeOperation(records []state.OperationRecord) (GraphOperation, error) {
+	op, err := graph.StateEnvelopeOperation(records)
+	if err != nil {
+		return GraphOperation{}, err
+	}
+	return graphOperation(op), nil
 }
 
 func (s *Store) GraphQLSchema() (string, error) {
@@ -461,39 +866,39 @@ func GraphQLSchema() (string, error) {
 }
 
 func Diagnostics(err error) []Diagnostic {
-	return store.Diagnostics(err)
+	return state.Diagnostics(err)
 }
 
-func (s *Store) applyDotenv(source Source, vars []DotenvVariable, deleted []string) error {
-	return s.applyDotenvWithContext(context.Background(), source, vars, deleted)
-}
-
-func (s *Store) applyDotenvWithContext(ctx context.Context, source Source, vars []DotenvVariable, deleted []string) error {
+func (s *Store) applyUpdateWithContext(ctx context.Context, input UpdateInput) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if len(vars) == 0 && len(deleted) == 0 {
+	if len(input.Dotenv) == 0 && len(input.Delete) == 0 {
 		return nil
 	}
-	if len(vars) > 0 {
+	source := input.Source
+	if source == (Source{}) {
+		source = sourceFromContext(ctx, Source{Name: "[update]", Kind: "dotenv"})
+	}
+	if len(input.Dotenv) > 0 {
 		timestamp := s.clock()
-		s.operations = append(s.operations, store.OperationRecord{
-			Kind:      store.OperationRecordUpdate,
+		s.operations = append(s.operations, state.OperationRecord{
+			Kind:      state.OperationRecordUpdate,
 			Timestamp: timestamp,
-			Update: store.UpdateOperation{
+			Update: state.UpdateOperation{
 				Source:    source,
-				Dotenv:    vars,
+				Dotenv:    append([]DotenvVariable{}, input.Dotenv...),
 				Timestamp: timestamp,
 			},
 		})
 	}
-	if len(deleted) > 0 {
+	if len(input.Delete) > 0 {
 		timestamp := s.clock()
-		s.operations = append(s.operations, store.OperationRecord{
-			Kind:      store.OperationRecordDelete,
+		s.operations = append(s.operations, state.OperationRecord{
+			Kind:      state.OperationRecordDelete,
 			Timestamp: timestamp,
-			Delete: store.DeleteOperation{
-				Keys:      append([]string{}, deleted...),
+			Delete: state.DeleteOperation{
+				Keys:      append([]string{}, input.Delete...),
 				Source:    source,
 				Timestamp: timestamp,
 			},
@@ -536,15 +941,15 @@ func sourceFromContext(ctx context.Context, fallback Source) Source {
 func (s *Store) recordResolverResult(ctx context.Context, result ResolveResult) error {
 	timestamp := s.clock()
 	for _, attempt := range result.Attempts {
-		s.operations = append(s.operations, store.OperationRecord{
-			Kind:            store.OperationRecordResolverAttempt,
+		s.operations = append(s.operations, state.OperationRecord{
+			Kind:            state.OperationRecordResolverAttempt,
 			Timestamp:       firstTime(attempt.FinishedAt, timestamp),
 			ResolverAttempt: attempt,
 		})
 	}
 	for _, proposal := range result.Proposals {
-		s.operations = append(s.operations, store.OperationRecord{
-			Kind:             store.OperationRecordApplyResolverProposal,
+		s.operations = append(s.operations, state.OperationRecord{
+			Kind:             state.OperationRecordApplyResolverProposal,
 			Timestamp:        timestamp,
 			ResolverProposal: proposal,
 		})
