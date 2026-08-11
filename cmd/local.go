@@ -276,15 +276,22 @@ func (c *LocalStoreClient) ProjectSpec(ctx context.Context, req ProjectSpecReque
 	if err != nil {
 		return nil, err
 	}
-	storeOptions := []owl.StoreOption{owl.WithConfigSource(configPath, input)}
-	if c.options.TypeProvider != nil {
-		storeOptions = append(storeOptions, owl.WithTypeProvider(c.options.TypeProvider))
+	types := c.options.TypeProvider
+	if types == nil {
+		types = registry.NewBuiltInRegistry()
 	}
+	contracts, err := requirements.ContractsFromConfig(input, model.Source{Name: configPath, Kind: "owl-config"}, types)
+	if err != nil {
+		return nil, err
+	}
+	storeOptions := []owl.StoreOption{owl.WithTypeProvider(types)}
 	store, err := owl.NewStore(storeOptions...)
 	if err != nil {
 		return nil, err
 	}
-	rendered, err := store.DotenvSpec(ctx, owl.DotenvSpecInput{})
+	rendered, err := store.ProjectSpec(ctx, owl.ProjectSpecInput{
+		Load: owl.LoadInput{Contracts: contracts},
+	})
 	if err != nil {
 		return nil, err
 	}

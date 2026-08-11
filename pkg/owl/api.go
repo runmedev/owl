@@ -198,6 +198,14 @@ type TypeInput struct {
 
 type TypeOutput = TypeResult
 
+type ProjectSpecInput struct {
+	Load LoadInput
+}
+
+type ProjectSpecOutput struct {
+	Rendered string
+}
+
 type CheckInput struct {
 	Load LoadInput
 }
@@ -463,6 +471,32 @@ func (s *Store) BuildDotenvSpecOperation(ctx context.Context, input DotenvSpecIn
 		return GraphOperation{}, err
 	}
 	return graphOperation(graph.DotenvSpecOperation(load)), nil
+}
+
+func (s *Store) ProjectSpec(ctx context.Context, input ProjectSpecInput) (ProjectSpecOutput, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return ProjectSpecOutput{}, err
+	}
+	rendered, err := s.runtime.ProjectSpec(ctx, load)
+	if err != nil {
+		return ProjectSpecOutput{}, err
+	}
+	return ProjectSpecOutput{Rendered: rendered}, nil
+}
+
+func (s *Store) BuildProjectSpecOperation(ctx context.Context, input ProjectSpecInput) (GraphOperation, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return GraphOperation{}, err
+	}
+	return graphOperation(graph.ProjectSpecOperation(load)), nil
 }
 
 func (s *Store) Type(ctx context.Context, input TypeInput) (TypeOutput, error) {

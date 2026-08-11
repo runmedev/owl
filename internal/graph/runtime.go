@@ -195,6 +195,29 @@ func DotenvSpecOperation(input LoadInput) Operation {
 	}
 }
 
+func (r *Runtime) ProjectSpec(ctx context.Context, input LoadInput) (string, error) {
+	op := ProjectSpecOperation(input)
+	result, err := r.do(ctx, op.Document, op.Variables)
+	if err != nil {
+		return "", err
+	}
+	raw, err := extractPath(result.Data, "Environment", "load", "normalize", "validate", "render", "dotenvSpec")
+	if err != nil {
+		return "", err
+	}
+	return stringValue(raw), nil
+}
+
+func ProjectSpecOperation(input LoadInput) Operation {
+	return Operation{
+		Name:     "OwlProjectSpec",
+		Document: projectSpecQuery,
+		Variables: map[string]interface{}{
+			"input": marshalInput(input),
+		},
+	}
+}
+
 func (r *Runtime) Type(ctx context.Context, input LoadInput, policy TypePolicy) (TypeResult, error) {
 	op := TypeOperation(input, policy)
 	result, err := r.do(ctx, op.Document, op.Variables)
@@ -1012,6 +1035,21 @@ query OwlCheck($input: LoadInput!) {
 
 const dotenvSpecQuery = `
 query OwlDotenvSpec($input: LoadInput!) {
+  Environment {
+    load(input: $input) {
+      normalize {
+        validate {
+          render {
+            dotenvSpec
+          }
+        }
+      }
+    }
+  }
+}`
+
+const projectSpecQuery = `
+query OwlProjectSpec($input: LoadInput!) {
   Environment {
     load(input: $input) {
       normalize {

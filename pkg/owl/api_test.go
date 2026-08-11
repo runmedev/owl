@@ -100,6 +100,7 @@ func TestPublicAPIOperationsUseGraphShapedLoadInput(t *testing.T) {
 		mustBuildGetOperation(t, store),
 		mustBuildSensitiveKeysOperation(t, store),
 		mustBuildDotenvSpecOperation(t, store),
+		mustBuildProjectSpecOperation(t, store),
 		mustBuildTypeOperation(t, store),
 		mustBuildCheckOperation(t, store),
 	} {
@@ -151,6 +152,15 @@ func mustBuildDotenvSpecOperation(t *testing.T, store *owl.Store) owl.GraphOpera
 	op, err := store.BuildDotenvSpecOperation(context.Background(), owl.DotenvSpecInput{})
 	require.NoError(t, err)
 	assert.Equal(t, "OwlDotenvSpec", op.Name)
+	assert.Contains(t, op.Document, "$input: LoadInput!")
+	return op
+}
+
+func mustBuildProjectSpecOperation(t *testing.T, store *owl.Store) owl.GraphOperation {
+	t.Helper()
+	op, err := store.BuildProjectSpecOperation(context.Background(), owl.ProjectSpecInput{})
+	require.NoError(t, err)
+	assert.Equal(t, "OwlProjectSpec", op.Name)
 	assert.Contains(t, op.Document, "$input: LoadInput!")
 	return op
 }
