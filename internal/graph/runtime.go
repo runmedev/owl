@@ -32,9 +32,13 @@ type DotenvPolicy = store.DotenvPolicy
 
 type GetPolicy = store.GetPolicy
 
+type TypePolicy = store.TypePolicy
+
 type SnapshotItem = store.SnapshotItem
 
 type GetResult = store.GetResult
+
+type TypeResult = store.TypeResult
 
 type CheckResult = store.CheckResult
 
@@ -187,6 +191,30 @@ func DotenvSpecOperation(input LoadInput) Operation {
 		Document: dotenvSpecQuery,
 		Variables: map[string]interface{}{
 			"input": marshalInput(input),
+		},
+	}
+}
+
+func (r *Runtime) Type(ctx context.Context, input LoadInput, policy TypePolicy) (TypeResult, error) {
+	op := TypeOperation(input, policy)
+	result, err := r.do(ctx, op.Document, op.Variables)
+	if err != nil {
+		return TypeResult{}, err
+	}
+	raw, err := extractPath(result.Data, "Environment", "load", "normalize", "validate", "assist", "typeSuggestions")
+	if err != nil {
+		return TypeResult{}, err
+	}
+	return decodeType(raw), nil
+}
+
+func TypeOperation(input LoadInput, policy TypePolicy) Operation {
+	return Operation{
+		Name:     "OwlTypeSuggestions",
+		Document: typeQuery,
+		Variables: map[string]interface{}{
+			"input": marshalInput(input),
+			"all":   policy.All,
 		},
 	}
 }
@@ -727,6 +755,34 @@ func decodeGet(raw interface{}) GetResult {
 	}
 }
 
+func decodeType(raw interface{}) TypeResult {
+	row, ok := raw.(map[string]interface{})
+	if !ok {
+		return TypeResult{}
+	}
+	proposalsRaw, ok := row["proposals"].([]interface{})
+	if !ok {
+		return TypeResult{}
+	}
+	proposals := make([]store.TypeProposal, 0, len(proposalsRaw))
+	for _, item := range proposalsRaw {
+		proposalRaw, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		proposals = append(proposals, store.TypeProposal{
+			Key:           stringValue(proposalRaw["key"]),
+			CurrentType:   model.TypeID(stringValue(proposalRaw["currentType"])),
+			SuggestedType: model.TypeID(stringValue(proposalRaw["suggestedType"])),
+			Confidence:    model.BindingConfidence(stringValue(proposalRaw["confidence"])),
+			Reason:        stringValue(proposalRaw["reason"]),
+			Description:   stringValue(proposalRaw["description"]),
+			Required:      boolValue(proposalRaw["required"]),
+		})
+	}
+	return TypeResult{Proposals: proposals}
+}
+
 func decodeEnvelope(raw interface{}) (StateEnvelope, error) {
 	row, ok := raw.(map[string]interface{})
 	if !ok {
@@ -962,6 +1018,31 @@ query OwlDotenvSpec($input: LoadInput!) {
         validate {
           render {
             dotenvSpec
+          }
+        }
+      }
+    }
+  }
+}`
+
+const typeQuery = `
+query OwlTypeSuggestions($input: LoadInput!, $all: Boolean = false) {
+  Environment {
+    load(input: $input) {
+      normalize {
+        validate {
+          assist {
+            typeSuggestions(all: $all) {
+              proposals {
+                key
+                currentType
+                suggestedType
+                confidence
+                reason
+                description
+                required
+              }
+            }
           }
         }
       }

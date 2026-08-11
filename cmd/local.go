@@ -126,7 +126,7 @@ func (c *LocalStoreClient) Check(ctx context.Context, req CheckRequest) (*CheckR
 	}, nil
 }
 
-func (c *LocalStoreClient) Type(_ context.Context, req TypeRequest) (*TypeResult, error) {
+func (c *LocalStoreClient) Type(ctx context.Context, req TypeRequest) (*TypeResult, error) {
 	if req.SpecPath == "" {
 		req.SpecPath = ".env.spec"
 	}
@@ -137,7 +137,7 @@ func (c *LocalStoreClient) Type(_ context.Context, req TypeRequest) (*TypeResult
 		return nil, err
 	}
 
-	result, err := store.Type(owl.TypePolicy{All: req.All})
+	result, err := store.Type(ctx, owl.TypeInput{Policy: owl.TypePolicy{All: req.All}})
 	if err != nil {
 		return nil, err
 	}

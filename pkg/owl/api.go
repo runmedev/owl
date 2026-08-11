@@ -191,6 +191,13 @@ type DotenvSpecOutput struct {
 	Rendered string
 }
 
+type TypeInput struct {
+	Load   LoadInput
+	Policy TypePolicy
+}
+
+type TypeOutput = TypeResult
+
 type CheckInput struct {
 	Load LoadInput
 }
@@ -458,8 +465,26 @@ func (s *Store) BuildDotenvSpecOperation(ctx context.Context, input DotenvSpecIn
 	return graphOperation(graph.DotenvSpecOperation(load)), nil
 }
 
-func (s *Store) Type(policy TypePolicy) (TypeResult, error) {
-	return store.NewState(s.state, s.types).Type(policy)
+func (s *Store) Type(ctx context.Context, input TypeInput) (TypeOutput, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return TypeOutput{}, err
+	}
+	return s.runtime.Type(ctx, load, input.Policy)
+}
+
+func (s *Store) BuildTypeOperation(ctx context.Context, input TypeInput) (GraphOperation, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	load, err := s.loadInputForOperation(ctx, input.Load)
+	if err != nil {
+		return GraphOperation{}, err
+	}
+	return graphOperation(graph.TypeOperation(load, input.Policy)), nil
 }
 
 func (s *Store) Get(ctx context.Context, input GetInput) (GetOutput, bool, error) {

@@ -343,6 +343,24 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			},
 		},
 	})
+	typeProposalType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "TypeProposal",
+		Fields: graphql.Fields{
+			"key":           &graphql.Field{Type: graphql.String},
+			"currentType":   &graphql.Field{Type: graphql.String},
+			"suggestedType": &graphql.Field{Type: graphql.String},
+			"confidence":    &graphql.Field{Type: graphql.String},
+			"reason":        &graphql.Field{Type: graphql.String},
+			"description":   &graphql.Field{Type: graphql.String},
+			"required":      &graphql.Field{Type: graphql.Boolean},
+		},
+	})
+	typeResultType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "TypeResult",
+		Fields: graphql.Fields{
+			"proposals": &graphql.Field{Type: graphql.NewList(typeProposalType)},
+		},
+	})
 	getResultType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "GetResult",
 		Fields: graphql.Fields{
@@ -453,6 +471,29 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 	})
 
 	var environmentType *graphql.Object
+
+	assistType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "Assist",
+		Fields: graphql.FieldsThunk(func() graphql.Fields {
+			return graphql.Fields{
+				"typeSuggestions": &graphql.Field{
+					Type: typeResultType,
+					Args: graphql.FieldConfigArgument{
+						"all": &graphql.ArgumentConfig{Type: graphql.Boolean, DefaultValue: false},
+					},
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						gctx := p.Source.(Context)
+						all, _ := p.Args["all"].(bool)
+						result, err := store.NewState(gctx.State, gctx.Types).Type(store.TypePolicy{All: all})
+						if err != nil {
+							return nil, err
+						}
+						return typeResultView(result), nil
+					},
+				},
+			}
+		}),
+	})
 
 	renderType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "Render",
@@ -643,6 +684,12 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 				},
 				"state": &graphql.Field{
 					Type: stateType,
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						return p.Source, nil
+					},
+				},
+				"assist": &graphql.Field{
+					Type: assistType,
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 						return p.Source, nil
 					},
@@ -1234,6 +1281,22 @@ func getResultView(result store.GetResult) map[string]interface{} {
 		"source":      sourceView(result.Source),
 		"diagnostics": result.Diagnostics,
 	}
+}
+
+func typeResultView(result store.TypeResult) map[string]interface{} {
+	proposals := make([]map[string]interface{}, 0, len(result.Proposals))
+	for _, proposal := range result.Proposals {
+		proposals = append(proposals, map[string]interface{}{
+			"key":           proposal.Key,
+			"currentType":   string(proposal.CurrentType),
+			"suggestedType": string(proposal.SuggestedType),
+			"confidence":    string(proposal.Confidence),
+			"reason":        proposal.Reason,
+			"description":   proposal.Description,
+			"required":      proposal.Required,
+		})
+	}
+	return map[string]interface{}{"proposals": proposals}
 }
 
 func sourceView(source model.Source) map[string]interface{} {
