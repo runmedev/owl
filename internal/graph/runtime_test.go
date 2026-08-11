@@ -12,7 +12,7 @@ import (
 
 	"github.com/runmedev/owl/internal/model"
 	"github.com/runmedev/owl/internal/resolver"
-	"github.com/runmedev/owl/internal/store"
+	"github.com/runmedev/owl/internal/state"
 )
 
 func TestRuntimeDrivesLoadNormalizeValidateSnapshot(t *testing.T) {
@@ -21,18 +21,18 @@ func TestRuntimeDrivesLoadNormalizeValidateSnapshot(t *testing.T) {
 	runtime, err := NewRuntime(nil)
 	require.NoError(t, err)
 
-	items, err := runtime.Snapshot(context.Background(), store.LoadInput{
+	items, err := runtime.Snapshot(context.Background(), state.LoadInput{
 		DotenvSource: model.Source{Name: ".env", Kind: "dotenv"},
-		Dotenv: []store.DotenvVariable{
+		Dotenv: []state.DotenvVariable{
 			{Key: "API_URL", Value: "https://api.example.com"},
 			{Key: "API_KEY", Value: "secret"},
 			{Key: "REDIS_HOST", Value: "localhost"},
 		},
-		Contracts: []store.EnvContract{
+		Contracts: []state.EnvContract{
 			{
 				Source:     model.Source{Name: ".env.spec", Kind: "dotenv-spec"},
 				Projection: model.ProjectionDotenv,
-				Bindings: []store.EnvBinding{
+				Bindings: []state.EnvBinding{
 					{
 						Key:         "API_URL",
 						FieldRef:    model.FieldRef{TypeID: model.TypeCorePlain, Instance: "default", Field: "api.url"},
@@ -68,17 +68,17 @@ func TestRuntimeRendersDotenvThroughGraphQL(t *testing.T) {
 	runtime, err := NewRuntime(nil)
 	require.NoError(t, err)
 
-	envs, err := runtime.Dotenv(context.Background(), store.LoadInput{
+	envs, err := runtime.Dotenv(context.Background(), state.LoadInput{
 		DotenvSource: model.Source{Name: ".env", Kind: "dotenv"},
-		Dotenv: []store.DotenvVariable{
+		Dotenv: []state.DotenvVariable{
 			{Key: "API_KEY", Value: "secret"},
 			{Key: "API_URL", Value: "https://api.example.com"},
 		},
-		Contracts: []store.EnvContract{
+		Contracts: []state.EnvContract{
 			{
 				Source:     model.Source{Name: "package.json", Kind: "package-json"},
 				Projection: model.ProjectionDotenv,
-				Bindings: []store.EnvBinding{
+				Bindings: []state.EnvBinding{
 					{
 						Key:        "API_KEY",
 						FieldRef:   model.FieldRef{TypeID: model.TypeCoreSecret, Instance: "default", Field: "api.key"},
@@ -107,13 +107,13 @@ func TestRuntimeCheckReportsRequiredDiagnostics(t *testing.T) {
 	runtime, err := NewRuntime(nil)
 	require.NoError(t, err)
 
-	check, err := runtime.Check(context.Background(), store.LoadInput{
+	check, err := runtime.Check(context.Background(), state.LoadInput{
 		DotenvSource: model.Source{Name: ".env", Kind: "dotenv"},
-		Contracts: []store.EnvContract{
+		Contracts: []state.EnvContract{
 			{
 				Source:     model.Source{Name: ".env.spec", Kind: "dotenv-spec"},
 				Projection: model.ProjectionDotenv,
-				Bindings: []store.EnvBinding{
+				Bindings: []state.EnvBinding{
 					{
 						Key:        "API_KEY",
 						FieldRef:   model.FieldRef{TypeID: model.TypeCoreSecret, Instance: "default", Field: "api.key"},
@@ -233,27 +233,27 @@ func introspectionInputFields(t *testing.T, schemaJSON string) map[string][]stri
 func TestPlanStateEnvelopeQueryStacksOperationRecords(t *testing.T) {
 	t.Parallel()
 
-	plan, err := planStateEnvelopeQuery([]store.OperationRecord{
+	plan, err := planStateEnvelopeQuery([]state.OperationRecord{
 		{
-			Kind: store.OperationRecordLoad,
-			Load: store.LoadInput{
+			Kind: state.OperationRecordLoad,
+			Load: state.LoadInput{
 				DotenvSource: model.Source{Name: ".env", Kind: "dotenv"},
-				Dotenv:       []store.DotenvVariable{{Key: "API_URL", Value: "https://api.example.com"}},
+				Dotenv:       []state.DotenvVariable{{Key: "API_URL", Value: "https://api.example.com"}},
 			},
 		},
 		{
-			Kind: store.OperationRecordUpdate,
-			Update: store.UpdateOperation{
+			Kind: state.OperationRecordUpdate,
+			Update: state.UpdateOperation{
 				Source: model.Source{Name: "[update]", Kind: "dotenv"},
-				Dotenv: []store.DotenvVariable{{Key: "API_URL", Value: "https://next.example.com"}},
+				Dotenv: []state.DotenvVariable{{Key: "API_URL", Value: "https://next.example.com"}},
 			},
 		},
 		{
-			Kind:   store.OperationRecordDelete,
-			Delete: store.DeleteOperation{Keys: []string{"API_KEY"}},
+			Kind:   state.OperationRecordDelete,
+			Delete: state.DeleteOperation{Keys: []string{"API_KEY"}},
 		},
 		{
-			Kind: store.OperationRecordResolverAttempt,
+			Kind: state.OperationRecordResolverAttempt,
 			ResolverAttempt: model.ResolverAttempt{
 				ID:            "attempt-000001",
 				ResolverID:    "core/dotenv",
@@ -263,7 +263,7 @@ func TestPlanStateEnvelopeQueryStacksOperationRecords(t *testing.T) {
 			},
 		},
 		{
-			Kind: store.OperationRecordApplyResolverProposal,
+			Kind: state.OperationRecordApplyResolverProposal,
 			ResolverProposal: resolver.Proposal{
 				AttemptID:     "attempt-000002",
 				ResolverID:    "core/dotenv",
@@ -301,20 +301,20 @@ func TestRuntimeMaterializesStateEnvelopeFromOperationRecords(t *testing.T) {
 	runtime, err := NewRuntime(nil)
 	require.NoError(t, err)
 
-	envelope, err := runtime.StateEnvelopeForOperations(context.Background(), []store.OperationRecord{
+	envelope, err := runtime.StateEnvelopeForOperations(context.Background(), []state.OperationRecord{
 		{
-			Kind: store.OperationRecordLoad,
-			Load: store.LoadInput{
+			Kind: state.OperationRecordLoad,
+			Load: state.LoadInput{
 				DotenvSource: model.Source{Name: ".env", Kind: "dotenv"},
-				Dotenv: []store.DotenvVariable{
+				Dotenv: []state.DotenvVariable{
 					{Key: "API_URL", Value: "https://api.example.com"},
 					{Key: "API_KEY", Value: "secret"},
 				},
-				Contracts: []store.EnvContract{
+				Contracts: []state.EnvContract{
 					{
 						Source:     model.Source{Name: ".env.spec", Kind: "dotenv-spec"},
 						Projection: model.ProjectionDotenv,
-						Bindings: []store.EnvBinding{
+						Bindings: []state.EnvBinding{
 							{
 								Key:        "API_KEY",
 								FieldRef:   model.FieldRef{TypeID: model.TypeCoreSecret, Instance: "default", Field: "api.key"},
@@ -327,26 +327,26 @@ func TestRuntimeMaterializesStateEnvelopeFromOperationRecords(t *testing.T) {
 			},
 		},
 		{
-			Kind: store.OperationRecordUpdate,
-			Update: store.UpdateOperation{
+			Kind: state.OperationRecordUpdate,
+			Update: state.UpdateOperation{
 				Source: model.Source{Name: "[update]", Kind: "dotenv"},
-				Dotenv: []store.DotenvVariable{{Key: "API_URL", Value: "https://next.example.com"}},
+				Dotenv: []state.DotenvVariable{{Key: "API_URL", Value: "https://next.example.com"}},
 			},
 		},
 		{
-			Kind:   store.OperationRecordDelete,
-			Delete: store.DeleteOperation{Keys: []string{"API_KEY"}},
+			Kind:   state.OperationRecordDelete,
+			Delete: state.DeleteOperation{Keys: []string{"API_KEY"}},
 		},
 	})
 	require.NoError(t, err)
 
-	s := store.NewState(envelope.State, nil)
-	got, ok, err := s.Get("API_URL", store.GetPolicy{Reveal: true})
+	s := state.MachineFromState(envelope.State, nil)
+	got, ok, err := s.Get("API_URL", state.GetPolicy{Reveal: true})
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, "https://next.example.com", got.Value)
 	assert.False(t, envelope.State.Values[got.Field].UpdatedAt.IsZero())
-	_, ok, err = s.Get("API_KEY", store.GetPolicy{Reveal: true})
+	_, ok, err = s.Get("API_KEY", state.GetPolicy{Reveal: true})
 	require.NoError(t, err)
 	assert.False(t, ok)
 }
@@ -380,16 +380,16 @@ func TestRuntimeMaterializesResolverAttemptsFromOperationRecords(t *testing.T) {
 		},
 	}
 
-	envelope, err := runtime.StateEnvelopeForOperations(context.Background(), []store.OperationRecord{
+	envelope, err := runtime.StateEnvelopeForOperations(context.Background(), []state.OperationRecord{
 		{
-			Kind: store.OperationRecordLoad,
-			Load: store.LoadInput{
+			Kind: state.OperationRecordLoad,
+			Load: state.LoadInput{
 				DotenvSource: model.Source{Name: ".env", Kind: "dotenv"},
-				Dotenv:       []store.DotenvVariable{{Key: "API_URL", Value: "https://api.example.com"}},
+				Dotenv:       []state.DotenvVariable{{Key: "API_URL", Value: "https://api.example.com"}},
 			},
 		},
 		{
-			Kind:            store.OperationRecordResolverAttempt,
+			Kind:            state.OperationRecordResolverAttempt,
 			ResolverAttempt: attempt,
 		},
 	})
@@ -399,8 +399,8 @@ func TestRuntimeMaterializesResolverAttemptsFromOperationRecords(t *testing.T) {
 	assert.Equal(t, attempt, envelope.State.ResolverAttempts[0])
 	assert.NotContains(t, envelope.State.ResolverAttempts[0].Message, "secret")
 
-	s := store.NewState(envelope.State, nil)
-	got, ok, err := s.Get("API_URL", store.GetPolicy{Reveal: true})
+	s := state.MachineFromState(envelope.State, nil)
+	got, ok, err := s.Get("API_URL", state.GetPolicy{Reveal: true})
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, "https://api.example.com", got.Value)
@@ -414,15 +414,15 @@ func TestRuntimeMaterializesResolverProposalsFromOperationRecords(t *testing.T) 
 	ref := model.FieldRef{TypeID: model.TypeCoreSecret, Instance: "default", Field: "api.key"}
 	timestamp := time.Date(2026, 8, 3, 20, 30, 0, 0, time.UTC)
 
-	envelope, err := runtime.StateEnvelopeForOperations(context.Background(), []store.OperationRecord{
+	envelope, err := runtime.StateEnvelopeForOperations(context.Background(), []state.OperationRecord{
 		{
-			Kind: store.OperationRecordLoad,
-			Load: store.LoadInput{
+			Kind: state.OperationRecordLoad,
+			Load: state.LoadInput{
 				DotenvSource: model.Source{Name: ".env", Kind: "dotenv"},
-				Contracts: []store.EnvContract{{
+				Contracts: []state.EnvContract{{
 					Source:     model.Source{Name: ".env.example", Kind: "dotenv-spec"},
 					Projection: model.ProjectionDotenv,
-					Bindings: []store.EnvBinding{{
+					Bindings: []state.EnvBinding{{
 						Key:        "API_KEY",
 						FieldRef:   ref,
 						Projection: model.ProjectionDotenv,
@@ -432,7 +432,7 @@ func TestRuntimeMaterializesResolverProposalsFromOperationRecords(t *testing.T) 
 			},
 		},
 		{
-			Kind:      store.OperationRecordApplyResolverProposal,
+			Kind:      state.OperationRecordApplyResolverProposal,
 			Timestamp: timestamp,
 			ResolverProposal: resolver.Proposal{
 				AttemptID:     "attempt-000001",
@@ -450,8 +450,8 @@ func TestRuntimeMaterializesResolverProposalsFromOperationRecords(t *testing.T) 
 	})
 	require.NoError(t, err)
 
-	s := store.NewState(envelope.State, nil)
-	got, ok, err := s.Get("API_KEY", store.GetPolicy{Reveal: true})
+	s := state.MachineFromState(envelope.State, nil)
+	got, ok, err := s.Get("API_KEY", state.GetPolicy{Reveal: true})
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, "secret", got.Value)
@@ -468,14 +468,14 @@ func TestRuntimeMaterializesUnresolvedFrontier(t *testing.T) {
 	runtime, err := NewRuntime(nil)
 	require.NoError(t, err)
 
-	envelope, err := runtime.StateEnvelope(context.Background(), store.LoadInput{
+	envelope, err := runtime.StateEnvelope(context.Background(), state.LoadInput{
 		DotenvSource: model.Source{Name: ".env", Kind: "dotenv"},
-		Dotenv:       []store.DotenvVariable{{Key: "PRESENT_SECRET", Value: "secret"}},
-		Contracts: []store.EnvContract{
+		Dotenv:       []state.DotenvVariable{{Key: "PRESENT_SECRET", Value: "secret"}},
+		Contracts: []state.EnvContract{
 			{
 				Source:     model.Source{Name: "owl.toml", Kind: "owl-config"},
 				Projection: model.ProjectionDotenv,
-				Bindings: []store.EnvBinding{
+				Bindings: []state.EnvBinding{
 					{
 						Key:         "MISSING_SECRET",
 						FieldRef:    model.FieldRef{TypeID: model.TypeCoreSecret, Instance: "default", Field: "missing.secret"},

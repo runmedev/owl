@@ -156,7 +156,7 @@ func TestResolverPackageDoesNotImportStoreOrGraph(t *testing.T) {
 		require.NoError(t, err)
 		for _, imported := range file.Imports {
 			unquoted := strings.Trim(imported.Path.Value, `"`)
-			assert.NotEqual(t, "github.com/runmedev/owl/internal/store", unquoted)
+			assert.NotEqual(t, "github.com/runmedev/owl/internal/state", unquoted)
 			assert.NotEqual(t, "github.com/runmedev/owl/internal/graph", unquoted)
 		}
 	}

@@ -7,7 +7,7 @@ import (
 	"github.com/graphql-go/graphql/language/ast"
 	"github.com/graphql-go/graphql/language/printer"
 
-	"github.com/runmedev/owl/internal/store"
+	"github.com/runmedev/owl/internal/state"
 )
 
 type plannedQuery struct {
@@ -16,7 +16,7 @@ type plannedQuery struct {
 	Path  []string
 }
 
-func planStateEnvelopeQuery(records []store.OperationRecord) (plannedQuery, error) {
+func planStateEnvelopeQuery(records []state.OperationRecord) (plannedQuery, error) {
 	if len(records) == 0 {
 		return plannedQuery{}, errors.New("operation plan is empty")
 	}
@@ -30,7 +30,7 @@ func planStateEnvelopeQuery(records []store.OperationRecord) (plannedQuery, erro
 	for index, record := range records {
 		next := ast.NewSelectionSet(&ast.SelectionSet{})
 		switch record.Kind {
-		case store.OperationRecordLoad:
+		case state.OperationRecordLoad:
 			name := fmt.Sprintf("load_%d", index)
 			varDefs = append(varDefs, variableDefinition(name, nonNull(namedType("LoadInput"))))
 			input := record.Load
@@ -40,10 +40,10 @@ func planStateEnvelopeQuery(records []store.OperationRecord) (plannedQuery, erro
 				argument("input", variable(name)),
 			}, next))
 			path = append(path, "load")
-		case store.OperationRecordUpdate:
+		case state.OperationRecordUpdate:
 			name := fmt.Sprintf("update_%d", index)
 			varDefs = append(varDefs, variableDefinition(name, namedType("DotenvInput")))
-			vars[name] = marshalDotenvInput(store.LoadInput{
+			vars[name] = marshalDotenvInput(state.LoadInput{
 				DotenvSource: record.Update.Source,
 				Dotenv:       record.Update.Dotenv,
 				Timestamp:    record.Timestamp,
@@ -52,7 +52,7 @@ func planStateEnvelopeQuery(records []store.OperationRecord) (plannedQuery, erro
 				argument("dotenv", variable(name)),
 			}, next))
 			path = append(path, "update")
-		case store.OperationRecordDelete:
+		case state.OperationRecordDelete:
 			name := fmt.Sprintf("delete_%d", index)
 			varDefs = append(varDefs, variableDefinition(name, list(nonNull(namedType("String")))))
 			vars[name] = append([]string{}, record.Delete.Keys...)
@@ -60,7 +60,7 @@ func planStateEnvelopeQuery(records []store.OperationRecord) (plannedQuery, erro
 				argument("keys", variable(name)),
 			}, next))
 			path = append(path, "delete")
-		case store.OperationRecordResolverAttempt:
+		case state.OperationRecordResolverAttempt:
 			name := fmt.Sprintf("resolverAttempt_%d", index)
 			varDefs = append(varDefs, variableDefinition(name, nonNull(namedType("ResolverAttemptInput"))))
 			vars[name] = marshalResolverAttempt(record.ResolverAttempt)
@@ -68,7 +68,7 @@ func planStateEnvelopeQuery(records []store.OperationRecord) (plannedQuery, erro
 				argument("attempt", variable(name)),
 			}, next))
 			path = append(path, "recordResolverAttempt")
-		case store.OperationRecordApplyResolverProposal:
+		case state.OperationRecordApplyResolverProposal:
 			name := fmt.Sprintf("resolverProposal_%d", index)
 			varDefs = append(varDefs, variableDefinition(name, nonNull(namedType("ResolverProposalInput"))))
 			timestampName := fmt.Sprintf("resolverProposalTimestamp_%d", index)

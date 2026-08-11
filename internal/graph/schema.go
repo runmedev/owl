@@ -11,7 +11,7 @@ import (
 	"github.com/runmedev/owl/internal/model"
 	"github.com/runmedev/owl/internal/requirements"
 	"github.com/runmedev/owl/internal/resolver"
-	"github.com/runmedev/owl/internal/store"
+	"github.com/runmedev/owl/internal/state"
 )
 
 func (r *Runtime) newSchema() (graphql.Schema, error) {
@@ -338,7 +338,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 				Type: stateEnvelopeType,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					gctx := p.Source.(Context)
-					return stateEnvelopeView(store.NewState(gctx.State, gctx.Types).StateEnvelope()), nil
+					return stateEnvelopeView(state.MachineFromState(gctx.State, gctx.Types).StateEnvelope()), nil
 				},
 			},
 		},
@@ -390,28 +390,28 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"type": &graphql.Field{
 				Type: graphql.String,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					item := p.Source.(store.SnapshotItem)
+					item := p.Source.(state.SnapshotItem)
 					return string(item.Type), nil
 				},
 			},
 			"field": &graphql.Field{
 				Type: fieldRefType,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					item := p.Source.(store.SnapshotItem)
+					item := p.Source.(state.SnapshotItem)
 					return fieldRefView(item.Field), nil
 				},
 			},
 			"source": &graphql.Field{
 				Type: sourceType,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					item := p.Source.(store.SnapshotItem)
+					item := p.Source.(state.SnapshotItem)
 					return item.Source, nil
 				},
 			},
 			"origin": &graphql.Field{
 				Type: sourceType,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					item := p.Source.(store.SnapshotItem)
+					item := p.Source.(state.SnapshotItem)
 					return item.Origin, nil
 				},
 			},
@@ -419,21 +419,21 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"confidence": &graphql.Field{
 				Type: graphql.String,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					item := p.Source.(store.SnapshotItem)
+					item := p.Source.(state.SnapshotItem)
 					return string(item.Confidence), nil
 				},
 			},
 			"visibility": &graphql.Field{
 				Type: graphql.String,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					item := p.Source.(store.SnapshotItem)
+					item := p.Source.(state.SnapshotItem)
 					return string(item.Visibility), nil
 				},
 			},
 			"exposure": &graphql.Field{
 				Type: graphql.String,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					item := p.Source.(store.SnapshotItem)
+					item := p.Source.(state.SnapshotItem)
 					return string(item.Exposure), nil
 				},
 			},
@@ -442,7 +442,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 			"updatedAt": &graphql.Field{
 				Type: graphql.String,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					item := p.Source.(store.SnapshotItem)
+					item := p.Source.(state.SnapshotItem)
 					return timeString(item.UpdatedAt), nil
 				},
 			},
@@ -463,7 +463,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 						gctx := p.Source.(Context)
 						all, _ := p.Args["all"].(bool)
-						result, err := store.NewState(gctx.State, gctx.Types).Type(store.TypePolicy{All: all})
+						result, err := state.MachineFromState(gctx.State, gctx.Types).Type(state.TypePolicy{All: all})
 						if err != nil {
 							return nil, err
 						}
@@ -486,7 +486,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 						gctx := p.Source.(Context)
 						reveal, _ := p.Args["reveal"].(bool)
-						return store.NewState(gctx.State, gctx.Types).Snapshot(store.SnapshotPolicy{Reveal: reveal})
+						return state.MachineFromState(gctx.State, gctx.Types).Snapshot(state.SnapshotPolicy{Reveal: reveal})
 					},
 				},
 				"dotenv": &graphql.Field{
@@ -497,14 +497,14 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 						gctx := p.Source.(Context)
 						insecure, _ := p.Args["insecure"].(bool)
-						return store.NewState(gctx.State, gctx.Types).Dotenv(store.DotenvPolicy{Insecure: insecure})
+						return state.MachineFromState(gctx.State, gctx.Types).Dotenv(state.DotenvPolicy{Insecure: insecure})
 					},
 				},
 				"check": &graphql.Field{
 					Type: checkType,
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 						gctx := p.Source.(Context)
-						check := store.NewState(gctx.State, gctx.Types).Check()
+						check := state.MachineFromState(gctx.State, gctx.Types).Check()
 						check.Diagnostics = sortedDiagnostics(check.Diagnostics)
 						return check, nil
 					},
@@ -526,7 +526,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 						gctx := p.Source.(Context)
 						key := p.Args["key"].(string)
 						reveal, _ := p.Args["reveal"].(bool)
-						result, ok, err := store.NewState(gctx.State, gctx.Types).Get(key, store.GetPolicy{Reveal: reveal})
+						result, ok, err := state.MachineFromState(gctx.State, gctx.Types).Get(key, state.GetPolicy{Reveal: reveal})
 						if err != nil || !ok {
 							return nil, err
 						}
@@ -537,7 +537,7 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 					Type: graphql.NewList(graphql.String),
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 						gctx := p.Source.(Context)
-						return store.NewState(gctx.State, gctx.Types).SensitiveKeys()
+						return state.MachineFromState(gctx.State, gctx.Types).SensitiveKeys()
 					},
 				},
 			}
@@ -556,8 +556,8 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 						input := decodeLoadInput(p.Args["input"].(map[string]interface{}))
 						gctx := p.Source.(Context)
-						s := store.NewState(gctx.State, gctx.Types)
-						state, err := s.Apply(contextFromParams(p), store.LoadOperation{Input: input, Timestamp: input.Timestamp})
+						s := state.MachineFromState(gctx.State, gctx.Types)
+						state, err := s.Apply(contextFromParams(p), state.LoadOperation{Input: input, Timestamp: input.Timestamp})
 						if err != nil {
 							return nil, err
 						}
@@ -572,8 +572,8 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 						gctx := p.Source.(Context)
 						input := decodeDotenvInput(p.Args["dotenv"])
-						s := store.NewState(gctx.State, gctx.Types)
-						state, err := s.Apply(contextFromParams(p), store.UpdateOperation{Source: input.DotenvSource, Dotenv: input.Dotenv, Timestamp: input.Timestamp})
+						s := state.MachineFromState(gctx.State, gctx.Types)
+						state, err := s.Apply(contextFromParams(p), state.UpdateOperation{Source: input.DotenvSource, Dotenv: input.Dotenv, Timestamp: input.Timestamp})
 						if err != nil {
 							return nil, err
 						}
@@ -587,8 +587,8 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 					},
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 						gctx := p.Source.(Context)
-						s := store.NewState(gctx.State, gctx.Types)
-						state, err := s.Apply(contextFromParams(p), store.DeleteOperation{Keys: decodeStringList(p.Args["keys"])})
+						s := state.MachineFromState(gctx.State, gctx.Types)
+						state, err := s.Apply(contextFromParams(p), state.DeleteOperation{Keys: decodeStringList(p.Args["keys"])})
 						if err != nil {
 							return nil, err
 						}
@@ -603,8 +603,8 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 						gctx := p.Source.(Context)
 						attempt := decodeResolverAttemptInput(p.Args["attempt"])
-						s := store.NewState(gctx.State, gctx.Types)
-						state, err := s.Apply(contextFromParams(p), store.RecordResolverAttemptOperation{Attempt: attempt})
+						s := state.MachineFromState(gctx.State, gctx.Types)
+						state, err := s.Apply(contextFromParams(p), state.RecordResolverAttemptOperation{Attempt: attempt})
 						if err != nil {
 							return nil, err
 						}
@@ -620,8 +620,8 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 						gctx := p.Source.(Context)
 						proposal := decodeResolverProposalInput(p.Args["proposal"])
-						s := store.NewState(gctx.State, gctx.Types)
-						state, err := s.Apply(contextFromParams(p), store.ApplyResolverProposalOperation{
+						s := state.MachineFromState(gctx.State, gctx.Types)
+						state, err := s.Apply(contextFromParams(p), state.ApplyResolverProposalOperation{
 							Proposal:  proposal,
 							Timestamp: timeValue(p.Args["timestamp"]),
 						})
@@ -635,8 +635,8 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 					Type: environmentType,
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 						gctx := p.Source.(Context)
-						s := store.NewState(gctx.State, gctx.Types)
-						state, err := s.Apply(contextFromParams(p), store.NormalizeOperation{})
+						s := state.MachineFromState(gctx.State, gctx.Types)
+						state, err := s.Apply(contextFromParams(p), state.NormalizeOperation{})
 						if err != nil {
 							return nil, err
 						}
@@ -647,8 +647,8 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 					Type: environmentType,
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 						gctx := p.Source.(Context)
-						s := store.NewState(gctx.State, gctx.Types)
-						state, err := s.Apply(contextFromParams(p), store.IntegrityOperation{Types: gctx.Types})
+						s := state.MachineFromState(gctx.State, gctx.Types)
+						state, err := s.Apply(contextFromParams(p), state.IntegrityOperation{Types: gctx.Types})
 						if err != nil {
 							return nil, err
 						}
@@ -699,26 +699,26 @@ func contextFromParams(p graphql.ResolveParams) context.Context {
 	return p.Context
 }
 
-func contractsFromState(state model.EffectiveState) []store.EnvContract {
+func contractsFromState(effective model.EffectiveState) []state.EnvContract {
 	type contractKey struct {
 		source     model.Source
 		projection model.ProjectionID
 	}
 	positions := make(map[contractKey]int)
-	var contracts []store.EnvContract
-	for _, binding := range state.Bindings {
+	var contracts []state.EnvContract
+	for _, binding := range effective.Bindings {
 		source := binding.Origin
 		key := contractKey{source: source, projection: binding.ProjectionID}
 		position, ok := positions[key]
 		if !ok {
 			position = len(contracts)
 			positions[key] = position
-			contracts = append(contracts, store.EnvContract{
+			contracts = append(contracts, state.EnvContract{
 				Source:     source,
 				Projection: binding.ProjectionID,
 			})
 		}
-		contracts[position].Bindings = append(contracts[position].Bindings, store.EnvBinding{
+		contracts[position].Bindings = append(contracts[position].Bindings, state.EnvBinding{
 			FieldRef:    binding.FieldRef,
 			Key:         string(binding.Key),
 			Projection:  binding.ProjectionID,
@@ -726,8 +726,8 @@ func contractsFromState(state model.EffectiveState) []store.EnvContract {
 			Description: binding.Description,
 			Source:      source,
 			Order:       binding.Order,
-			Sensitivity: state.Values[binding.FieldRef].Sensitivity,
-			Exposure:    state.Values[binding.FieldRef].Exposure,
+			Sensitivity: effective.Values[binding.FieldRef].Sensitivity,
+			Exposure:    effective.Values[binding.FieldRef].Exposure,
 		})
 	}
 	sort.SliceStable(contracts, func(i, j int) bool {
@@ -739,10 +739,10 @@ func contractsFromState(state model.EffectiveState) []store.EnvContract {
 	return contracts
 }
 
-func decodeLoadInput(raw map[string]interface{}) store.LoadInput {
-	var input store.LoadInput
+func decodeLoadInput(raw map[string]interface{}) state.LoadInput {
+	var input state.LoadInput
 	if envelopeRaw, ok := raw["envelope"].(map[string]interface{}); ok {
-		envelope := store.StateEnvelope{
+		envelope := state.StateEnvelope{
 			ModelVersion: stringValue(envelopeRaw["modelVersion"]),
 			State:        decodeEffectiveStateInput(envelopeRaw["state"]),
 			Provenance:   decodeStateProvenanceInput(envelopeRaw["provenance"]),
@@ -758,7 +758,7 @@ func decodeLoadInput(raw map[string]interface{}) store.LoadInput {
 		if !ok {
 			continue
 		}
-		contract := store.EnvContract{
+		contract := state.EnvContract{
 			Source:     decodeSource(contractRaw["source"]),
 			Projection: model.ProjectionID(stringValue(contractRaw["projection"])),
 		}
@@ -767,7 +767,7 @@ func decodeLoadInput(raw map[string]interface{}) store.LoadInput {
 			if !ok {
 				continue
 			}
-			contract.Bindings = append(contract.Bindings, store.EnvBinding{
+			contract.Bindings = append(contract.Bindings, state.EnvBinding{
 				FieldRef:    decodeFieldRef(bindingRaw["field"]),
 				Key:         stringValue(bindingRaw["key"]),
 				Projection:  model.ProjectionID(stringValue(bindingRaw["projection"])),
@@ -787,8 +787,8 @@ func decodeLoadInput(raw map[string]interface{}) store.LoadInput {
 	return input
 }
 
-func decodeDotenvInput(raw interface{}) store.LoadInput {
-	var input store.LoadInput
+func decodeDotenvInput(raw interface{}) state.LoadInput {
+	var input state.LoadInput
 	dotenvRaw, ok := raw.(map[string]interface{})
 	if !ok {
 		return input
@@ -800,7 +800,7 @@ func decodeDotenvInput(raw interface{}) store.LoadInput {
 		if !ok {
 			continue
 		}
-		input.Dotenv = append(input.Dotenv, store.DotenvVariable{
+		input.Dotenv = append(input.Dotenv, state.DotenvVariable{
 			Key:    stringValue(variable["key"]),
 			Value:  stringValue(variable["value"]),
 			Source: decodeSource(variable["source"]),
@@ -952,8 +952,8 @@ func decodeDiagnosticsInput(raw interface{}) []model.Diagnostic {
 	return diagnostics
 }
 
-func decodeStateProvenanceInput(raw interface{}) store.StateProvenance {
-	var provenance store.StateProvenance
+func decodeStateProvenanceInput(raw interface{}) state.StateProvenance {
+	var provenance state.StateProvenance
 	row, ok := raw.(map[string]interface{})
 	if !ok {
 		return provenance
@@ -1102,7 +1102,7 @@ func timeValue(raw interface{}) time.Time {
 	return parsed
 }
 
-func stateEnvelopeView(envelope store.StateEnvelope) map[string]interface{} {
+func stateEnvelopeView(envelope state.StateEnvelope) map[string]interface{} {
 	return map[string]interface{}{
 		"modelVersion": envelope.ModelVersion,
 		"state":        effectiveStateView(envelope.State),
@@ -1250,7 +1250,7 @@ func unresolvedFrontierView(frontier model.UnresolvedFrontier) map[string]interf
 	return map[string]interface{}{"needs": needs}
 }
 
-func getResultView(result store.GetResult) map[string]interface{} {
+func getResultView(result state.GetResult) map[string]interface{} {
 	return map[string]interface{}{
 		"key":         result.Key,
 		"field":       fieldRefView(result.Field),
@@ -1262,7 +1262,7 @@ func getResultView(result store.GetResult) map[string]interface{} {
 	}
 }
 
-func typeResultView(result store.TypeResult) map[string]interface{} {
+func typeResultView(result state.TypeResult) map[string]interface{} {
 	proposals := make([]map[string]interface{}, 0, len(result.Proposals))
 	for _, proposal := range result.Proposals {
 		proposals = append(proposals, map[string]interface{}{

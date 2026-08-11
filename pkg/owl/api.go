@@ -14,20 +14,20 @@ import (
 	"github.com/runmedev/owl/internal/requirements"
 	"github.com/runmedev/owl/internal/resolver"
 	"github.com/runmedev/owl/internal/resolver/builtin"
-	"github.com/runmedev/owl/internal/store"
+	"github.com/runmedev/owl/internal/state"
 )
 
 type (
-	SnapshotPolicy = store.SnapshotPolicy
-	DotenvPolicy   = store.DotenvPolicy
-	TypePolicy     = store.TypePolicy
-	GetPolicy      = store.GetPolicy
-	SnapshotItem   = store.SnapshotItem
-	SnapshotEnv    = store.SnapshotItem
-	TypeResult     = store.TypeResult
-	TypeProposal   = store.TypeProposal
-	GetResult      = store.GetResult
-	CheckResult    = store.CheckResult
+	SnapshotPolicy = state.SnapshotPolicy
+	DotenvPolicy   = state.DotenvPolicy
+	TypePolicy     = state.TypePolicy
+	GetPolicy      = state.GetPolicy
+	SnapshotItem   = state.SnapshotItem
+	SnapshotEnv    = state.SnapshotItem
+	TypeResult     = state.TypeResult
+	TypeProposal   = state.TypeProposal
+	GetResult      = state.GetResult
+	CheckResult    = state.CheckResult
 	ResolvePolicy  = resolver.Policy
 	ChainConfig    = resolver.ChainConfig
 	ResolverConfig = resolver.ResolverConfig
@@ -43,12 +43,12 @@ type (
 	DotenvProjection       = model.DotenvProjectionInput
 	DotenvFieldBinding     = model.DotenvFieldBindingInput
 	Source                 = model.Source
-	DotenvVariable         = store.DotenvVariable
-	EnvContract            = store.EnvContract
-	EnvBinding             = store.EnvBinding
-	LoadInput              = store.LoadInput
-	StateEnvelope          = store.StateEnvelope
-	StateProvenance        = store.StateProvenance
+	DotenvVariable         = state.DotenvVariable
+	EnvContract            = state.EnvContract
+	EnvBinding             = state.EnvBinding
+	LoadInput              = state.LoadInput
+	StateEnvelope          = state.StateEnvelope
+	StateProvenance        = state.StateProvenance
 	Visibility             = model.Visibility
 	Exposure               = model.Exposure
 	Diagnostic             = model.Diagnostic
@@ -105,18 +105,18 @@ type Store struct {
 	runtime    *graph.Runtime
 	types      registry.TypeProvider
 	state      model.EffectiveState
-	operations []store.OperationRecord
+	operations []state.OperationRecord
 	clock      model.Clock
 }
 
 type StoreOption func(*config) error
 
 type config struct {
-	envs      []store.SourceBytes
-	specs     []store.SourceBytes
+	envs      []state.SourceBytes
+	specs     []state.SourceBytes
 	configs   []configInputSource
-	contracts []store.EnvContract
-	envelope  *store.StateEnvelope
+	contracts []state.EnvContract
+	envelope  *state.StateEnvelope
 	types     registry.TypeProvider
 	clock     model.Clock
 }
@@ -259,7 +259,7 @@ func NewStore(opts ...StoreOption) (*Store, error) {
 			return nil, err
 		}
 	}
-	load, err := store.LoadInputFromSourceBytes(cfg.envs, cfg.specs)
+	load, err := state.LoadInputFromSourceBytes(cfg.envs, cfg.specs)
 	if err != nil {
 		return nil, err
 	}
@@ -285,8 +285,8 @@ func NewStore(opts ...StoreOption) (*Store, error) {
 		runtime: runtime,
 		types:   cfg.types,
 		clock:   clock,
-		operations: []store.OperationRecord{
-			{Kind: store.OperationRecordLoad, Timestamp: loadTimestamp, Load: load},
+		operations: []state.OperationRecord{
+			{Kind: state.OperationRecordLoad, Timestamp: loadTimestamp, Load: load},
 		},
 	}
 	if err := s.materialize(context.Background()); err != nil {
@@ -301,7 +301,7 @@ func WithDotenv(source string, r io.Reader) StoreOption {
 		if err != nil {
 			return err
 		}
-		cfg.envs = append(cfg.envs, store.SourceBytes{Name: source, Raw: raw})
+		cfg.envs = append(cfg.envs, state.SourceBytes{Name: source, Raw: raw})
 		return nil
 	}
 }
@@ -312,7 +312,7 @@ func WithEnvSpec(source string, r io.Reader) StoreOption {
 		if err != nil {
 			return err
 		}
-		cfg.specs = append(cfg.specs, store.SourceBytes{Name: source, Raw: raw})
+		cfg.specs = append(cfg.specs, state.SourceBytes{Name: source, Raw: raw})
 		return nil
 	}
 }
@@ -605,14 +605,14 @@ func (s *Store) BuildCheckOperation(ctx context.Context, input CheckInput) (Grap
 	return graphOperation(graph.CheckOperation(load)), nil
 }
 
-func (s *Store) CheckState() store.CheckResult {
+func (s *Store) CheckState() state.CheckResult {
 	envelope, err := s.StateEnvelope(context.Background())
 	if err != nil {
-		return store.CheckResult{}
+		return state.CheckResult{}
 	}
 	check, err := s.runtime.Check(context.Background(), LoadInput{Envelope: &envelope})
 	if err != nil {
-		return store.CheckResult{}
+		return state.CheckResult{}
 	}
 	return check
 }
@@ -679,12 +679,12 @@ func (s *Store) ApplyPromptAnswers(ctx context.Context, answers []PromptAnswer) 
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	state, err := s.resolverState(ctx)
+	effective, err := s.resolverState(ctx)
 	if err != nil {
 		return ResolveResult{}, err
 	}
 	timestamp := s.clock()
-	needs := needsByID(state.UnresolvedFrontier.Needs)
+	needs := needsByID(effective.UnresolvedFrontier.Needs)
 	newAttemptID := publicAttemptIDGenerator(len(s.operations))
 	var result ResolveResult
 	for _, answer := range answers {
@@ -701,8 +701,8 @@ func (s *Store) ApplyPromptAnswers(ctx context.Context, answers []PromptAnswer) 
 			attempt.Outcome = ResolverInvalidResult
 			attempt.Message = "interactive answer references an unknown unresolved need"
 			result.Attempts = append(result.Attempts, attempt)
-			s.operations = append(s.operations, store.OperationRecord{
-				Kind:            store.OperationRecordResolverAttempt,
+			s.operations = append(s.operations, state.OperationRecord{
+				Kind:            state.OperationRecordResolverAttempt,
 				Timestamp:       timestamp,
 				ResolverAttempt: attempt,
 			})
@@ -726,13 +726,13 @@ func (s *Store) ApplyPromptAnswers(ctx context.Context, answers []PromptAnswer) 
 		result.Attempts = append(result.Attempts, attempt)
 		result.Proposals = append(result.Proposals, proposal)
 		s.operations = append(s.operations,
-			store.OperationRecord{
-				Kind:            store.OperationRecordResolverAttempt,
+			state.OperationRecord{
+				Kind:            state.OperationRecordResolverAttempt,
 				Timestamp:       timestamp,
 				ResolverAttempt: attempt,
 			},
-			store.OperationRecord{
-				Kind:             store.OperationRecordApplyResolverProposal,
+			state.OperationRecord{
+				Kind:             state.OperationRecordApplyResolverProposal,
 				Timestamp:        timestamp,
 				ResolverProposal: proposal,
 			},
@@ -761,7 +761,7 @@ func (s *Store) LoadDotenvLines(source string, envs ...string) error {
 	if raw != "" {
 		raw += "\n"
 	}
-	input, err := store.LoadInputFromSourceBytes([]store.SourceBytes{{Name: source, Raw: []byte(raw)}}, nil)
+	input, err := state.LoadInputFromSourceBytes([]state.SourceBytes{{Name: source, Raw: []byte(raw)}}, nil)
 	if err != nil {
 		return err
 	}
@@ -776,7 +776,7 @@ func (s *Store) Update(ctx context.Context, newOrUpdated, deleted []string) erro
 	if raw != "" {
 		raw += "\n"
 	}
-	input, err := store.LoadInputFromSourceBytes([]store.SourceBytes{{Name: "[update]", Raw: []byte(raw)}}, nil)
+	input, err := state.LoadInputFromSourceBytes([]state.SourceBytes{{Name: "[update]", Raw: []byte(raw)}}, nil)
 	if err != nil {
 		return err
 	}
@@ -794,17 +794,17 @@ func (s *Store) BuildUpdateOperation(ctx context.Context, input UpdateInput) (Gr
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	records := append([]store.OperationRecord{}, s.operations...)
+	records := append([]state.OperationRecord{}, s.operations...)
 	timestamp := s.clock()
 	source := input.Source
 	if source == (Source{}) {
 		source = sourceFromContext(ctx, Source{Name: "[update]", Kind: "dotenv"})
 	}
 	if len(input.Dotenv) > 0 {
-		records = append(records, store.OperationRecord{
-			Kind:      store.OperationRecordUpdate,
+		records = append(records, state.OperationRecord{
+			Kind:      state.OperationRecordUpdate,
 			Timestamp: timestamp,
-			Update: store.UpdateOperation{
+			Update: state.UpdateOperation{
 				Source:    source,
 				Dotenv:    append([]DotenvVariable{}, input.Dotenv...),
 				Timestamp: timestamp,
@@ -812,10 +812,10 @@ func (s *Store) BuildUpdateOperation(ctx context.Context, input UpdateInput) (Gr
 		})
 	}
 	if len(input.Delete) > 0 {
-		records = append(records, store.OperationRecord{
-			Kind:      store.OperationRecordDelete,
+		records = append(records, state.OperationRecord{
+			Kind:      state.OperationRecordDelete,
 			Timestamp: timestamp,
-			Delete: store.DeleteOperation{
+			Delete: state.DeleteOperation{
 				Keys:      append([]string{}, input.Delete...),
 				Source:    source,
 				Timestamp: timestamp,
@@ -859,7 +859,7 @@ func graphOperation(op graph.Operation) GraphOperation {
 	}
 }
 
-func stateEnvelopeOperation(records []store.OperationRecord) (GraphOperation, error) {
+func stateEnvelopeOperation(records []state.OperationRecord) (GraphOperation, error) {
 	op, err := graph.StateEnvelopeOperation(records)
 	if err != nil {
 		return GraphOperation{}, err
@@ -880,7 +880,7 @@ func GraphQLSchema() (string, error) {
 }
 
 func Diagnostics(err error) []Diagnostic {
-	return store.Diagnostics(err)
+	return state.Diagnostics(err)
 }
 
 func (s *Store) applyDotenv(source Source, vars []DotenvVariable, deleted []string) error {
@@ -896,10 +896,10 @@ func (s *Store) applyDotenvWithContext(ctx context.Context, source Source, vars 
 	}
 	if len(vars) > 0 {
 		timestamp := s.clock()
-		s.operations = append(s.operations, store.OperationRecord{
-			Kind:      store.OperationRecordUpdate,
+		s.operations = append(s.operations, state.OperationRecord{
+			Kind:      state.OperationRecordUpdate,
 			Timestamp: timestamp,
-			Update: store.UpdateOperation{
+			Update: state.UpdateOperation{
 				Source:    source,
 				Dotenv:    vars,
 				Timestamp: timestamp,
@@ -908,10 +908,10 @@ func (s *Store) applyDotenvWithContext(ctx context.Context, source Source, vars 
 	}
 	if len(deleted) > 0 {
 		timestamp := s.clock()
-		s.operations = append(s.operations, store.OperationRecord{
-			Kind:      store.OperationRecordDelete,
+		s.operations = append(s.operations, state.OperationRecord{
+			Kind:      state.OperationRecordDelete,
 			Timestamp: timestamp,
-			Delete: store.DeleteOperation{
+			Delete: state.DeleteOperation{
 				Keys:      append([]string{}, deleted...),
 				Source:    source,
 				Timestamp: timestamp,
@@ -955,15 +955,15 @@ func sourceFromContext(ctx context.Context, fallback Source) Source {
 func (s *Store) recordResolverResult(ctx context.Context, result ResolveResult) error {
 	timestamp := s.clock()
 	for _, attempt := range result.Attempts {
-		s.operations = append(s.operations, store.OperationRecord{
-			Kind:            store.OperationRecordResolverAttempt,
+		s.operations = append(s.operations, state.OperationRecord{
+			Kind:            state.OperationRecordResolverAttempt,
 			Timestamp:       firstTime(attempt.FinishedAt, timestamp),
 			ResolverAttempt: attempt,
 		})
 	}
 	for _, proposal := range result.Proposals {
-		s.operations = append(s.operations, store.OperationRecord{
-			Kind:             store.OperationRecordApplyResolverProposal,
+		s.operations = append(s.operations, state.OperationRecord{
+			Kind:             state.OperationRecordApplyResolverProposal,
 			Timestamp:        timestamp,
 			ResolverProposal: proposal,
 		})

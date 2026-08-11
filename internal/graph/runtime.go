@@ -11,7 +11,7 @@ import (
 	"github.com/runmedev/owl/internal/model"
 	"github.com/runmedev/owl/internal/registry"
 	"github.com/runmedev/owl/internal/resolver"
-	"github.com/runmedev/owl/internal/store"
+	"github.com/runmedev/owl/internal/state"
 )
 
 type Runtime struct {
@@ -24,25 +24,25 @@ type Context struct {
 	Types registry.TypeProvider
 }
 
-type LoadInput = store.LoadInput
+type LoadInput = state.LoadInput
 
-type SnapshotPolicy = store.SnapshotPolicy
+type SnapshotPolicy = state.SnapshotPolicy
 
-type DotenvPolicy = store.DotenvPolicy
+type DotenvPolicy = state.DotenvPolicy
 
-type GetPolicy = store.GetPolicy
+type GetPolicy = state.GetPolicy
 
-type TypePolicy = store.TypePolicy
+type TypePolicy = state.TypePolicy
 
-type SnapshotItem = store.SnapshotItem
+type SnapshotItem = state.SnapshotItem
 
-type GetResult = store.GetResult
+type GetResult = state.GetResult
 
-type TypeResult = store.TypeResult
+type TypeResult = state.TypeResult
 
-type CheckResult = store.CheckResult
+type CheckResult = state.CheckResult
 
-type StateEnvelope = store.StateEnvelope
+type StateEnvelope = state.StateEnvelope
 
 type Operation struct {
 	Name      string
@@ -243,12 +243,12 @@ func TypeOperation(input LoadInput, policy TypePolicy) Operation {
 }
 
 func (r *Runtime) StateEnvelope(ctx context.Context, input LoadInput) (StateEnvelope, error) {
-	return r.StateEnvelopeForOperations(ctx, []store.OperationRecord{
-		{Kind: store.OperationRecordLoad, Load: input},
+	return r.StateEnvelopeForOperations(ctx, []state.OperationRecord{
+		{Kind: state.OperationRecordLoad, Load: input},
 	})
 }
 
-func (r *Runtime) StateEnvelopeForOperations(ctx context.Context, records []store.OperationRecord) (StateEnvelope, error) {
+func (r *Runtime) StateEnvelopeForOperations(ctx context.Context, records []state.OperationRecord) (StateEnvelope, error) {
 	plan, err := planStateEnvelopeQuery(records)
 	if err != nil {
 		return StateEnvelope{}, err
@@ -264,7 +264,7 @@ func (r *Runtime) StateEnvelopeForOperations(ctx context.Context, records []stor
 	return decodeEnvelope(raw)
 }
 
-func StateEnvelopeOperation(records []store.OperationRecord) (Operation, error) {
+func StateEnvelopeOperation(records []state.OperationRecord) (Operation, error) {
 	plan, err := planStateEnvelopeQuery(records)
 	if err != nil {
 		return Operation{}, err
@@ -272,21 +272,21 @@ func StateEnvelopeOperation(records []store.OperationRecord) (Operation, error) 
 	return Operation{Name: "OwlStateEnvelope", Document: plan.Query, Variables: plan.Vars}, nil
 }
 
-func (r *Runtime) StateEnvelopeAfter(ctx context.Context, input LoadInput, patch store.LoadInput, deleted []string) (StateEnvelope, error) {
-	records := []store.OperationRecord{{Kind: store.OperationRecordLoad, Load: input}}
+func (r *Runtime) StateEnvelopeAfter(ctx context.Context, input LoadInput, patch state.LoadInput, deleted []string) (StateEnvelope, error) {
+	records := []state.OperationRecord{{Kind: state.OperationRecordLoad, Load: input}}
 	if len(patch.Dotenv) > 0 {
-		records = append(records, store.OperationRecord{
-			Kind: store.OperationRecordUpdate,
-			Update: store.UpdateOperation{
+		records = append(records, state.OperationRecord{
+			Kind: state.OperationRecordUpdate,
+			Update: state.UpdateOperation{
 				Source: patch.DotenvSource,
 				Dotenv: patch.Dotenv,
 			},
 		})
 	}
 	if len(deleted) > 0 {
-		records = append(records, store.OperationRecord{
-			Kind:   store.OperationRecordDelete,
-			Delete: store.DeleteOperation{Keys: append([]string{}, deleted...)},
+		records = append(records, state.OperationRecord{
+			Kind:   state.OperationRecordDelete,
+			Delete: state.DeleteOperation{Keys: append([]string{}, deleted...)},
 		})
 	}
 	return r.StateEnvelopeForOperations(ctx, records)
@@ -455,7 +455,7 @@ func marshalEnvelope(envelope StateEnvelope) map[string]interface{} {
 	}
 }
 
-func marshalStateProvenance(provenance store.StateProvenance) map[string]interface{} {
+func marshalStateProvenance(provenance state.StateProvenance) map[string]interface{} {
 	sources := make([]map[string]interface{}, 0, len(provenance.Sources))
 	for _, source := range provenance.Sources {
 		if marshaled := marshalSource(source); marshaled != nil {
@@ -788,13 +788,13 @@ func decodeType(raw interface{}) TypeResult {
 	if !ok {
 		return TypeResult{}
 	}
-	proposals := make([]store.TypeProposal, 0, len(proposalsRaw))
+	proposals := make([]state.TypeProposal, 0, len(proposalsRaw))
 	for _, item := range proposalsRaw {
 		proposalRaw, ok := item.(map[string]interface{})
 		if !ok {
 			continue
 		}
-		proposals = append(proposals, store.TypeProposal{
+		proposals = append(proposals, state.TypeProposal{
 			Key:           stringValue(proposalRaw["key"]),
 			CurrentType:   model.TypeID(stringValue(proposalRaw["currentType"])),
 			SuggestedType: model.TypeID(stringValue(proposalRaw["suggestedType"])),
@@ -916,8 +916,8 @@ func decodeUnresolvedFrontier(raw interface{}) model.UnresolvedFrontier {
 	return frontier
 }
 
-func decodeStateProvenance(raw interface{}) store.StateProvenance {
-	var provenance store.StateProvenance
+func decodeStateProvenance(raw interface{}) state.StateProvenance {
+	var provenance state.StateProvenance
 	row, ok := raw.(map[string]interface{})
 	if !ok {
 		return provenance
