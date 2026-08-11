@@ -460,13 +460,6 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 				},
 			},
 			"source": &graphql.Field{
-				Type: graphql.String,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					item := p.Source.(store.SnapshotItem)
-					return item.Source.Name, nil
-				},
-			},
-			"sourceRef": &graphql.Field{
 				Type: sourceType,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					item := p.Source.(store.SnapshotItem)
@@ -474,13 +467,6 @@ func (r *Runtime) newSchema() (graphql.Schema, error) {
 				},
 			},
 			"origin": &graphql.Field{
-				Type: graphql.String,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					item := p.Source.(store.SnapshotItem)
-					return item.Origin.Name, nil
-				},
-			},
-			"originRef": &graphql.Field{
 				Type: sourceType,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					item := p.Source.(store.SnapshotItem)

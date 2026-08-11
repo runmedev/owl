@@ -606,10 +606,8 @@ query OwlSnapshot($input: LoadInput!, $reveal: Boolean = false) {
               fieldTypeID
               fieldInstance
               fieldName
-              source
-              sourceRef { name kind }
-              origin
-              originRef { name kind }
+              source { name kind }
+              origin { name kind }
               explicit
               confidence
               visibility
@@ -646,8 +644,8 @@ func decodeSnapshot(raw interface{}) []SnapshotItem {
 				Instance: stringValue(item["fieldInstance"]),
 				Field:    stringValue(item["fieldName"]),
 			},
-			Source:      decodeSnapshotSource(item["sourceRef"], item["source"]),
-			Origin:      decodeSnapshotSource(item["originRef"], item["origin"]),
+			Source:      decodeSource(item["source"]),
+			Origin:      decodeSource(item["origin"]),
 			Explicit:    boolValue(item["explicit"]),
 			Confidence:  model.BindingConfidence(stringValue(item["confidence"])),
 			Visibility:  model.Visibility(stringValue(item["visibility"])),
@@ -658,14 +656,6 @@ func decodeSnapshot(raw interface{}) []SnapshotItem {
 		})
 	}
 	return items
-}
-
-func decodeSnapshotSource(raw, fallback interface{}) model.Source {
-	source := decodeSource(raw)
-	if source.Name == "" && source.Kind == "" {
-		source.Name = stringValue(fallback)
-	}
-	return source
 }
 
 func decodeCheck(raw interface{}) CheckResult {
